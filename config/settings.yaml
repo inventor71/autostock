@@ -1,0 +1,44 @@
+app:
+  name: autostock
+  mode: paper  # paper, live, backtest
+  log_level: INFO
+
+broker:
+  name: alpaca
+  paper: true
+  # API keys should be set via environment variables:
+  # ALPACA_API_KEY, ALPACA_SECRET_KEY
+
+data:
+  provider: yfinance  # yfinance, alpaca
+  cache_dir: ./data
+  default_timeframe: 1d
+
+trading:
+  symbols:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - SPY
+  mode: batch  # batch, realtime
+  batch_interval_minutes: 60
+
+risk:
+  max_position_pct: 0.1  # Max 10% of portfolio per position
+  max_portfolio_risk: 0.02  # Max 2% daily portfolio risk
+  stop_loss_pct: 0.05  # 5% stop loss
+  take_profit_pct: 0.15  # 15% take profit
+  max_open_positions: 10
+
+backtest:
+  start_date: "2023-01-01"
+  end_date: "2024-01-01"
+  initial_capital: 100000.0
+  commission_pct: 0.0  # Alpaca is commission-free
+
+monitoring:
+  alerts_enabled: false
+  slack_webhook: ""
+  telegram_token: ""
+  telegram_chat_id: ""
