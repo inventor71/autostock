@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from loguru import logger
+import logging
 
 from src.core.models import PortfolioState
+
+logger = logging.getLogger(__name__)
 
 
 class PositionSizer:

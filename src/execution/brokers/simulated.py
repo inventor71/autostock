@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
-
-from loguru import logger
 
 from src.core.models import FilledOrder, Order, Position, PortfolioState
 from src.core.types import OrderSide
 from src.core.exceptions import BrokerError
 from src.execution.base import BaseBroker
+
+logger = logging.getLogger(__name__)
 
 
 class SimulatedBroker(BaseBroker):

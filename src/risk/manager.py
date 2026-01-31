@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from loguru import logger
+import logging
 
 from src.core.exceptions import RiskLimitError
 from src.core.models import Order, PortfolioState, TradeSignal
 from src.core.types import OrderSide, Signal
 from src.risk.position_sizer import PositionSizer
+
+logger = logging.getLogger(__name__)
 
 
 class RiskManager:

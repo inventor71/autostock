@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 import pandas as pd
-from loguru import logger
 
 from src.backtest.metrics import generate_report
 from src.core.exceptions import InsufficientDataError
@@ -12,6 +12,8 @@ from src.core.types import OrderSide, Signal
 from src.execution.brokers.simulated import SimulatedBroker
 from src.risk.manager import RiskManager
 from src.strategy.base import BaseStrategy
+
+logger = logging.getLogger(__name__)
 
 
 class BacktestEngine:
@@ -28,10 +30,12 @@ class BacktestEngine:
         initial_capital: float = 100000.0,
         commission_pct: float = 0.0,
         risk_config: dict | None = None,
+        bt_logger: logging.Logger | None = None,
     ):
         self.strategy = strategy
         self.initial_capital = initial_capital
         self.commission_pct = commission_pct
+        self._logger = bt_logger or logger
         self.broker = SimulatedBroker(
             initial_capital=initial_capital,
             commission_pct=commission_pct,
@@ -74,7 +78,7 @@ class BacktestEngine:
         equity_curve = []
         trades = []
 
-        logger.info(
+        self._logger.info(
             f"Backtesting {self.strategy.name} on {symbol}: "
             f"{len(bars)} bars, warmup={warmup_period}"
         )
@@ -102,7 +106,7 @@ class BacktestEngine:
                         "pnl": self._calc_trade_pnl(filled, portfolio),
                     })
                 except Exception as e:
-                    logger.debug(f"SL/TP order failed: {e}")
+                    self._logger.debug(f"SL/TP order failed: {e}")
 
             # Generate signal from strategy
             history = bars.iloc[:i + 1]
@@ -128,7 +132,7 @@ class BacktestEngine:
                         "pnl": self._calc_trade_pnl(filled, portfolio),
                     })
                 except Exception as e:
-                    logger.debug(f"Order failed: {e}")
+                    self._logger.debug(f"Order failed: {e}")
 
             # Record equity
             portfolio = self.broker.get_portfolio_state()
@@ -153,7 +157,7 @@ class BacktestEngine:
             equity_curve=equity_curve,
         )
 
-        logger.info(
+        self._logger.info(
             f"Backtest complete: return={result.total_return_pct:.2f}%, "
             f"sharpe={result.sharpe_ratio:.2f}, maxDD={result.max_drawdown_pct:.2f}%, "
             f"trades={result.total_trades}"
