@@ -44,6 +44,7 @@ def create_strategies(strategies_config: dict):
     import src.strategy.ml.lstm_strategy
     import src.strategy.ensemble.voting
     import src.strategy.ensemble.weighted
+    import src.strategy.llm.llm_strategy
 
     from src.strategy.registry import create_strategy
 
@@ -66,10 +67,23 @@ def create_strategies(strategies_config: dict):
     return strategies
 
 
-def run_backtest(settings, strategies_config: dict) -> None:
-    """Run backtest mode."""
+def run_backtest(
+    settings,
+    strategies_config: dict,
+    improve_prompt: bool = False,
+    improvement_iterations: int = 1,
+) -> None:
+    """Run backtest mode.
+
+    Args:
+        settings: Application settings.
+        strategies_config: Strategy configuration dict.
+        improve_prompt: Whether to run prompt auto-improvement after backtest.
+        improvement_iterations: Number of improvement iterations to run.
+    """
     from datetime import datetime
     from src.backtest.engine import BacktestEngine
+    from src.core.models import BacktestResult
 
     strategies = create_strategies(strategies_config)
     if not strategies:
@@ -78,6 +92,9 @@ def run_backtest(settings, strategies_config: dict) -> None:
 
     data_provider = create_data_provider(settings)
     risk_config = settings.risk.model_dump()
+
+    # Collect results for LLM strategies (for potential improvement)
+    llm_results: list[BacktestResult] = []
 
     for symbol in settings.trading.symbols:
         logger.info(f"Backtesting {symbol}...")
@@ -106,6 +123,73 @@ def run_backtest(settings, strategies_config: dict) -> None:
             print(f"Win Rate: {result.win_rate:.1%}")
             print(f"Profit Factor: {result.profit_factor:.2f}")
             print(f"Final Capital: ${result.final_capital:,.2f}")
+
+            # Collect LLM strategy results for improvement
+            if result.strategy_name == "llm":
+                llm_results.append(result)
+
+    # Run prompt auto-improvement if requested
+    if improve_prompt and llm_results:
+        _run_prompt_improvement(settings, llm_results, improvement_iterations)
+
+
+def _run_prompt_improvement(
+    settings,
+    backtest_results: list,
+    iterations: int = 1,
+) -> None:
+    """Run prompt auto-improvement cycle.
+
+    Args:
+        settings: Application settings.
+        backtest_results: List of BacktestResult from LLM strategy.
+        iterations: Number of improvement iterations.
+    """
+    from src.strategy.llm.prompt_manager import PromptManager
+    from src.strategy.llm.auto_improver import PromptAutoImprover
+
+    logger.info(f"Starting prompt auto-improvement ({iterations} iteration(s))...")
+
+    prompt_manager = PromptManager()
+    improver = PromptAutoImprover(prompt_manager=prompt_manager)
+
+    # Record current results
+    current_version = settings.llm.prompt_version
+    if current_version == "latest":
+        current_prompt = prompt_manager.get_prompt("latest")
+        if current_prompt:
+            current_version = current_prompt.version
+        else:
+            current_version = "v1"
+
+    # Record backtest results for current version
+    for result in backtest_results:
+        prompt_manager.record_backtest_result(current_version, result)
+
+    # Run improvement iterations
+    version = current_version
+    for i in range(iterations):
+        logger.info(f"Improvement iteration {i + 1}/{iterations}")
+
+        new_version = improver.analyze_and_improve(version, backtest_results)
+        if new_version is None:
+            logger.warning(f"Improvement iteration {i + 1} failed to generate new prompt")
+            break
+
+        print(f"\n{'='*50}")
+        print(f"Created improved prompt: {new_version.version}")
+        print(f"Parent version: {version}")
+        if new_version.improvement_notes:
+            print(f"Changes:\n{new_version.improvement_notes}")
+        print(f"{'='*50}")
+
+        version = new_version.version
+
+    # Show version comparison
+    if version != current_version:
+        comparison = prompt_manager.compare_versions(current_version, version)
+        print(f"\nVersion Comparison ({current_version} -> {version}):")
+        print(f"  Note: Re-run backtest with new prompt to see actual improvement")
 
 
 def run_paper(settings, strategies_config: dict) -> None:
@@ -176,6 +260,17 @@ def main():
         default=None,
         help="Log level (overrides config)",
     )
+    parser.add_argument(
+        "--improve-prompt",
+        action="store_true",
+        help="Run LLM prompt auto-improvement after backtest (requires 'llm' strategy)",
+    )
+    parser.add_argument(
+        "--improvement-iterations",
+        type=int,
+        default=1,
+        help="Number of prompt improvement iterations (default: 1)",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -191,7 +286,12 @@ def main():
     logger.info(f"Autostock starting in {mode} mode")
 
     if mode == "backtest":
-        run_backtest(settings, strategies_config)
+        run_backtest(
+            settings,
+            strategies_config,
+            improve_prompt=args.improve_prompt,
+            improvement_iterations=args.improvement_iterations,
+        )
     elif mode in ("paper", "live"):
         run_paper(settings, strategies_config)
     else:

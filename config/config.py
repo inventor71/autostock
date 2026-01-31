@@ -57,6 +57,15 @@ class AppConfig(BaseModel):
     log_level: str = "INFO"
 
 
+class LLMConfig(BaseModel):
+    provider: str = "claude"  # claude, openai
+    model: str | None = None  # None uses provider default
+    temperature: float = 0.3
+    prompt_version: str = "latest"  # latest, best, v1, v2, etc.
+    lookback_days: int = 30
+    include_news: bool = True
+
+
 class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     broker: BrokerConfig = BrokerConfig()
@@ -65,9 +74,12 @@ class Settings(BaseSettings):
     risk: RiskConfig = RiskConfig()
     backtest: BacktestConfig = BacktestConfig()
     monitoring: MonitoringConfig = MonitoringConfig()
+    llm: LLMConfig = LLMConfig()
 
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
 
     model_config = {"env_prefix": "", "env_nested_delimiter": "__"}
 

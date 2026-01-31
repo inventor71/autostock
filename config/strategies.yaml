@@ -47,6 +47,15 @@ strategies:
       dropout: 0.2
       model_path: ./models/lstm_model.pt
 
+  llm:
+    class: LLMStrategy
+    params:
+      provider: claude           # claude or openai
+      prompt_version: latest     # latest, best, v1, v2, etc.
+      lookback_days: 30
+      include_news: true
+      temperature: 0.3
+
 ensemble:
   type: weighted  # voting, weighted
   strategies:
