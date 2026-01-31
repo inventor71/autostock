@@ -93,40 +93,57 @@ def run_backtest(
     data_provider = create_data_provider(settings)
     risk_config = settings.risk.model_dump()
 
+    # Load market data for entire universe
+    universe = settings.trading.symbols
+    logger.info(f"Loading market data for {len(universe)} symbols...")
+    bars_dict = {}
+    for symbol in universe:
+        try:
+            bars = data_provider.get_bars(
+                symbol=symbol,
+                start=datetime.fromisoformat(settings.backtest.start_date),
+                end=datetime.fromisoformat(settings.backtest.end_date),
+            )
+            bars_dict[symbol] = bars
+            logger.debug(f"Loaded {len(bars)} bars for {symbol}")
+        except Exception as e:
+            logger.warning(f"Failed to load data for {symbol}: {e}")
+
+    if not bars_dict:
+        logger.error("No market data loaded")
+        return
+
+    logger.info(f"Loaded data for {len(bars_dict)} symbols")
+
     # Collect results for LLM strategies (for potential improvement)
     llm_results: list[BacktestResult] = []
 
-    for symbol in settings.trading.symbols:
-        logger.info(f"Backtesting {symbol}...")
-        bars = data_provider.get_bars(
-            symbol=symbol,
-            start=datetime.fromisoformat(settings.backtest.start_date),
-            end=datetime.fromisoformat(settings.backtest.end_date),
+    for strategy in strategies:
+        engine = BacktestEngine(
+            strategy=strategy,
+            initial_capital=settings.backtest.initial_capital,
+            commission_pct=settings.backtest.commission_pct,
+            risk_config=risk_config,
         )
 
-        for strategy in strategies:
-            engine = BacktestEngine(
-                strategy=strategy,
-                initial_capital=settings.backtest.initial_capital,
-                commission_pct=settings.backtest.commission_pct,
-                risk_config=risk_config,
-            )
-            result = engine.run(symbol, bars)
-            print(f"\n{'='*50}")
-            print(f"Strategy: {result.strategy_name} | Symbol: {symbol}")
-            print(f"Period: {settings.backtest.start_date} to {settings.backtest.end_date}")
-            print(f"{'='*50}")
-            print(f"Total Return: {result.total_return_pct:.2f}%")
-            print(f"Sharpe Ratio: {result.sharpe_ratio:.2f}")
-            print(f"Max Drawdown: {result.max_drawdown_pct:.2f}%")
-            print(f"Total Trades: {result.total_trades}")
-            print(f"Win Rate: {result.win_rate:.1%}")
-            print(f"Profit Factor: {result.profit_factor:.2f}")
-            print(f"Final Capital: ${result.final_capital:,.2f}")
+        # Run backtest with full universe
+        result = engine.run(list(bars_dict.keys()), bars_dict)
 
-            # Collect LLM strategy results for improvement
-            if result.strategy_name == "llm":
-                llm_results.append(result)
+        print(f"\n{'='*50}")
+        print(f"Strategy: {result.strategy_name} | Universe: {len(bars_dict)} symbols")
+        print(f"Period: {settings.backtest.start_date} to {settings.backtest.end_date}")
+        print(f"{'='*50}")
+        print(f"Total Return: {result.total_return_pct:.2f}%")
+        print(f"Sharpe Ratio: {result.sharpe_ratio:.2f}")
+        print(f"Max Drawdown: {result.max_drawdown_pct:.2f}%")
+        print(f"Total Trades: {result.total_trades}")
+        print(f"Win Rate: {result.win_rate:.1%}")
+        print(f"Profit Factor: {result.profit_factor:.2f}")
+        print(f"Final Capital: ${result.final_capital:,.2f}")
+
+        # Collect LLM strategy results for improvement
+        if result.strategy_name == "llm":
+            llm_results.append(result)
 
     # Run prompt auto-improvement if requested
     if improve_prompt and llm_results:
@@ -219,7 +236,7 @@ def run_paper(settings, strategies_config: dict) -> None:
         broker=broker,
         strategies=strategies,
         risk_manager=risk_manager,
-        symbols=settings.trading.symbols,
+        universe=settings.trading.symbols,
         timeframe=TimeFrame(settings.data.default_timeframe),
     )
 

@@ -35,6 +35,38 @@ class BaseStrategy(ABC):
         """
         pass
 
+    def supports_selection(self) -> bool:
+        """Return whether this strategy supports dynamic symbol selection.
+
+        Strategies that return True should implement select_symbols() to
+        dynamically choose which symbols to trade from the universe.
+
+        Returns:
+            False by default (trades all symbols in universe).
+        """
+        return False
+
+    def select_symbols(
+        self,
+        universe: list[str],
+        market_data: dict[str, pd.DataFrame],
+        portfolio: PortfolioState | None = None,
+    ) -> list[str]:
+        """Select symbols to trade from the universe.
+
+        Override this method in subclasses to implement custom symbol
+        selection logic (e.g., momentum screening, sector rotation).
+
+        Args:
+            universe: List of available symbols to choose from.
+            market_data: Dict mapping symbol to its OHLCV DataFrame.
+            portfolio: Current portfolio state (optional).
+
+        Returns:
+            List of symbols to trade (default: entire universe).
+        """
+        return universe
+
     def _make_signal(
         self,
         symbol: str,

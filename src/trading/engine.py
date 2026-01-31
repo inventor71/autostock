@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pandas as pd
 from loguru import logger
 
 from src.core.exceptions import InsufficientDataError
@@ -15,6 +16,11 @@ class TradingEngine:
     """Main orchestrator that connects data, strategy, risk, and execution.
 
     Flow: Data -> Strategy -> Risk Manager -> Broker
+
+    The engine supports universe-based dynamic symbol selection:
+    - `universe` defines the pool of tradeable symbols
+    - Strategies can implement `select_symbols()` to dynamically choose
+      which symbols to trade from the universe
     """
 
     def __init__(
@@ -23,7 +29,7 @@ class TradingEngine:
         broker: BaseBroker,
         strategies: list[BaseStrategy],
         risk_manager: RiskManager,
-        symbols: list[str],
+        universe: list[str],
         timeframe: TimeFrame = TimeFrame.DAY_1,
         lookback: int = 100,
     ):
@@ -31,7 +37,7 @@ class TradingEngine:
         self.broker = broker
         self.strategies = strategies
         self.risk_manager = risk_manager
-        self.symbols = symbols
+        self.universe = universe
         self.timeframe = timeframe
         self.lookback = lookback
 
@@ -46,19 +52,33 @@ class TradingEngine:
         # Check stop-loss / take-profit first
         self._check_risk_exits(portfolio, filled_orders)
 
-        # Generate and execute signals for each symbol
-        for symbol in self.symbols:
-            try:
-                bars = self.data_provider.get_bars(
-                    symbol=symbol,
-                    timeframe=self.timeframe,
-                    limit=self.lookback,
-                )
-            except Exception as e:
-                logger.error(f"Failed to get data for {symbol}: {e}")
-                continue
+        # Load market data for entire universe
+        market_data = self._load_market_data()
 
-            for strategy in self.strategies:
+        # Process each strategy
+        for strategy in self.strategies:
+            # Determine which symbols this strategy will trade
+            if strategy.supports_selection():
+                try:
+                    selected_symbols = strategy.select_symbols(
+                        self.universe, market_data, portfolio
+                    )
+                    logger.debug(
+                        f"Strategy {strategy.name} selected {len(selected_symbols)} "
+                        f"symbols from universe of {len(self.universe)}"
+                    )
+                except Exception as e:
+                    logger.error(f"Symbol selection failed for {strategy.name}: {e}")
+                    selected_symbols = self.universe
+            else:
+                selected_symbols = self.universe
+
+            # Generate signals for selected symbols
+            for symbol in selected_symbols:
+                bars = market_data.get(symbol)
+                if bars is None or bars.empty:
+                    continue
+
                 try:
                     signal = strategy.generate_signal(symbol, bars, portfolio)
                     self._process_signal(signal, symbol, portfolio, filled_orders)
@@ -67,10 +87,29 @@ class TradingEngine:
                 except Exception as e:
                     logger.error(f"Strategy {strategy.name} error on {symbol}: {e}")
 
-            # Refresh portfolio after processing symbol
+            # Refresh portfolio after processing strategy
             portfolio = self.broker.get_portfolio_state()
 
         return filled_orders
+
+    def _load_market_data(self) -> dict[str, pd.DataFrame]:
+        """Load market data for all symbols in the universe.
+
+        Returns:
+            Dict mapping symbol to its OHLCV DataFrame.
+        """
+        market_data = {}
+        for symbol in self.universe:
+            try:
+                bars = self.data_provider.get_bars(
+                    symbol=symbol,
+                    timeframe=self.timeframe,
+                    limit=self.lookback,
+                )
+                market_data[symbol] = bars
+            except Exception as e:
+                logger.error(f"Failed to get data for {symbol}: {e}")
+        return market_data
 
     def _process_signal(
         self,
@@ -136,7 +175,7 @@ class TradingEngine:
         portfolio = self.broker.get_portfolio_state()
         return {
             "mode": "live",
-            "symbols": self.symbols,
+            "universe": self.universe,
             "strategies": [s.name for s in self.strategies],
             "cash": portfolio.cash,
             "equity": portfolio.equity,

@@ -15,6 +15,9 @@ data:
   default_timeframe: 1d
 
 trading:
+  # Universe: Pool of tradeable symbols. Strategies can dynamically select
+  # which symbols to trade from this universe via select_symbols() method.
+  # Use --symbols CLI flag to override for testing with a subset.
   symbols:
     # Technology
     - AAPL
