@@ -150,6 +150,9 @@ class LLMStrategy(BaseStrategy):
 
             signal = Signal(signal_data["signal"])
             confidence = float(signal_data.get("confidence", 0.5))
+            sell_pct = float(signal_data.get("sell_pct", 1.0))
+            # Clamp sell_pct to valid range
+            sell_pct = max(0.0, min(1.0, sell_pct))
 
             metadata = {
                 "reasoning": signal_data.get("reasoning", ""),
@@ -161,13 +164,15 @@ class LLMStrategy(BaseStrategy):
 
             logger.debug(
                 f"LLM signal for {symbol}: {signal.value} "
-                f"(confidence: {confidence:.2f}) - {metadata['reasoning'][:100]}..."
+                f"(confidence: {confidence:.2f}, sell_pct: {sell_pct:.0%}) - "
+                f"{metadata['reasoning'][:100]}..."
             )
 
             return self._make_signal(
                 symbol=symbol,
                 signal=signal,
                 confidence=confidence,
+                sell_pct=sell_pct,
                 metadata=metadata,
             )
 

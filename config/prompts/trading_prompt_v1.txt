@@ -50,6 +50,7 @@ You MUST respond with valid JSON only. No additional text before or after.
 {
     "signal": "BUY" | "SELL" | "HOLD",
     "confidence": 0.0 to 1.0,
+    "sell_pct": 0.0 to 1.0,
     "reasoning": "Brief explanation of the key factors driving this decision",
     "key_levels": {
         "entry": suggested entry price or null,
@@ -59,6 +60,13 @@ You MUST respond with valid JSON only. No additional text before or after.
     "risks": ["list of key risks to monitor"]
 }
 ```
+
+**sell_pct (Partial Sell):**
+- Only applies when signal is "SELL"
+- 1.0 = sell entire position (default)
+- 0.5 = sell 50% of position
+- 0.3 = sell 30% of position
+- Use partial sells to take profits while maintaining exposure, or to reduce risk gradually
 
 ## Important Guidelines
 

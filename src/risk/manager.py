@@ -101,14 +101,23 @@ class RiskManager:
             logger.debug(f"No position for {signal.symbol}, skipping sell")
             return None
 
+        # Support partial sell
+        sell_pct = getattr(signal, "sell_pct", 1.0)
+        sell_pct = max(0.0, min(1.0, sell_pct))  # Clamp to 0-1 range
+
+        qty = int(position.qty * sell_pct)
+        if qty <= 0:
+            qty = 1  # Minimum 1 share
+
         logger.info(
-            f"Risk approved: SELL {position.qty} {signal.symbol} @ ~{price:.2f}"
+            f"Risk approved: SELL {qty} {signal.symbol} @ ~{price:.2f} "
+            f"({sell_pct:.0%} of {position.qty} shares)"
         )
 
         return Order(
             symbol=signal.symbol,
             side=OrderSide.SELL,
-            qty=position.qty,
+            qty=qty,
         )
 
     def check_stop_loss(

@@ -40,12 +40,14 @@ class BaseStrategy(ABC):
         symbol: str,
         signal: Signal,
         confidence: float = 0.5,
+        sell_pct: float = 1.0,
         metadata: dict | None = None,
     ) -> TradeSignal:
         return TradeSignal(
             symbol=symbol,
             signal=signal,
             confidence=confidence,
+            sell_pct=sell_pct,
             strategy_name=self.name,
             metadata=metadata or {},
         )

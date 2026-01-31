@@ -23,6 +23,7 @@ class TradeSignal(BaseModel):
     symbol: str
     signal: Signal
     confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    sell_pct: float = Field(ge=0.0, le=1.0, default=1.0)  # Sell percentage (1.0 = full position)
     strategy_name: str = ""
     timestamp: datetime = Field(default_factory=datetime.now)
     metadata: dict = Field(default_factory=dict)
