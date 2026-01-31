@@ -16,25 +16,128 @@ data:
 
 trading:
   symbols:
+    # Technology
     - AAPL
     - MSFT
     - GOOGL
+    - GOOG
     - AMZN
+    - NVDA
+    - META
+    - TSLA
+    - AVGO
+    - ORCL
+    - ADBE
+    - CRM
+    - AMD
+    - INTC
+    - CSCO
+    - QCOM
+    - IBM
+    - TXN
+    - NOW
+    - INTU
+    # Finance
+    - JPM
+    - V
+    - MA
+    - BAC
+    - WFC
+    - GS
+    - MS
+    - BLK
+    - SCHW
+    - AXP
+    - C
+    - USB
+    - PNC
+    - TFC
+    - COF
+    # Healthcare
+    - UNH
+    - JNJ
+    - LLY
+    - PFE
+    - ABBV
+    - MRK
+    - TMO
+    - ABT
+    - DHR
+    - BMY
+    - AMGN
+    - MDT
+    - GILD
+    - ISRG
+    - CVS
+    # Consumer
+    - WMT
+    - PG
+    - KO
+    - PEP
+    - COST
+    - MCD
+    - NKE
+    - SBUX
+    - TGT
+    - LOW
+    - HD
+    - DIS
+    - NFLX
+    - CMCSA
+    - VZ
+    # Energy
+    - XOM
+    - CVX
+    - COP
+    - SLB
+    - EOG
+    - PXD
+    - MPC
+    - PSX
+    - VLO
+    - OXY
+    # Industrial
+    - CAT
+    - DE
+    - UPS
+    - BA
+    - HON
+    - UNP
+    - RTX
+    - LMT
+    - GE
+    - MMM
+    # Materials & Real Estate
+    - LIN
+    - APD
+    - SHW
+    - FCX
+    - NEM
+    - AMT
+    - PLD
+    - CCI
+    - EQIX
+    - SPG
+    # ETFs
     - SPY
+    - QQQ
+    - IWM
+    - DIA
+    - VTI
   mode: batch  # batch, realtime
   batch_interval_minutes: 60
 
 risk:
-  max_position_pct: 0.1  # Max 10% of portfolio per position
+  max_position_pct: 0.05  # Max 5% of portfolio per position (more diversified)
   max_portfolio_risk: 0.02  # Max 2% daily portfolio risk
   stop_loss_pct: 0.05  # 5% stop loss
   take_profit_pct: 0.15  # 15% take profit
-  max_open_positions: 10
+  max_open_positions: 20  # Allow more positions for diversification
 
 backtest:
-  start_date: "2023-01-01"
-  end_date: "2024-01-01"
-  initial_capital: 100000.0
+  start_date: "2020-01-01"
+  end_date: "2025-01-01"
+  initial_capital: 50000.0
   commission_pct: 0.0  # Alpaca is commission-free
 
 monitoring:

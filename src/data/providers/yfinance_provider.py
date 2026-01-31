@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import warnings
 from datetime import datetime, timedelta
 
 import pandas as pd
 import yfinance as yf
+
+warnings.filterwarnings("ignore", message="Timestamp.utcnow is deprecated")
 from loguru import logger
 
 from src.core.exceptions import DataProviderError
