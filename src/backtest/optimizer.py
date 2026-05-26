@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import logging
 from itertools import product
-from typing import Any, Type
+from typing import TYPE_CHECKING, Any, Type
 
 import pandas as pd
+from loguru import logger
 
 from src.backtest.engine import BacktestEngine
 from src.core.models import BacktestResult
 from src.strategy.base import BaseStrategy
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from loguru import Logger
 
 
 class ParameterOptimizer:
@@ -22,7 +23,7 @@ class ParameterOptimizer:
         param_grid: dict[str, list[Any]],
         initial_capital: float = 100000.0,
         metric: str = "sharpe_ratio",
-        bt_logger: logging.Logger | None = None,
+        bt_logger: Logger | None = None,
     ):
         self.strategy_class = strategy_class
         self.param_grid = param_grid

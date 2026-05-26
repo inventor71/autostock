@@ -128,7 +128,7 @@ trading:
     - DIA
     - VTI
   mode: batch  # batch, realtime
-  batch_interval_minutes: 60
+  batch_interval_minutes: 5
 
 risk:
   max_position_pct: 0.05  # Max 5% of portfolio per position (more diversified)

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import pandas as pd
+from loguru import logger
 
 from src.backtest.metrics import generate_report
 from src.core.exceptions import InsufficientDataError
@@ -13,7 +14,8 @@ from src.execution.brokers.simulated import SimulatedBroker
 from src.risk.manager import RiskManager
 from src.strategy.base import BaseStrategy
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from loguru import Logger
 
 
 class BacktestEngine:
@@ -30,7 +32,7 @@ class BacktestEngine:
         initial_capital: float = 100000.0,
         commission_pct: float = 0.0,
         risk_config: dict | None = None,
-        bt_logger: logging.Logger | None = None,
+        bt_logger: Logger | None = None,
     ):
         self.strategy = strategy
         self.initial_capital = initial_capital

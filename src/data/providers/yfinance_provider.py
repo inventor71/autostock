@@ -77,14 +77,37 @@ class YFinanceProvider(BaseDataProvider):
 
     @staticmethod
     def _limit_to_period(limit: int, timeframe: TimeFrame) -> str:
-        if timeframe in (TimeFrame.MINUTE_1, TimeFrame.MINUTE_5):
-            days = max(1, limit // 78)  # ~78 bars per trading day for 5m
+        """Translate a desired bar count into a yfinance `period` string.
+
+        yfinance fetches by calendar period, not bar count, so we estimate how
+        many calendar days are needed to yield ~`limit` bars of the requested
+        timeframe, then pad to absorb weekends, holidays and partial sessions.
+
+        yfinance intraday history is capped: 1m only goes back ~7 days and
+        other intraday intervals (5m/15m/30m/1h) ~60 days. Hourly bars can
+        reach ~730 days. Those caps are enforced here. For a 5-minute batch
+        interval over ~13 regular-hours bars/day, `limit=100` resolves to a few
+        days of bars — comfortably above the ~50 bars the LLM strategy needs.
+        """
+        # ~78 five-minute bars and ~26 fifteen/thirty-minute bars per regular
+        # 6.5h session. Estimate the calendar days needed, then add 1.4x slack
+        # plus a couple of days so partial/holiday sessions can't starve a
+        # strategy that needs ~50 bars.
+        def _pad_days(bars_per_day: int) -> int:
+            sessions = max(1, limit / bars_per_day)
+            return int(sessions * 1.4) + 2
+
+        if timeframe == TimeFrame.MINUTE_1:
+            days = _pad_days(390)  # 390 one-minute bars per session
+            return f"{min(days, 7)}d"  # yfinance: 1m only ~7 days back
+        elif timeframe == TimeFrame.MINUTE_5:
+            days = _pad_days(78)
             return f"{min(days, 59)}d"
         elif timeframe in (TimeFrame.MINUTE_15, TimeFrame.MINUTE_30):
-            days = max(1, limit // 26)
+            days = _pad_days(26)
             return f"{min(days, 59)}d"
         elif timeframe in (TimeFrame.HOUR_1, TimeFrame.HOUR_4):
-            days = max(1, limit // 7)
+            days = _pad_days(7)
             return f"{min(days, 729)}d"
         elif timeframe == TimeFrame.DAY_1:
             days = max(1, int(limit * 1.5))  # Account for weekends

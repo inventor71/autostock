@@ -211,7 +211,7 @@ def _run_prompt_improvement(
 
 def run_paper(settings, strategies_config: dict) -> None:
     """Run paper trading mode."""
-    from src.core.types import TimeFrame
+    from src.core.types import TimeFrame, timeframe_from_minutes
     from src.risk.manager import RiskManager
     from src.trading.engine import TradingEngine
     from src.trading.modes.batch import BatchTradingMode
@@ -231,13 +231,33 @@ def run_paper(settings, strategies_config: dict) -> None:
         max_open_positions=settings.risk.max_open_positions,
     )
 
+    # In batch mode the bar timeframe must align with how often the cycle runs:
+    # a 5-minute interval should evaluate 5-minute bars, not re-read the same
+    # daily bar. Realtime mode keeps the configured default_timeframe.
+    if settings.trading.mode == "batch":
+        interval = settings.trading.batch_interval_minutes
+        timeframe = timeframe_from_minutes(interval)
+        if timeframe.minutes != interval:
+            logger.warning(
+                f"batch_interval_minutes={interval} has no exact bar timeframe; "
+                f"using nearest supported timeframe {timeframe.value} "
+                f"({timeframe.minutes}min) for OHLCV bars"
+            )
+        else:
+            logger.info(
+                f"Batch mode: fetching {timeframe.value} bars to match "
+                f"{interval}min interval"
+            )
+    else:
+        timeframe = TimeFrame(settings.data.default_timeframe)
+
     engine = TradingEngine(
         data_provider=data_provider,
         broker=broker,
         strategies=strategies,
         risk_manager=risk_manager,
         universe=settings.trading.symbols,
-        timeframe=TimeFrame(settings.data.default_timeframe),
+        timeframe=timeframe,
     )
 
     if settings.trading.mode == "realtime":

@@ -167,7 +167,7 @@ class LLMStrategy(BaseStrategy):
             logger.debug(
                 f"LLM signal for {symbol}: {signal.value} "
                 f"(confidence: {confidence:.2f}, sell_pct: {sell_pct:.0%}) - "
-                f"{metadata['reasoning'][:100]}..."
+                f"{metadata['reasoning'][:500]}..."
             )
 
             return self._make_signal(
