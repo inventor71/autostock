@@ -134,12 +134,27 @@ class LLMStrategy(BaseStrategy):
         try:
             # Format market data for LLM
             news = self._get_news(symbol) if self.include_news else None
+            self._log_news(symbol, news)
             context = self.formatter.format_for_llm(symbol, bars, news)
             context = truncate_context(context)
 
             # Add portfolio context if available
             if portfolio:
                 context += self._format_portfolio_context(symbol, portfolio)
+
+            # Log the full context sent to the LLM for debugging
+            logger.debug(
+                "LLM request for {} ({} provider, model {}):\n"
+                "----- SYSTEM PROMPT -----\n{}\n"
+                "----- USER MESSAGE ({} chars) -----\n{}\n"
+                "----- END -----",
+                symbol,
+                self.provider,
+                self.model,
+                self.system_prompt,
+                len(context),
+                context,
+            )
 
             # Call LLM API
             response_text = self.client.complete(
@@ -197,6 +212,30 @@ class LLMStrategy(BaseStrategy):
         except Exception as e:
             logger.debug(f"Could not fetch news for {symbol}: {e}")
             return None
+
+    def _log_news(self, symbol: str, news: list | None) -> None:
+        """Log fetched news items for debugging."""
+        if not self.include_news:
+            return
+        if not news:
+            logger.debug(f"No news items for {symbol}")
+            return
+
+        lines = [f"Fetched {len(news)} news items for {symbol}:"]
+        for i, item in enumerate(news, 1):
+            date_str = (
+                item.published_at.strftime("%Y-%m-%d %H:%M")
+                if getattr(item, "published_at", None)
+                else "N/A"
+            )
+            sentiment = getattr(item, "sentiment_score", None)
+            sentiment_str = f"{sentiment:+.2f}" if sentiment is not None else "n/a"
+            publisher = getattr(item, "publisher", "") or "unknown"
+            lines.append(
+                f"  {i}. [{date_str}] ({publisher}, sentiment={sentiment_str}) "
+                f"{getattr(item, 'title', '')}"
+            )
+        logger.debug("\n".join(lines))
 
     def _format_portfolio_context(self, symbol: str, portfolio: PortfolioState) -> str:
         """Format portfolio context for LLM."""
