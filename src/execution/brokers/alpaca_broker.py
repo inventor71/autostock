@@ -7,7 +7,7 @@ from loguru import logger
 
 from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, Order, Position, PortfolioState
-from src.core.types import OrderSide, OrderType
+from src.core.types import OrderClass, OrderSide, OrderType
 from src.execution.base import BaseBroker
 
 try:
@@ -17,8 +17,15 @@ try:
         LimitOrderRequest,
         StopOrderRequest,
         StopLimitOrderRequest,
+        TakeProfitRequest,
+        StopLossRequest,
     )
-    from alpaca.trading.enums import OrderSide as AlpacaSide, OrderStatus, TimeInForce
+    from alpaca.trading.enums import (
+        OrderSide as AlpacaSide,
+        OrderClass as AlpacaOrderClass,
+        OrderStatus,
+        TimeInForce,
+    )
 except ImportError:
     TradingClient = None
 
@@ -70,42 +77,7 @@ class AlpacaBroker(BaseBroker):
     def submit_order(self, order: Order) -> FilledOrder:
         try:
             side = AlpacaSide.BUY if order.side == OrderSide.BUY else AlpacaSide.SELL
-            tif = TimeInForce.DAY
-
-            if order.order_type == OrderType.MARKET:
-                request = MarketOrderRequest(
-                    symbol=order.symbol,
-                    qty=order.qty,
-                    side=side,
-                    time_in_force=tif,
-                )
-            elif order.order_type == OrderType.LIMIT:
-                request = LimitOrderRequest(
-                    symbol=order.symbol,
-                    qty=order.qty,
-                    side=side,
-                    time_in_force=tif,
-                    limit_price=order.limit_price,
-                )
-            elif order.order_type == OrderType.STOP:
-                request = StopOrderRequest(
-                    symbol=order.symbol,
-                    qty=order.qty,
-                    side=side,
-                    time_in_force=tif,
-                    stop_price=order.stop_price,
-                )
-            elif order.order_type == OrderType.STOP_LIMIT:
-                request = StopLimitOrderRequest(
-                    symbol=order.symbol,
-                    qty=order.qty,
-                    side=side,
-                    time_in_force=tif,
-                    limit_price=order.limit_price,
-                    stop_price=order.stop_price,
-                )
-            else:
-                raise BrokerError(f"Unsupported order type: {order.order_type}")
+            request = self._build_request(order, side)
 
             result = self._client.submit_order(request)
             logger.info(
@@ -137,6 +109,70 @@ class AlpacaBroker(BaseBroker):
             raise
         except Exception as e:
             raise BrokerError(f"Order submission failed: {e}") from e
+
+    def _time_in_force(self, order: Order):
+        """Protective legs persist across sessions (GTC); simple orders honour
+        the order's TIF (default DAY)."""
+        if order.order_class in (OrderClass.BRACKET, OrderClass.OCO):
+            return TimeInForce.GTC
+        return TimeInForce.GTC if str(order.time_in_force).lower() == "gtc" else TimeInForce.DAY
+
+    def _build_request(self, order: Order, side):
+        """Map an Order to the matching Alpaca request, including bracket/OCO."""
+        tif = self._time_in_force(order)
+
+        if order.order_class == OrderClass.BRACKET:
+            # Entry leg + OCO protection: LIMIT take-profit, plain STOP stop-loss
+            # (stop_price only -> market-on-touch, guaranteed exit).
+            take_profit = TakeProfitRequest(limit_price=order.take_profit_price)
+            stop_loss = StopLossRequest(stop_price=order.stop_loss_price)
+            kwargs = dict(
+                symbol=order.symbol,
+                qty=order.qty,
+                side=side,
+                time_in_force=tif,
+                order_class=AlpacaOrderClass.BRACKET,
+                take_profit=take_profit,
+                stop_loss=stop_loss,
+            )
+            if order.order_type == OrderType.LIMIT:
+                return LimitOrderRequest(limit_price=order.limit_price, **kwargs)
+            return MarketOrderRequest(**kwargs)
+
+        if order.order_class == OrderClass.OCO:
+            # Protection over an existing position: take-profit rides on
+            # limit_price, stop-loss is a plain STOP leg.
+            stop_loss = StopLossRequest(stop_price=order.stop_loss_price)
+            return LimitOrderRequest(
+                symbol=order.symbol,
+                qty=order.qty,
+                side=side,
+                time_in_force=tif,
+                limit_price=order.take_profit_price,
+                order_class=AlpacaOrderClass.OCO,
+                stop_loss=stop_loss,
+            )
+
+        if order.order_type == OrderType.MARKET:
+            return MarketOrderRequest(
+                symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif
+            )
+        if order.order_type == OrderType.LIMIT:
+            return LimitOrderRequest(
+                symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif,
+                limit_price=order.limit_price,
+            )
+        if order.order_type == OrderType.STOP:
+            return StopOrderRequest(
+                symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif,
+                stop_price=order.stop_price,
+            )
+        if order.order_type == OrderType.STOP_LIMIT:
+            return StopLimitOrderRequest(
+                symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif,
+                limit_price=order.limit_price, stop_price=order.stop_price,
+            )
+        raise BrokerError(f"Unsupported order type: {order.order_type}")
 
     def get_position(self, symbol: str) -> Position | None:
         try:

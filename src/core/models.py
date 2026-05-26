@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from src.core.types import OrderSide, OrderType, Signal
+from src.core.types import OrderClass, OrderSide, OrderType, Signal
 
 
 class Bar(BaseModel):
@@ -37,6 +37,24 @@ class Order(BaseModel):
     limit_price: float | None = None
     stop_price: float | None = None
     time_in_force: str = "day"
+
+    # Resting protective legs held at the exchange (BRACKET / OCO). When set,
+    # the take-profit leg is a LIMIT and the stop-loss leg is a plain STOP
+    # (market-on-touch). Brokers submit these as a single OCO pair so the
+    # exchange triggers them on price, gap-safe and without polling.
+    order_class: OrderClass = OrderClass.SIMPLE
+    take_profit_price: float | None = None
+    stop_loss_price: float | None = None
+
+    @model_validator(mode="after")
+    def _check_bracket_legs(self) -> "Order":
+        if self.order_class in (OrderClass.BRACKET, OrderClass.OCO):
+            if self.take_profit_price is None or self.stop_loss_price is None:
+                raise ValueError(
+                    f"{self.order_class.value} order requires both "
+                    f"take_profit_price and stop_loss_price"
+                )
+        return self
 
 
 class FilledOrder(BaseModel):

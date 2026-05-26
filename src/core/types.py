@@ -21,6 +21,21 @@ class OrderType(str, Enum):
     STOP_LIMIT = "stop_limit"
 
 
+class OrderClass(str, Enum):
+    """Order class for resting protective legs held at the exchange.
+
+    SIMPLE  -- a single order (default).
+    BRACKET -- entry leg + take-profit (LIMIT) + stop-loss (STOP) legs as an
+               OCO pair that arms once the entry fills.
+    OCO     -- take-profit + stop-loss legs only, attached to an existing
+               position (no entry leg). Values mirror Alpaca's order classes.
+    """
+
+    SIMPLE = "simple"
+    BRACKET = "bracket"
+    OCO = "oco"
+
+
 class TimeFrame(str, Enum):
     MINUTE_1 = "1m"
     MINUTE_5 = "5m"
