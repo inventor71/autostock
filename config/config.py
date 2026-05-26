@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings
 
 
 CONFIG_DIR = Path(__file__).parent
+PROJECT_ROOT = CONFIG_DIR.parent
 
 
 class BrokerConfig(BaseModel):
@@ -81,7 +82,13 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 
-    model_config = {"env_prefix": "", "env_nested_delimiter": "__"}
+    model_config = {
+        "env_prefix": "",
+        "env_nested_delimiter": "__",
+        "env_file": str(PROJECT_ROOT / ".env"),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 def load_yaml_config(path: Path) -> dict[str, Any]:

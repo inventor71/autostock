@@ -37,3 +37,12 @@ class BaseBroker(ABC):
     def close_position(self, symbol: str) -> FilledOrder | None:
         """Close an existing position entirely."""
         pass
+
+    @abstractmethod
+    def get_order_status(self, order_id: str) -> FilledOrder | None:
+        """Query latest fill state of a previously submitted order.
+
+        Returns FilledOrder with current filled_price/qty (may be 0 if still pending),
+        or None if the order does not exist.
+        """
+        pass

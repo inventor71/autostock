@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
 from loguru import logger
@@ -17,20 +18,54 @@ try:
         StopOrderRequest,
         StopLimitOrderRequest,
     )
-    from alpaca.trading.enums import OrderSide as AlpacaSide, TimeInForce
+    from alpaca.trading.enums import OrderSide as AlpacaSide, OrderStatus, TimeInForce
 except ImportError:
     TradingClient = None
+
+_TERMINAL_STATUSES = frozenset(
+    {
+        "filled",
+        "canceled",
+        "expired",
+        "rejected",
+        "done_for_day",
+        "replaced",
+        "stopped",
+        "suspended",
+    }
+)
 
 
 class AlpacaBroker(BaseBroker):
     """Broker implementation using Alpaca Trading API."""
 
-    def __init__(self, api_key: str, secret_key: str, paper: bool = True):
+    def __init__(
+        self,
+        api_key: str,
+        secret_key: str,
+        paper: bool = True,
+        fill_poll_timeout: float = 5.0,
+        fill_poll_interval: float = 0.2,
+    ):
         if TradingClient is None:
             raise BrokerError("alpaca-py not installed")
         self._client = TradingClient(api_key, secret_key, paper=paper)
         self._paper = paper
+        self._fill_poll_timeout = fill_poll_timeout
+        self._fill_poll_interval = fill_poll_interval
         logger.info(f"AlpacaBroker initialized (paper={paper})")
+
+    def _poll_for_fill(self, order_id: str):
+        """Poll an order until terminal status or timeout; return latest order object."""
+        deadline = time.monotonic() + self._fill_poll_timeout
+        latest = self._client.get_order_by_id(order_id)
+        while time.monotonic() < deadline:
+            status = str(latest.status).split(".")[-1].lower()
+            if status in _TERMINAL_STATUSES:
+                return latest
+            time.sleep(self._fill_poll_interval)
+            latest = self._client.get_order_by_id(order_id)
+        return latest
 
     def submit_order(self, order: Order) -> FilledOrder:
         try:
@@ -78,13 +113,24 @@ class AlpacaBroker(BaseBroker):
                 f"(id={result.id})"
             )
 
+            settled = self._poll_for_fill(str(result.id))
+            filled_price = float(settled.filled_avg_price or 0)
+            filled_qty = float(settled.filled_qty or 0) or order.qty
+            status = str(settled.status).split(".")[-1].lower()
+            if filled_price == 0:
+                logger.warning(
+                    f"Order {result.id} not filled within "
+                    f"{self._fill_poll_timeout}s (status={status}); "
+                    f"call get_order_status() later to refresh"
+                )
+
             return FilledOrder(
-                order_id=str(result.id),
+                order_id=str(settled.id),
                 symbol=order.symbol,
                 side=order.side,
-                qty=order.qty,
-                filled_price=float(result.filled_avg_price or 0),
-                filled_at=result.filled_at or datetime.now(),
+                qty=filled_qty,
+                filled_price=filled_price,
+                filled_at=settled.filled_at or datetime.now(),
             )
 
         except BrokerError:
@@ -148,14 +194,41 @@ class AlpacaBroker(BaseBroker):
         try:
             result = self._client.close_position(symbol)
             logger.info(f"Position closed: {symbol}")
+
+            settled = self._poll_for_fill(str(result.id))
+            filled_price = float(settled.filled_avg_price or 0)
+            filled_qty = float(settled.filled_qty or 0) or float(result.qty or 0)
+            status = str(settled.status).split(".")[-1].lower()
+            if filled_price == 0:
+                logger.warning(
+                    f"Close order {result.id} for {symbol} not filled within "
+                    f"{self._fill_poll_timeout}s (status={status})"
+                )
+
             return FilledOrder(
-                order_id=str(result.id),
+                order_id=str(settled.id),
                 symbol=symbol,
                 side=OrderSide.SELL,
-                qty=float(result.qty or 0),
-                filled_price=float(result.filled_avg_price or 0),
-                filled_at=result.filled_at or datetime.now(),
+                qty=filled_qty,
+                filled_price=filled_price,
+                filled_at=settled.filled_at or datetime.now(),
             )
         except Exception as e:
             logger.warning(f"Failed to close position {symbol}: {e}")
             return None
+
+    def get_order_status(self, order_id: str) -> FilledOrder | None:
+        try:
+            o = self._client.get_order_by_id(order_id)
+        except Exception as e:
+            logger.warning(f"Failed to fetch order {order_id}: {e}")
+            return None
+        side = OrderSide.BUY if str(o.side).split(".")[-1].lower() == "buy" else OrderSide.SELL
+        return FilledOrder(
+            order_id=str(o.id),
+            symbol=o.symbol,
+            side=side,
+            qty=float(o.filled_qty or o.qty or 0),
+            filled_price=float(o.filled_avg_price or 0),
+            filled_at=o.filled_at or datetime.now(),
+        )

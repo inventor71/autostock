@@ -120,6 +120,10 @@ class SimulatedBroker(BaseBroker):
         order = Order(symbol=symbol, side=OrderSide.SELL, qty=pos.qty)
         return self.submit_order(order)
 
+    def get_order_status(self, order_id: str) -> FilledOrder | None:
+        # Simulated broker fills synchronously, so it doesn't retain history.
+        return None
+
     def reset(self) -> None:
         """Reset broker to initial state."""
         self._cash = self._initial_capital
