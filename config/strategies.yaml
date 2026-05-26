@@ -1,5 +1,5 @@
 active_strategies:
-  - ma_crossover
+  - llm
 
 strategies:
   ma_crossover:
@@ -50,7 +50,7 @@ strategies:
   llm:
     class: LLMStrategy
     params:
-      provider: claude           # claude or openai
+      provider: claude_code      # claude or openai or claude_code
       prompt_version: latest     # latest, best, v1, v2, etc.
       lookback_days: 30
       include_news: true

@@ -150,11 +150,12 @@ monitoring:
   telegram_chat_id: ""
 
 llm:
-  provider: claude           # claude or openai
-  model: null                # null uses provider default (claude-sonnet-4, gpt-4o)
-  temperature: 0.3           # Lower = more deterministic
+  provider: claude           # claude (API key) | openai (API key) | claude_code (CLI subscription, dev only)
+  model: null                # null uses provider default (claude-sonnet-4 / gpt-4o / 'sonnet' for claude_code)
+  temperature: 0.3           # Lower = more deterministic (ignored by claude_code)
   prompt_version: latest     # latest, best, v1, v2, etc.
   lookback_days: 30          # Days of historical data for context
   include_news: true         # Include news headlines in LLM context
   # API keys should be set via environment variables:
   # ANTHROPIC_API_KEY, OPENAI_API_KEY
+  # claude_code needs no key -- it reuses the logged-in `claude` CLI session.

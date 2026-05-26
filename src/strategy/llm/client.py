@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -140,6 +144,95 @@ class OpenAIClient(BaseLLMClient):
         return self._retry_with_backoff(_call)
 
 
+class ClaudeCodeClient(BaseLLMClient):
+    """Claude Code CLI client.
+
+    Routes completions through the locally installed ``claude`` CLI in headless
+    print mode (``claude -p``), reusing whatever auth the CLI is logged in with
+    -- e.g. a Pro/Max subscription (``claude`` -> ``/login``) -- instead of a
+    metered ``ANTHROPIC_API_KEY``. No API key is required.
+
+    Intended for development/backtesting to avoid per-token billing. For
+    unattended production trading prefer ``ClaudeClient`` (API key): the CLI is
+    heavier per call and subscription auth is meant for interactive use.
+
+    Notes:
+        - ``temperature`` and ``max_tokens`` are not configurable via the CLI and
+          are ignored.
+        - The call runs in a throwaway working directory with tools disabled, so
+          it behaves as a single-shot text completion and never touches the repo
+          or the filesystem.
+    """
+
+    # The CLI launches a full coding agent; deny every tool so it answers as a
+    # plain text completion and can't run commands, read files, or hit the web.
+    _DISALLOWED_TOOLS = (
+        "Bash Edit Write Read Glob Grep WebSearch WebFetch NotebookEdit Task TodoWrite"
+    )
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str | None = None,
+        temperature: float = 0.3,
+        cli_path: str = "claude",
+        timeout: float = 120.0,
+    ):
+        self.cli_path = cli_path
+        self.timeout = timeout
+        super().__init__(api_key=api_key, model=model, temperature=temperature)
+
+    @property
+    def default_model(self) -> str:
+        return "sonnet"  # CLI alias -> current Sonnet; full names also accepted
+
+    def _validate_api_key(self) -> None:
+        # No API key needed -- auth is inherited from the logged-in CLI session.
+        if shutil.which(self.cli_path) is None:
+            raise ValueError(
+                f"`{self.cli_path}` CLI not found on PATH. Install Claude Code and run "
+                f"`{self.cli_path}` once to log in before using the 'claude_code' provider."
+            )
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = 1024,
+    ) -> str:
+        cmd = [
+            self.cli_path,
+            "-p",
+            "--output-format", "json",
+            "--model", self.model,
+            "--system-prompt", system_prompt,
+            "--disallowed-tools", self._DISALLOWED_TOOLS,
+            "--no-session-persistence",
+        ]
+
+        def _call():
+            # Neutral cwd: avoid picking up the project's CLAUDE.md / hooks.
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                proc = subprocess.run(
+                    cmd,
+                    input=user_message,
+                    capture_output=True,
+                    text=True,
+                    cwd=tmp_dir,
+                    timeout=self.timeout,
+                )
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"claude CLI exited with {proc.returncode}: {proc.stderr.strip()}"
+                )
+            payload = json.loads(proc.stdout)
+            if payload.get("is_error"):
+                raise RuntimeError(f"claude CLI returned an error: {payload.get('result')}")
+            return payload["result"]
+
+        return self._retry_with_backoff(_call)
+
+
 def create_llm_client(
     provider: str,
     api_key: str,
@@ -149,8 +242,8 @@ def create_llm_client(
     """Factory function to create an LLM client.
 
     Args:
-        provider: Either "claude" or "openai".
-        api_key: API key for the provider.
+        provider: One of "claude", "openai", or "claude_code".
+        api_key: API key for the provider (unused for "claude_code").
         model: Optional model override.
         temperature: Sampling temperature (default 0.3).
 
@@ -163,6 +256,7 @@ def create_llm_client(
     providers = {
         "claude": ClaudeClient,
         "openai": OpenAIClient,
+        "claude_code": ClaudeCodeClient,
     }
 
     if provider not in providers:

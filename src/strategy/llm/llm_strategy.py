@@ -84,6 +84,8 @@ class LLMStrategy(BaseStrategy):
             return self._settings.anthropic_api_key
         elif self.provider == "openai":
             return self._settings.openai_api_key
+        elif self.provider == "claude_code":
+            return ""  # auth comes from the logged-in Claude Code CLI session
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
 
