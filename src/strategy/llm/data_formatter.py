@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+from loguru import logger
 
 from src.strategy.ml.feature_eng import build_technical_features
 
@@ -41,6 +42,8 @@ class MarketDataFormatter:
         Returns:
             Formatted string for LLM context.
         """
+        bars = self._drop_incomplete_last_bar(bars, symbol)
+
         sections = [
             f"=== Market Analysis for {symbol} ===",
             f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
@@ -59,6 +62,22 @@ class MarketDataFormatter:
             sections.append(self._format_news(news))
 
         return "\n".join(sections)
+
+    @staticmethod
+    def _drop_incomplete_last_bar(bars: pd.DataFrame, symbol: str = "") -> pd.DataFrame:
+        """Drop a trailing in-progress bar so all sections use a completed bar.
+
+        yfinance intraday history includes the current forming bar, whose volume
+        is 0 right after a bar boundary. Using it skews current price, volume
+        ratio and price-volume analysis, so drop it (keeping at least one bar).
+        """
+        if len(bars) > 1 and bars.iloc[-1]["volume"] == 0:
+            logger.debug(
+                f"Dropping incomplete last bar (volume=0) for {symbol or 'symbol'} "
+                f"before LLM formatting"
+            )
+            return bars.iloc[:-1]
+        return bars
 
     def _format_price_summary(self, bars: pd.DataFrame) -> str:
         """Format recent price action summary."""

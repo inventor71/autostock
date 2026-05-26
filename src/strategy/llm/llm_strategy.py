@@ -18,6 +18,16 @@ from src.strategy.llm.client import BaseLLMClient, create_llm_client
 from src.strategy.llm.data_formatter import MarketDataFormatter, truncate_context
 
 
+def _coerce_float(value: Any, default: float) -> float:
+    """Coerce an LLM-supplied value to float, falling back on None/invalid."""
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @register_strategy("llm")
 class LLMStrategy(BaseStrategy):
     """Trading strategy powered by LLM analysis.
@@ -142,7 +152,9 @@ class LLMStrategy(BaseStrategy):
             if portfolio:
                 context += self._format_portfolio_context(symbol, portfolio)
 
-            # Log the full context sent to the LLM for debugging
+            # Log the full context sent to the LLM for debugging.
+            # Use the client's resolved model (self.model may be None when the
+            # provider falls back to its own default).
             logger.debug(
                 "LLM request for {} ({} provider, model {}):\n"
                 "----- SYSTEM PROMPT -----\n{}\n"
@@ -150,7 +162,7 @@ class LLMStrategy(BaseStrategy):
                 "----- END -----",
                 symbol,
                 self.provider,
-                self.model,
+                self.client.model,
                 self.system_prompt,
                 len(context),
                 context,
@@ -166,8 +178,10 @@ class LLMStrategy(BaseStrategy):
             signal_data = self._parse_llm_response(response_text)
 
             signal = Signal(signal_data["signal"])
-            confidence = float(signal_data.get("confidence", 0.5))
-            sell_pct = float(signal_data.get("sell_pct", 1.0))
+            # LLM may return null for confidence/sell_pct (e.g. sell_pct on a
+            # HOLD/BUY), so coerce None to defaults rather than calling float(None).
+            confidence = _coerce_float(signal_data.get("confidence"), 0.5)
+            sell_pct = _coerce_float(signal_data.get("sell_pct"), 1.0)
             # Clamp sell_pct to valid range
             sell_pct = max(0.0, min(1.0, sell_pct))
 

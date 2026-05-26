@@ -72,24 +72,43 @@ class YFinanceNewsProvider:
             return []
 
     def _parse_news_item(self, raw: dict[str, Any]) -> NewsItem | None:
-        """Parse a raw news item from yfinance."""
-        try:
-            # Extract timestamp
-            published_at = None
-            if "providerPublishTime" in raw:
-                try:
-                    published_at = datetime.fromtimestamp(raw["providerPublishTime"])
-                except (ValueError, TypeError):
-                    pass
+        """Parse a raw news item from yfinance.
 
-            # Basic sentiment analysis from title
-            sentiment = self._simple_sentiment(raw.get("title", ""))
+        yfinance >=0.2.x wraps each item as ``{"id": ..., "content": {...}}``
+        with ISO-8601 ``pubDate`` and nested ``provider``/``canonicalUrl``. Older
+        versions returned a flat dict with ``providerPublishTime``/``publisher``.
+        Both layouts are handled here.
+        """
+        try:
+            content = raw.get("content", raw)
+
+            title = content.get("title", "")
+            summary = content.get("summary") or content.get("description", "")
+
+            # Timestamp: new ISO `pubDate` or legacy epoch `providerPublishTime`
+            published_at = self._parse_published_at(content)
+
+            # Publisher: new nested provider.displayName or legacy `publisher`
+            publisher = content.get("publisher", "")
+            provider = content.get("provider")
+            if isinstance(provider, dict):
+                publisher = provider.get("displayName", publisher)
+
+            # Link: new nested canonicalUrl.url or legacy `link`
+            link = content.get("link", "")
+            for key in ("canonicalUrl", "clickThroughUrl"):
+                url_obj = content.get(key)
+                if isinstance(url_obj, dict) and url_obj.get("url"):
+                    link = url_obj["url"]
+                    break
+
+            sentiment = self._simple_sentiment(title)
 
             return NewsItem(
-                title=raw.get("title", ""),
-                summary=raw.get("summary", ""),
-                link=raw.get("link", ""),
-                publisher=raw.get("publisher", ""),
+                title=title,
+                summary=summary,
+                link=link,
+                publisher=publisher,
                 published_at=published_at,
                 sentiment_score=sentiment,
             )
@@ -97,6 +116,22 @@ class YFinanceNewsProvider:
         except Exception as e:
             logger.debug(f"Error parsing news item: {e}")
             return None
+
+    @staticmethod
+    def _parse_published_at(content: dict[str, Any]) -> datetime | None:
+        """Extract publish time from new ISO or legacy epoch fields."""
+        pub_date = content.get("pubDate") or content.get("displayTime")
+        if pub_date:
+            try:
+                return datetime.fromisoformat(str(pub_date).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                pass
+        if "providerPublishTime" in content:
+            try:
+                return datetime.fromtimestamp(content["providerPublishTime"])
+            except (ValueError, TypeError):
+                pass
+        return None
 
     def _simple_sentiment(self, text: str) -> float:
         """Simple keyword-based sentiment analysis.
