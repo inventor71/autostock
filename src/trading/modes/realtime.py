@@ -37,12 +37,17 @@ class RealtimeTradingMode:
         self._running = False
 
     async def _on_bar(self, bar) -> None:
-        """Handle incoming bar data."""
+        """Handle incoming bar data.
+
+        Processes only the symbol whose bar just arrived, using that bar's
+        close as the latest price — instead of reloading and re-running the
+        entire universe on every tick.
+        """
         symbol = bar.symbol
         logger.debug(f"Received bar for {symbol}: close={bar.close}")
 
         try:
-            orders = self.engine.run_cycle()
+            orders = self.engine.run_cycle_for_symbol(symbol, latest_price=bar.close)
             if orders:
                 logger.info(f"Realtime: {len(orders)} orders filled for {symbol}")
         except Exception as e:
@@ -50,10 +55,10 @@ class RealtimeTradingMode:
 
     def start(self) -> None:
         """Start real-time streaming and trading."""
-        logger.info(f"Starting realtime mode for {self.engine.symbols}")
+        logger.info(f"Starting realtime mode for {self.engine.universe}")
         self._running = True
 
-        for symbol in self.engine.symbols:
+        for symbol in self.engine.universe:
             self._stream.subscribe_bars(self._on_bar, symbol)
 
         try:
