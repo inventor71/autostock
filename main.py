@@ -229,6 +229,10 @@ def run_paper(settings, strategies_config: dict) -> None:
         stop_loss_pct=settings.risk.stop_loss_pct,
         take_profit_pct=settings.risk.take_profit_pct,
         max_open_positions=settings.risk.max_open_positions,
+        max_stop_distance_pct=settings.risk.max_stop_distance_pct,
+        atr_stop_multiple=settings.risk.atr_stop_multiple,
+        market_halt_threshold_pct=settings.risk.market_halt_threshold_pct,
+        default_risk_reward=settings.risk.default_risk_reward,
     )
 
     # In batch mode the bar timeframe must align with how often the cycle runs:

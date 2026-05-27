@@ -49,6 +49,10 @@ class BacktestEngine:
             stop_loss_pct=risk_cfg.get("stop_loss_pct", 0.05),
             take_profit_pct=risk_cfg.get("take_profit_pct", 0.15),
             max_open_positions=risk_cfg.get("max_open_positions", 10),
+            max_stop_distance_pct=risk_cfg.get("max_stop_distance_pct", 0.12),
+            atr_stop_multiple=risk_cfg.get("atr_stop_multiple", 3.0),
+            market_halt_threshold_pct=risk_cfg.get("market_halt_threshold_pct", -0.03),
+            default_risk_reward=risk_cfg.get("default_risk_reward", 2.5),
         )
 
     def run(

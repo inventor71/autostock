@@ -128,7 +128,7 @@ trading:
     - DIA
     - VTI
   mode: batch  # batch, realtime
-  batch_interval_minutes: 5
+  batch_interval_minutes: 15
 
 risk:
   max_position_pct: 0.05  # Max 5% of portfolio per position (more diversified)
@@ -136,6 +136,11 @@ risk:
   stop_loss_pct: 0.05  # 5% stop loss
   take_profit_pct: 0.15  # 15% take profit
   max_open_positions: 20  # Allow more positions for diversification
+  # Bracket / defense-in-depth (Phase R2), aggressive preset:
+  max_stop_distance_pct: 0.12  # cap stop distance from entry (per-trade loss cap)
+  atr_stop_multiple: 3.0  # default stop = 3x ATR when LLM gives no level
+  market_halt_threshold_pct: -0.03  # halt new buys if SPY day-change <= -3%
+  default_risk_reward: 2.5  # derived take-profit R:R when LLM gives no target
 
 backtest:
   start_date: "2020-01-01"

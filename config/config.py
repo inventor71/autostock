@@ -36,6 +36,11 @@ class RiskConfig(BaseModel):
     stop_loss_pct: float = 0.05
     take_profit_pct: float = 0.15
     max_open_positions: int = 10
+    # Bracket / defense-in-depth (Phase R2). Used when bracket orders are enabled.
+    max_stop_distance_pct: float = 0.12  # cap how far a stop may sit from entry
+    atr_stop_multiple: float = 3.0  # default stop = N x ATR when no explicit level
+    market_halt_threshold_pct: float = -0.03  # halt new buys if SPY day-change <= this
+    default_risk_reward: float = 2.5  # derived take-profit R:R when none given
 
 
 class BacktestConfig(BaseModel):
