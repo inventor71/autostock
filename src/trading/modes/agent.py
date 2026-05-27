@@ -5,8 +5,9 @@ the decision executor (reading decisions.jsonl and trading via RiskManager ->
 Broker). Each scheduled cycle runs the appropriate turn and then executes any
 new decisions; intraday cycles also run the polled risk-exit backup.
 
-Unlike BatchTradingMode this does NOT run a cycle immediately on start (a turn
-spends LLM budget); it only registers the market-hours jobs.
+On start it runs one morning research+execute cycle immediately (so launching
+after the open picks up just-filled positions right away), then registers the
+market-hours jobs.
 """
 
 from __future__ import annotations
@@ -56,6 +57,9 @@ class AgentTradingMode:
         logger.info(
             f"Starting agent trading mode (intraday every {self.intraday_minutes} min)"
         )
+        # Kick off a morning research cycle now so a post-open launch immediately
+        # picks up just-filled positions, then schedule the recurring jobs.
+        self._morning()
         self.scheduler.add_market_open_job(self._morning, job_id="agent_morning")
         self.scheduler.add_batch_job(
             self._intraday, interval_minutes=self.intraday_minutes, job_id="agent_intraday"
