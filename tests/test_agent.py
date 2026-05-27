@@ -275,6 +275,15 @@ class TestAgentSession:
         cmd2 = runner.calls[1]["cmd"]
         assert cmd2[cmd2.index("--model") + 1] == "sonnet"
 
+    def test_session_date_uses_et_when_unpinned(self, tmp_path):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        sess = AgentSession(workspace=tmp_path / "ws")  # no pinned date -> live ET
+        et_today = datetime.now(ZoneInfo("US/Eastern")).date().isoformat()
+        assert sess.session_date.isoformat() == et_today
+        assert sess._state_file().name == f"{et_today}.json"
+
     def test_started_marker_persists_across_instances(self, tmp_path):
         ws = tmp_path / "ws"
         day = date(2026, 5, 27)
