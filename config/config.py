@@ -72,6 +72,13 @@ class LLMConfig(BaseModel):
     include_news: bool = True
 
 
+class AgentConfig(BaseModel):
+    """Agentic PM trader (`--mode agent`) settings."""
+
+    model: str = "sonnet"  # base model for intraday / EOD turns
+    research_model: str = "opus"  # deeper model for the daily research turn
+
+
 class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     broker: BrokerConfig = BrokerConfig()
@@ -81,6 +88,7 @@ class Settings(BaseSettings):
     backtest: BacktestConfig = BacktestConfig()
     monitoring: MonitoringConfig = MonitoringConfig()
     llm: LLMConfig = LLMConfig()
+    agent: AgentConfig = AgentConfig()
 
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""

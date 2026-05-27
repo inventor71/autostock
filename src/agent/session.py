@@ -137,12 +137,14 @@ class AgentSession:
     # ------------------------------------------------------------------ #
     # Running a turn
     # ------------------------------------------------------------------ #
-    def _build_command(self, session_id: str, system_prompt: str | None, resume: bool) -> list[str]:
+    def _build_command(
+        self, session_id: str, system_prompt: str | None, resume: bool, model: str | None = None
+    ) -> list[str]:
         cmd = [
             self.cli_path,
             "-p",
             "--output-format", "json",
-            "--model", self.model,
+            "--model", model or self.model,
             "--permission-mode", self.permission_mode,
             "--allowedTools", ",".join(self.allowed_tools),
         ]
@@ -151,8 +153,10 @@ class AgentSession:
             cmd += ["--append-system-prompt", system_prompt]
         return cmd
 
-    def _invoke(self, session_id: str, prompt: str, system_prompt: str | None, resume: bool) -> dict:
-        cmd = self._build_command(session_id, system_prompt, resume)
+    def _invoke(
+        self, session_id: str, prompt: str, system_prompt: str | None, resume: bool, model: str | None = None
+    ) -> dict:
+        cmd = self._build_command(session_id, system_prompt, resume, model)
         env = dict(os.environ)
         existing_pp = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(_REPO_ROOT) + (os.pathsep + existing_pp if existing_pp else "")
@@ -172,10 +176,13 @@ class AgentSession:
             raise RuntimeError(f"claude returned an error: {payload.get('result')}")
         return payload
 
-    def run_turn(self, prompt: str, system_prompt: str | None = None) -> AgentTurnResult:
+    def run_turn(
+        self, prompt: str, system_prompt: str | None = None, model: str | None = None
+    ) -> AgentTurnResult:
         """Run one agent turn. Creates the day's session on the first call and
         resumes it thereafter (id stored in the per-day marker). If the stored id
-        is unusable (stale/collision), retry once with a fresh session. The
+        is unusable (stale/collision), retry once with a fresh session. ``model``
+        overrides the session default for this turn (e.g. opus for research). The
         prompt is sent on stdin; the agent's journal writes are the real output."""
         self.journal.init()  # ensure workspace + CLAUDE.md exist
         state = self._read_state()
@@ -186,16 +193,16 @@ class AgentSession:
 
         logger.info(
             "Agent turn ({}) session={} model={}",
-            "resume" if resume else "new", session_id, self.model,
+            "resume" if resume else "new", session_id, model or self.model,
         )
         try:
-            payload = self._invoke(session_id, prompt, system_prompt, resume)
+            payload = self._invoke(session_id, prompt, system_prompt, resume, model)
         except RuntimeError as exc:
             if any(frag in str(exc).lower() for frag in _SESSION_ERROR_FRAGMENTS):
                 logger.warning("Session id unusable ({}); retrying with a fresh session", exc)
                 session_id = str(uuid.uuid4())
                 resume = False
-                payload = self._invoke(session_id, prompt, system_prompt, resume)
+                payload = self._invoke(session_id, prompt, system_prompt, resume, model)
             else:
                 raise
 

@@ -307,11 +307,12 @@ def run_agent(settings) -> None:
     )
 
     universe = list(settings.trading.symbols)
-    session = AgentSession()
+    session = AgentSession(model=settings.agent.model)
     orchestrator = AgentTradingLoop(
         session=session,
         universe=universe,
         portfolio_provider=broker.get_portfolio_state,
+        research_model=settings.agent.research_model,
     )
     executor = DecisionExecutor(
         broker, risk_manager, data_provider, journal=session.journal, universe=universe

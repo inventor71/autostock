@@ -37,6 +37,7 @@ class AgentTradingLoop:
         session: AgentSession | None = None,
         universe: list[str] | None = None,
         portfolio_provider: Callable[[], object] | None = None,
+        research_model: str | None = None,
     ):
         self.session = session or AgentSession()
         self.journal: Journal = self.session.journal
@@ -44,6 +45,8 @@ class AgentTradingLoop:
             from config.config import get_settings
             universe = list(get_settings().trading.symbols)
         self.universe = universe
+        # Deeper model for the daily research turn (e.g. opus); None = session default.
+        self.research_model = research_model
         # Optional source of real holdings (a broker); falls back to the journal's
         # tracked theses so the loop is usable before execution is wired (Phase 3).
         self.portfolio_provider = portfolio_provider
@@ -65,9 +68,9 @@ class AgentTradingLoop:
                 logger.warning(f"portfolio_provider failed, using journal: {exc}")
         return self.journal.list_positions()
 
-    def _run(self, prompt: str, turn_type: str) -> AgentTurnResult:
+    def _run(self, prompt: str, turn_type: str, model: str | None = None) -> AgentTurnResult:
         before = len(self.journal.read_decisions())
-        result = self.session.run_turn(prompt)
+        result = self.session.run_turn(prompt, model=model)
         self.last_new_decisions = self.journal.read_decisions()[before:]
         self.last_kept, self.last_rejected = filter_in_universe(
             self.last_new_decisions, self.universe
@@ -86,7 +89,7 @@ class AgentTradingLoop:
         record_turn(
             self.journal.root / "turns.jsonl",
             turn_type=turn_type,
-            model=getattr(self.session, "model", "unknown"),
+            model=model or getattr(self.session, "model", "unknown"),
             num_decisions=len(self.last_new_decisions),
             raw=result.raw,
         )
@@ -96,7 +99,11 @@ class AgentTradingLoop:
     # Turn types
     # ------------------------------------------------------------------ #
     def run_morning_research(self) -> AgentTurnResult:
-        return self._run(prompts.morning_research_prompt(self.universe, self.held_symbols()), "research")
+        return self._run(
+            prompts.morning_research_prompt(self.universe, self.held_symbols()),
+            "research",
+            model=self.research_model,
+        )
 
     def run_intraday(self, quotes: dict[str, float] | None = None) -> AgentTurnResult:
         return self._run(prompts.intraday_prompt(quotes, self.held_symbols()), "intraday")

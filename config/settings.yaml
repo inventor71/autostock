@@ -164,3 +164,7 @@ llm:
   # API keys should be set via environment variables:
   # ANTHROPIC_API_KEY, OPENAI_API_KEY
   # claude_code needs no key -- it reuses the logged-in `claude` CLI session.
+
+agent:
+  model: sonnet            # intraday / EOD turns (frequent, lighter)
+  research_model: opus     # daily research turn (deep fundamental + discovery)

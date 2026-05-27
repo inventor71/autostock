@@ -265,6 +265,16 @@ class TestAgentSession:
         assert "--resume" in cmd2 and "--session-id" not in cmd2
         assert res2.resumed is True
 
+    def test_model_override_per_turn(self, tmp_path):
+        runner = _FakeRunner(_ok_payload())
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner, model="sonnet")
+        sess.run_turn("x", model="opus")
+        cmd = runner.calls[0]["cmd"]
+        assert cmd[cmd.index("--model") + 1] == "opus"  # per-turn override wins
+        sess.run_turn("y")  # no override -> session default
+        cmd2 = runner.calls[1]["cmd"]
+        assert cmd2[cmd2.index("--model") + 1] == "sonnet"
+
     def test_started_marker_persists_across_instances(self, tmp_path):
         ws = tmp_path / "ws"
         day = date(2026, 5, 27)
@@ -356,11 +366,14 @@ class TestPrompts:
 class _FakeSession:
     def __init__(self, journal, to_write=None):
         self.journal = journal
+        self.model = "fake"
         self.prompts: list[str] = []
+        self.models: list[str | None] = []
         self._to_write = to_write or []
 
-    def run_turn(self, prompt, system_prompt=None):
+    def run_turn(self, prompt, system_prompt=None, model=None):
         self.prompts.append(prompt)
+        self.models.append(model)
         for d in self._to_write:
             self.journal.append_decision(d)
         return AgentTurnResult(result="ok", session_id="sid", resumed=False, raw={})
@@ -382,6 +395,14 @@ class TestOrchestrator:
         assert res.result == "ok"
         assert "Morning research" in sess.prompts[0]
         assert "AAPL" in sess.prompts[0]
+
+    def test_research_uses_research_model_intraday_default(self, tmp_path):
+        sess = _FakeSession(Journal(root=tmp_path / "ws"))
+        loop = AgentTradingLoop(session=sess, universe=["AAPL"], research_model="opus")
+        loop.run_morning_research()
+        assert sess.models[-1] == "opus"   # deep research turn -> opus
+        loop.run_intraday()
+        assert sess.models[-1] is None     # intraday -> session default (sonnet)
 
     def test_out_of_universe_decision_is_flagged(self, tmp_path):
         sess = _FakeSession(
