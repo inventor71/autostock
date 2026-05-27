@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Launch (or re-attach) the autostock monitoring dashboard in tmux:
+# Open the autostock monitoring dashboard in tmux (3 panes):
 #
 #   ┌─────────────────┬───────────────────────────┐
 #   │ decisions.jsonl │ account dashboard (status) │
@@ -8,38 +8,53 @@
 #   │                 │ agent log (autostock.log) │
 #   └─────────────────┴───────────────────────────┘
 #
+# Run inside tmux  -> opens the layout as a NEW WINDOW in the current session
+# Run outside tmux -> creates a standalone session and attaches
+# Already open     -> switches to the existing window / attaches the session
+#
 # Usage:
-#   scripts/monitor.sh         launch the dashboard (or attach if already running)
-#   scripts/monitor.sh kill    stop the dashboard session
+#   scripts/monitor.sh         open (or switch to) the dashboard
+#   scripts/monitor.sh kill    close the dashboard window / session
 #
 set -euo pipefail
 
-SESSION="autostock"
+NAME="autostock"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="$ROOT/venv/bin/python"
 [ -x "$PY" ] || PY="python"
 
+DEC_CMD="tail -F workspace/decisions.jsonl 2>/dev/null | jq '.'"
+STATUS_CMD="$PY scripts/status.py --loop 3"
+LOG_CMD="tail -F logs/autostock.log"
+
 if [ "${1:-}" = "kill" ]; then
-  tmux kill-session -t "$SESSION" 2>/dev/null && echo "stopped '$SESSION'" || echo "no '$SESSION' session"
+  if tmux kill-session -t "$NAME" 2>/dev/null; then echo "stopped session '$NAME'"; fi
+  if [ -n "${TMUX:-}" ] && tmux kill-window -t "$NAME" 2>/dev/null; then echo "closed window '$NAME'"; fi
   exit 0
 fi
 
-# Already running -> just attach.
-if tmux has-session -t "$SESSION" 2>/dev/null; then
-  exec tmux attach -t "$SESSION"
+# Build the 3-pane layout starting from a pane already running the decisions
+# stream. $1 = that pane's id.
+build_layout() {
+  local first="$1" right
+  right=$(tmux split-window -h -P -F '#{pane_id}' -t "$first" -c "$ROOT" "$STATUS_CMD")
+  tmux split-window -v -t "$right" -c "$ROOT" "$LOG_CMD"
+  tmux select-pane -t "$first"
+}
+
+if [ -n "${TMUX:-}" ]; then
+  # Inside tmux: reuse the window if it already exists, else add a new one.
+  if tmux list-windows -F '#{window_name}' | grep -qx "$NAME"; then
+    exec tmux select-window -t "$NAME"
+  fi
+  first=$(tmux new-window -P -F '#{pane_id}' -n "$NAME" -c "$ROOT" "$DEC_CMD")
+  build_layout "$first"
+else
+  # Outside tmux: attach the standalone session if running, else create it.
+  if tmux has-session -t "$NAME" 2>/dev/null; then
+    exec tmux attach -t "$NAME"
+  fi
+  first=$(tmux new-session -d -s "$NAME" -n "$NAME" -P -F '#{pane_id}' -c "$ROOT" "$DEC_CMD")
+  build_layout "$first"
+  exec tmux attach -t "$NAME"
 fi
-
-# pane 0 (left): live decision stream  (tail -F tolerates the file not existing yet)
-tmux new-session -d -s "$SESSION" -c "$ROOT" \
-  "tail -F workspace/decisions.jsonl 2>/dev/null | jq '.'"
-
-# pane 1 (right-top): account dashboard
-tmux split-window -h -t "$SESSION" -c "$ROOT" \
-  "$PY scripts/status.py --loop"
-
-# pane 2 (right-bottom): agent log
-tmux split-window -v -t "$SESSION" -c "$ROOT" \
-  "tail -F logs/autostock.log"
-
-tmux select-pane -t "$SESSION":0.0
-exec tmux attach -t "$SESSION"
