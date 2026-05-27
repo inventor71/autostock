@@ -49,6 +49,22 @@ class TestJournal:
         with pytest.raises(ValidationError):
             Decision(symbol="AAPL", action="LONG")
 
+    def test_decision_accepts_null_sell_pct_and_confidence(self, tmp_path):
+        # Real LLM output sends null for sell_pct on a BUY (and may for others).
+        line = (
+            '{"ts": "2026-05-27T09:00:00-04:00", "symbol": "AAPL", "action": "BUY",'
+            ' "confidence": null, "sell_pct": null, "limit": 295.0, "stop": 280.0,'
+            ' "target": 335.0, "reason": "x"}'
+        )
+        j = Journal(root=tmp_path / "ws")
+        j.decisions_file.parent.mkdir(parents=True, exist_ok=True)
+        j.decisions_file.write_text(line + "\n")
+        decisions = j.read_decisions()
+        assert len(decisions) == 1
+        assert decisions[0].sell_pct is None
+        assert decisions[0].confidence is None
+        assert decisions[0].limit == 295.0
+
     def test_decision_normalizes_symbol(self, tmp_path):
         j = Journal(root=tmp_path / "ws")
         j.append_decision(Decision(symbol="aapl", action="HOLD"))
@@ -204,8 +220,8 @@ class _FakeRunner:
         self._returncode = returncode
         self._stderr = stderr
 
-    def __call__(self, cmd, *, input, cwd, timeout):
-        self.calls.append({"cmd": cmd, "input": input, "cwd": cwd, "timeout": timeout})
+    def __call__(self, cmd, *, input, cwd, timeout, env=None):
+        self.calls.append({"cmd": cmd, "input": input, "cwd": cwd, "timeout": timeout, "env": env})
         return SimpleNamespace(returncode=self._returncode, stdout=self._stdout, stderr=self._stderr)
 
 
@@ -233,6 +249,10 @@ class TestAgentSession:
         assert res.result == "wrote AAPL thesis"
         assert res.resumed is False
         assert sess.is_started()
+        # repo root is injected on PYTHONPATH so `python -m src.agent.tools`
+        # resolves even though cwd is the workspace
+        from src.agent.session import _REPO_ROOT
+        assert runner.calls[0]["env"]["PYTHONPATH"].startswith(str(_REPO_ROOT))
 
     def test_second_turn_resumes(self, tmp_path):
         runner = _FakeRunner(_ok_payload())

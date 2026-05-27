@@ -35,8 +35,11 @@ class Decision(BaseModel):
     ts: datetime = Field(default_factory=datetime.now)
     symbol: str
     action: DecisionAction
-    confidence: float = Field(ge=0.0, le=1.0, default=0.5)
-    sell_pct: float = Field(ge=0.0, le=1.0, default=1.0)
+    # confidence/sell_pct are nullable: LLM output routinely sends null (e.g.
+    # sell_pct on a BUY). Range is clamped downstream by the executor, not here,
+    # so a stray value never blocks parsing a real decision line.
+    confidence: float | None = 0.5
+    sell_pct: float | None = 1.0
     limit: float | None = None  # suggested entry (None = market)
     stop: float | None = None  # suggested stop-loss level
     target: float | None = None  # suggested take-profit level
