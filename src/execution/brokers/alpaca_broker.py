@@ -150,8 +150,10 @@ class AlpacaBroker(BaseBroker):
             return MarketOrderRequest(**kwargs)
 
         if order.order_class == OrderClass.OCO:
-            # Protection over an existing position: take-profit rides on
-            # limit_price, stop-loss is a plain STOP leg.
+            # Protection over an existing position: a take-profit LIMIT leg + a
+            # stop-loss STOP leg. Alpaca requires an explicit take_profit leg
+            # (not just the base limit_price).
+            take_profit = TakeProfitRequest(limit_price=order.take_profit_price)
             stop_loss = StopLossRequest(stop_price=order.stop_loss_price)
             return LimitOrderRequest(
                 symbol=order.symbol,
@@ -160,6 +162,7 @@ class AlpacaBroker(BaseBroker):
                 time_in_force=tif,
                 limit_price=order.take_profit_price,
                 order_class=AlpacaOrderClass.OCO,
+                take_profit=take_profit,
                 stop_loss=stop_loss,
             )
 
@@ -207,12 +210,34 @@ class AlpacaBroker(BaseBroker):
             logger.warning(f"Could not fetch market clock: {e}")
             return False
 
+    @staticmethod
+    def _to_open_order(o, default_symbol: str | None = None) -> OpenOrder:
+        side = OrderSide.BUY if str(o.side).split(".")[-1].lower() == "buy" else OrderSide.SELL
+        otype = _ALPACA_TO_ORDER_TYPE.get(
+            str(o.order_type).split(".")[-1].lower(), OrderType.MARKET
+        )
+        return OpenOrder(
+            order_id=str(o.id),
+            symbol=o.symbol or default_symbol,
+            side=side,
+            order_type=otype,
+            qty=float(o.qty or 0),
+            limit_price=float(o.limit_price) if o.limit_price else None,
+            stop_price=float(o.stop_price) if o.stop_price else None,
+        )
+
     def get_open_orders(self, symbol: str | None = None) -> list[OpenOrder]:
-        """Open orders at Alpaca (e.g. resting bracket protective legs)."""
+        """Open orders at Alpaca, including bracket/OCO protective legs.
+
+        Uses ``nested=True`` and flattens each order's ``legs`` so the stop-loss
+        leg of an OCO/bracket (held under the take-profit parent) is surfaced —
+        needed for stop reconciliation, the ADJUST_STOP ratchet, and idempotency.
+        """
         try:
             req = GetOrdersRequest(
                 status=QueryOrderStatus.OPEN,
                 symbols=[symbol] if symbol else None,
+                nested=True,
             )
             orders = self._client.get_orders(filter=req)
         except Exception as e:
@@ -220,20 +245,13 @@ class AlpacaBroker(BaseBroker):
             return []
 
         out: list[OpenOrder] = []
+        seen: set[str] = set()
         for o in orders:
-            side = OrderSide.BUY if str(o.side).split(".")[-1].lower() == "buy" else OrderSide.SELL
-            otype = _ALPACA_TO_ORDER_TYPE.get(
-                str(o.order_type).split(".")[-1].lower(), OrderType.MARKET
-            )
-            out.append(OpenOrder(
-                order_id=str(o.id),
-                symbol=o.symbol,
-                side=side,
-                order_type=otype,
-                qty=float(o.qty or 0),
-                limit_price=float(o.limit_price) if o.limit_price else None,
-                stop_price=float(o.stop_price) if o.stop_price else None,
-            ))
+            for node in [o, *(getattr(o, "legs", None) or [])]:
+                if str(node.id) in seen:
+                    continue
+                seen.add(str(node.id))
+                out.append(self._to_open_order(node, default_symbol=o.symbol))
         return out
 
     def get_all_positions(self) -> list[Position]:

@@ -68,7 +68,11 @@ morning turn; intraday turns should lean on cached context + `quote`.
 
 - `BUY`: supply `stop` (required for sizing) and ideally `target`; `limit` null = enter at market.
 - `SELL`: use `sell_pct` for partial exits (1.0 = full).
-- `ADJUST_STOP`: set `stop` to the new level (the executor only tightens unless told otherwise).
+- `HOLD`: keep the position. If you include a `stop` (and `target`) on a name you
+  hold, the executor keeps a resting protective order at those levels — this is
+  how you protect a holding, so always carry the stop you want enforced.
+- `ADJUST_STOP`: change a holding's resting stop to `stop` (the executor only
+  tightens unless told otherwise).
 - `valid_until`: omit/null = good until revisited; set it to expire a stale plan.
 
 ## Operating principles

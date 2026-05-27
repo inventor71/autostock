@@ -114,6 +114,12 @@ class DecisionExecutor:
             return ExecutionOutcome(d, "skipped_expired", f"valid_until {d.valid_until}")
 
         if d.action == "HOLD":
+            # The agent expresses "keep holding, protected at this stop" as
+            # HOLD + stop. Honour it: ensure a resting protective order at that
+            # stop/target on the held position (otherwise the stop is never
+            # placed and only the polled 5% backup covers it).
+            if d.stop is not None and self.broker.get_position(d.symbol) is not None:
+                return self._place_protection(d, label="protect")
             return ExecutionOutcome(d, "skipped_hold")
 
         if d.action == "ADJUST_STOP":
@@ -160,15 +166,24 @@ class DecisionExecutor:
             return None
 
     def _adjust_stop(self, d: Decision) -> ExecutionOutcome:
-        position = self.broker.get_position(d.symbol)
-        if position is None:
+        if self.broker.get_position(d.symbol) is None:
             return ExecutionOutcome(d, "no_order", "no position to adjust")
         if d.stop is None:
             return ExecutionOutcome(d, "no_order", "ADJUST_STOP without a stop level")
+        return self._place_protection(d, label="ADJUST_STOP")
+
+    def _place_protection(self, d: Decision, label: str) -> ExecutionOutcome:
+        """Ensure a resting protective order at the (ratcheted) stop on a held
+        position, keeping the decision's target (or the existing one). Idempotent:
+        skips when protection already rests at that stop/target so HOLD turns
+        don't churn the book."""
+        position = self.broker.get_position(d.symbol)
+        if position is None:
+            return ExecutionOutcome(d, "no_order", "no position to protect")
 
         opens = self.broker.get_open_orders(d.symbol)
         current_stop = next((o.stop_price for o in opens if o.stop_price is not None), None)
-        target = next(
+        current_target = next(
             (o.limit_price for o in opens if o.limit_price is not None and o.side == OrderSide.SELL),
             None,
         )
@@ -176,6 +191,15 @@ class DecisionExecutor:
         new_stop = self.risk_manager.ratchet_stop(
             current_stop if current_stop is not None else d.stop, d.stop
         )
+        target = d.target if d.target is not None else current_target
+
+        already = (
+            current_stop is not None
+            and abs(current_stop - new_stop) < 0.01
+            and (target is None or (current_target is not None and abs(current_target - target) < 0.01))
+        )
+        if already:
+            return ExecutionOutcome(d, "skipped_hold", "already protected at this stop")
 
         for o in opens:
             self.broker.cancel_order(o.order_id)
@@ -191,9 +215,10 @@ class DecisionExecutor:
                 order_type=OrderType.STOP, stop_price=new_stop,
             )
         filled = self.broker.submit_order(order)
-        return ExecutionOutcome(
-            d, "executed", f"ADJUST_STOP {d.symbol} stop->{new_stop:.2f}", order_id=filled.order_id
-        )
+        detail = f"{label} {d.symbol} stop->{new_stop:.2f}"
+        if target is not None:
+            detail += f" target {target:.2f}"
+        return ExecutionOutcome(d, "executed", detail, order_id=filled.order_id)
 
     # ------------------------------------------------------------------ #
     # Reconciliation helpers

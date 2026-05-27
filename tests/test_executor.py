@@ -91,6 +91,32 @@ class TestDecisionExecutor:
         journal.append_decision(Decision(symbol="AAPL", action="HOLD"))
         assert ex.execute_pending()[0].status == "skipped_hold"
 
+    def test_hold_with_stop_protects_held_position(self, tmp_path):
+        ex, broker, journal = _make(tmp_path)
+        broker.set_current_price("AAPL", 300.0)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))  # seed, unprotected
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=285.0, target=350.0))
+        out = ex.execute_pending()
+        assert out[0].status == "executed"
+        opens = broker.get_open_orders("AAPL")
+        assert any(o.stop_price == 285.0 for o in opens)   # protective stop now resting
+        assert any(o.limit_price == 350.0 for o in opens)  # at the agent's target
+
+    def test_hold_protection_is_idempotent(self, tmp_path):
+        ex, broker, journal = _make(tmp_path)
+        broker.set_current_price("AAPL", 300.0)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=285.0, target=350.0))
+        assert ex.execute_pending()[0].status == "executed"
+        # Same HOLD again -> protection already rests there -> no churn.
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=285.0, target=350.0))
+        assert ex.execute_pending()[0].status == "skipped_hold"
+
+    def test_hold_with_stop_but_no_position_skips(self, tmp_path):
+        ex, broker, journal = _make(tmp_path)
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=285.0))
+        assert ex.execute_pending()[0].status == "skipped_hold"
+
     def test_sell_reduces_position(self, tmp_path):
         ex, broker, journal = _make(tmp_path)
         broker.set_current_price("AAPL", 100.0)
