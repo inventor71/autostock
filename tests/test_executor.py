@@ -4,6 +4,7 @@ import pandas as pd
 
 from src.agent.executor import DecisionExecutor
 from src.agent.journal import Decision, Journal
+from src.agent.review import outcome_lines
 from src.core.models import Order
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.execution.brokers.simulated import SimulatedBroker
@@ -152,6 +153,38 @@ class TestRiskExitsBackup:
         filled = ex.run_risk_exits()  # -8% with no resting stop -> backup fires
         assert len(filled) == 1
         assert broker.get_position("AAPL") is None
+
+
+class TestOutcomeReview:
+    def test_held_position_line(self):
+        broker = SimulatedBroker()
+        broker.set_current_price("AAPL", 300.0)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))
+        lines = outcome_lines(
+            [Decision(symbol="AAPL", action="BUY", limit=295.0, stop=280.0, target=335.0)],
+            broker, _StubProvider(price=310.0),
+        )
+        assert "AAPL BUY" in lines[0]
+        assert "held 10@300.00" in lines[0]
+        assert "now 310.00" in lines[0]
+        assert "open" in lines[0]
+
+    def test_entry_pending_when_not_filled(self):
+        lines = outcome_lines(
+            [Decision(symbol="AAPL", action="BUY", limit=295.0, stop=280.0)],
+            SimulatedBroker(), _StubProvider(price=310.0),
+        )
+        assert "entry pending" in lines[0]
+
+    def test_below_stop_status(self):
+        broker = SimulatedBroker()
+        broker.set_current_price("AAPL", 270.0)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))
+        lines = outcome_lines(
+            [Decision(symbol="AAPL", action="BUY", stop=280.0, target=335.0)],
+            broker, _StubProvider(price=270.0),
+        )
+        assert "at/below stop" in lines[0]
 
 
 class TestSimulatedOpenOrders:

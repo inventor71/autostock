@@ -92,9 +92,12 @@ class AgentTradingLoop:
     def run_intraday(self, quotes: dict[str, float] | None = None) -> AgentTurnResult:
         return self._run(prompts.intraday_prompt(quotes, self.held_symbols()))
 
-    def run_eod_review(self) -> AgentTurnResult:
-        recent = [f"{d.symbol} {d.action}" for d in self.journal.read_decisions()[-20:]]
-        return self._run(prompts.eod_review_prompt(recent))
+    def run_eod_review(self, outcomes: list[str] | None = None) -> AgentTurnResult:
+        # `outcomes` are richer (levels vs price, P&L) when the caller assembles
+        # them from the broker; otherwise fall back to a plain decision list.
+        if outcomes is None:
+            outcomes = [f"{d.symbol} {d.action}" for d in self.journal.read_decisions()[-20:]]
+        return self._run(prompts.eod_review_prompt(outcomes))
 
     # ------------------------------------------------------------------ #
     def schedule(self, scheduler, intraday_minutes: int = 30) -> None:

@@ -384,6 +384,13 @@ class TestOrchestrator:
         loop = AgentTradingLoop(session=_FakeSession(j), universe=["AAPL"])
         assert loop.held_symbols() == ["AAPL"]
 
+    def test_eod_review_passes_outcomes_to_prompt(self, tmp_path):
+        sess = _FakeSession(Journal(root=tmp_path / "ws"))
+        loop = AgentTradingLoop(session=sess, universe=["AAPL"])
+        loop.run_eod_review(outcomes=["AAPL BUY (stop 280) | now 300 | held 11@295 +1.7% | -> open"])
+        assert "now 300 | held 11@295 +1.7%" in sess.prompts[0]
+        assert "lessons.md" in sess.prompts[0]
+
     def test_schedule_registers_three_turns(self, tmp_path):
         loop = AgentTradingLoop(session=_FakeSession(Journal(root=tmp_path / "ws")), universe=["AAPL"])
 

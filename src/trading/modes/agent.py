@@ -45,7 +45,11 @@ class AgentTradingMode:
 
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
-        self.orchestrator.run_eod_review()
+        from src.agent.review import outcome_lines
+
+        decisions = self.executor.journal.read_decisions()
+        outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
+        self.orchestrator.run_eod_review(outcomes=outcomes)
         self.executor.execute_pending()
 
     def start(self) -> None:

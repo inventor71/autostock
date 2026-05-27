@@ -75,18 +75,26 @@ def intraday_prompt(
     return "\n".join(lines)
 
 
-def eod_review_prompt(decisions_today: list[str] | None = None) -> str:
-    """End-of-day turn: grade calls, distill lessons, write the daily note."""
+def eod_review_prompt(outcomes: list[str] | None = None) -> str:
+    """End-of-day turn: grade calls against outcomes, distill lessons, write note.
+
+    ``outcomes`` are authoritative per-decision snapshots (levels vs current
+    price, holding and P&L, a status hint) assembled from the broker/data so the
+    grading is grounded in facts rather than the agent's recollection.
+    """
     lines = ["End-of-day review turn (continuing today's session)."]
-    if decisions_today:
-        lines.append("Decisions on record (recent): " + "; ".join(decisions_today) + ".")
+    if outcomes:
+        lines.append("## Your calls and their current state (from the broker/market):")
+        lines.extend(f"- {o}" for o in outcomes)
     lines.append(
-        "Read decisions.jsonl and your position theses. For each, compare the "
-        "call to what actually happened today and append a Call-vs-Outcome line "
-        "in positions/<SYMBOL>.md. Distill any generalizable lesson — premature "
-        "stop, gave back gains, ignored an invalidated thesis, missed setup, "
-        "sizing too large/small — into lessons.md (one bullet each). Then write a "
-        "concise daily/<date>.md with a self-grade of today's calls."
+        "Cross-check with decisions.jsonl and your position theses. For each call, "
+        "compare what you intended to what actually happened and append a "
+        "Call-vs-Outcome line in positions/<SYMBOL>.md. Distill any generalizable "
+        "lesson — premature stop (stopped out then recovered), gave back gains "
+        "(held too long), ignored an invalidated thesis, missed setup that worked, "
+        "sizing too large/small — into lessons.md (one concise bullet each; only "
+        "real, transferable lessons). Then write a daily/<date>.md with a "
+        "self-grade of today's calls."
     )
     lines.append(_ADVISOR_REMINDER)
     return "\n".join(lines)
