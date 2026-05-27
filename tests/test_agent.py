@@ -276,13 +276,42 @@ class TestAgentSession:
         sess_b.run_turn("t2")
         assert "--resume" in runner2.calls[0]["cmd"]
 
-    def test_session_id_deterministic_per_day(self, tmp_path):
-        a = AgentSession(workspace=tmp_path / "ws", session_date=date(2026, 1, 1))
-        b = AgentSession(workspace=tmp_path / "ws2", session_date=date(2026, 1, 1))
-        c = AgentSession(workspace=tmp_path / "ws3", session_date=date(2026, 1, 2))
-        assert a.session_id == b.session_id  # same day -> same id
-        assert a.session_id != c.session_id  # new day -> fresh id
-        uuid.UUID(a.session_id)  # valid UUID
+    def test_session_id_stored_and_reused_within_day(self, tmp_path):
+        ws = tmp_path / "ws"
+        a = AgentSession(workspace=ws, runner=_FakeRunner(_ok_payload()), session_date=date(2026, 1, 1))
+        assert a.session_id is None  # nothing created yet
+        a.run_turn("t1")
+        sid = a.session_id
+        assert sid is not None
+        uuid.UUID(sid)  # valid UUID generated on the first turn
+        # a fresh instance the same day reuses the stored id (will resume it)
+        b = AgentSession(workspace=ws, runner=_FakeRunner(_ok_payload()), session_date=date(2026, 1, 1))
+        assert b.session_id == sid
+        # a different day has no marker -> fresh
+        c = AgentSession(workspace=ws, runner=_FakeRunner(_ok_payload()), session_date=date(2026, 1, 2))
+        assert c.session_id is None
+
+    def test_retries_fresh_on_session_id_collision(self, tmp_path):
+        # Reproduces the real bug: no marker -> create with a fresh uuid, but the
+        # CLI rejects it as already-in-use (a stale session); retry must succeed
+        # with another fresh create.
+        class _FlakyRunner:
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, cmd, *, input, cwd, timeout, env=None):
+                self.calls.append(cmd)
+                if len(self.calls) == 1:
+                    return SimpleNamespace(returncode=1, stdout="", stderr="Error: Session ID x is already in use.")
+                return SimpleNamespace(returncode=0, stdout=_ok_payload(), stderr="")
+
+        runner = _FlakyRunner()
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner, session_date=date(2026, 1, 1))
+        res = sess.run_turn("t")
+        assert len(runner.calls) == 2  # collided once, retried
+        assert "--session-id" in runner.calls[0] and "--session-id" in runner.calls[1]
+        assert res.resumed is False
+        assert sess.is_started()  # marker written with the fresh id
 
     def test_raises_on_error_payload(self, tmp_path):
         runner = _FakeRunner(json.dumps({"is_error": True, "result": "boom"}))

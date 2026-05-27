@@ -18,6 +18,7 @@ workspace ``CLAUDE.md`` the agent relies on.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import uuid
 from dataclasses import dataclass, field
@@ -29,8 +30,13 @@ from loguru import logger
 
 from src.agent.journal import Journal
 
-# A deterministic namespace so a given calendar day always maps to one session.
-_SESSION_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "autostock-agent")
+# Repo root: src/agent/session.py -> parents[2]. The agent runs with cwd set to
+# the workspace, so the repo must be on PYTHONPATH for `python -m src.agent.tools`.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# CLI error fragments that mean the session id can't be used as-is, so we should
+# retry with a fresh one (id collided with a stale session, or resume target gone).
+_SESSION_ERROR_FRAGMENTS = ("already in use", "no conversation", "not found", "does not exist")
 
 
 @dataclass
@@ -44,10 +50,10 @@ class AgentTurnResult:
 
 
 def _default_runner(
-    cmd: list[str], *, input: str, cwd: str, timeout: float
+    cmd: list[str], *, input: str, cwd: str, timeout: float, env: dict | None = None
 ) -> subprocess.CompletedProcess:
     return subprocess.run(
-        cmd, input=input, capture_output=True, text=True, cwd=cwd, timeout=timeout
+        cmd, input=input, capture_output=True, text=True, cwd=cwd, timeout=timeout, env=env
     )
 
 
@@ -66,6 +72,7 @@ class AgentSession:
         "WebSearch",
         "WebFetch",
         "Bash(python -m src.agent.tools:*)",
+        "Bash(python3 -m src.agent.tools:*)",
     )
 
     def __init__(
@@ -93,31 +100,44 @@ class AgentSession:
     # ------------------------------------------------------------------ #
     # Session lifecycle
     # ------------------------------------------------------------------ #
-    @property
-    def session_id(self) -> str:
-        """Deterministic per-day session id (same day resumes, new day is fresh)."""
-        return str(uuid.uuid5(_SESSION_NAMESPACE, self.session_date.isoformat()))
-
+    # A fresh random session id is generated on the first turn of the day and
+    # stored in the per-day marker; later turns resume that id. This keeps
+    # resume-within-day + fresh-per-day WITHOUT a deterministic id that could
+    # collide with a stale session in the CLI store (e.g. after the workspace
+    # is cleared while the CLI session persists).
     def _state_file(self) -> Path:
         return self.workspace / ".sessions" / f"{self.session_date.isoformat()}.json"
 
+    def _read_state(self) -> dict | None:
+        sf = self._state_file()
+        if sf.exists():
+            try:
+                return json.loads(sf.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+        return None
+
     def is_started(self) -> bool:
         """Whether today's session already exists (so the next turn resumes)."""
-        return self._started or self._state_file().exists()
+        return self._read_state() is not None
 
-    def _mark_started(self) -> None:
-        self._started = True
-        state_file = self._state_file()
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-        state_file.write_text(
-            json.dumps({"session_id": self.session_id, "started_at": datetime.now().isoformat()}),
+    @property
+    def session_id(self) -> str | None:
+        state = self._read_state()
+        return state.get("session_id") if state else None
+
+    def _write_state(self, session_id: str) -> None:
+        sf = self._state_file()
+        sf.parent.mkdir(parents=True, exist_ok=True)
+        sf.write_text(
+            json.dumps({"session_id": session_id, "started_at": datetime.now().isoformat()}),
             encoding="utf-8",
         )
 
     # ------------------------------------------------------------------ #
     # Running a turn
     # ------------------------------------------------------------------ #
-    def _build_command(self, system_prompt: str | None, resume: bool) -> list[str]:
+    def _build_command(self, session_id: str, system_prompt: str | None, resume: bool) -> list[str]:
         cmd = [
             self.cli_path,
             "-p",
@@ -126,50 +146,65 @@ class AgentSession:
             "--permission-mode", self.permission_mode,
             "--allowedTools", ",".join(self.allowed_tools),
         ]
-        if resume:
-            cmd += ["--resume", self.session_id]
-        else:
-            cmd += ["--session-id", self.session_id]
+        cmd += ["--resume", session_id] if resume else ["--session-id", session_id]
         if system_prompt:
             cmd += ["--append-system-prompt", system_prompt]
         return cmd
 
-    def run_turn(self, prompt: str, system_prompt: str | None = None) -> AgentTurnResult:
-        """Run one agent turn. Creates the day's session on the first call and
-        resumes it thereafter. The prompt is sent on stdin; the agent's journal
-        writes are the meaningful output, the returned text is its summary."""
-        self.journal.init()  # ensure workspace + CLAUDE.md exist
-        resume = self.is_started()
-        cmd = self._build_command(system_prompt, resume)
+    def _invoke(self, session_id: str, prompt: str, system_prompt: str | None, resume: bool) -> dict:
+        cmd = self._build_command(session_id, system_prompt, resume)
+        env = dict(os.environ)
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(_REPO_ROOT) + (os.pathsep + existing_pp if existing_pp else "")
 
-        logger.info(
-            "Agent turn ({}) session={} model={}",
-            "resume" if resume else "new",
-            self.session_id,
-            self.model,
-        )
         proc = self._runner(
-            cmd, input=prompt, cwd=str(self.workspace), timeout=self.timeout
+            cmd, input=prompt, cwd=str(self.workspace), timeout=self.timeout, env=env
         )
         if proc.returncode != 0:
             raise RuntimeError(
                 f"claude CLI exited with {proc.returncode}: {(proc.stderr or '').strip()}"
             )
-
         try:
             payload = json.loads(proc.stdout)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Could not parse claude JSON output: {exc}") from exc
-
         if payload.get("is_error"):
             raise RuntimeError(f"claude returned an error: {payload.get('result')}")
+        return payload
+
+    def run_turn(self, prompt: str, system_prompt: str | None = None) -> AgentTurnResult:
+        """Run one agent turn. Creates the day's session on the first call and
+        resumes it thereafter (id stored in the per-day marker). If the stored id
+        is unusable (stale/collision), retry once with a fresh session. The
+        prompt is sent on stdin; the agent's journal writes are the real output."""
+        self.journal.init()  # ensure workspace + CLAUDE.md exist
+        state = self._read_state()
+        session_id = state.get("session_id") if state else None
+        resume = session_id is not None
+        if session_id is None:
+            session_id = str(uuid.uuid4())
+
+        logger.info(
+            "Agent turn ({}) session={} model={}",
+            "resume" if resume else "new", session_id, self.model,
+        )
+        try:
+            payload = self._invoke(session_id, prompt, system_prompt, resume)
+        except RuntimeError as exc:
+            if any(frag in str(exc).lower() for frag in _SESSION_ERROR_FRAGMENTS):
+                logger.warning("Session id unusable ({}); retrying with a fresh session", exc)
+                session_id = str(uuid.uuid4())
+                resume = False
+                payload = self._invoke(session_id, prompt, system_prompt, resume)
+            else:
+                raise
 
         if not resume:
-            self._mark_started()
+            self._write_state(session_id)
 
         return AgentTurnResult(
             result=payload.get("result", ""),
-            session_id=payload.get("session_id", self.session_id),
+            session_id=payload.get("session_id", session_id),
             resumed=resume,
             raw=payload,
         )
