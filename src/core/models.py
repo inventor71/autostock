@@ -67,6 +67,18 @@ class FilledOrder(BaseModel):
     commission: float = 0.0
 
 
+class OpenOrder(BaseModel):
+    """A resting (open) order at the broker — used to reconcile protective legs."""
+
+    order_id: str
+    symbol: str
+    side: OrderSide
+    order_type: OrderType
+    qty: float
+    limit_price: float | None = None
+    stop_price: float | None = None
+
+
 class Position(BaseModel):
     symbol: str
     qty: float

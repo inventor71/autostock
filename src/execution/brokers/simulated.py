@@ -5,7 +5,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from src.core.models import FilledOrder, Order, Position, PortfolioState
+from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.core.exceptions import BrokerError
 from src.execution.base import BaseBroker
@@ -345,6 +345,25 @@ class SimulatedBroker(BaseBroker):
 
     def get_all_positions(self) -> list[Position]:
         return list(self._positions.values())
+
+    def get_open_orders(self, symbol: str | None = None) -> list[OpenOrder]:
+        """Resting legs as OpenOrders (limit-> LIMIT, stop-> STOP)."""
+        out: list[OpenOrder] = []
+        for sym, legs in self._resting.items():
+            if symbol is not None and sym != symbol.upper() and sym != symbol:
+                continue
+            for leg in legs:
+                is_limit = leg.kind == "limit"
+                out.append(OpenOrder(
+                    order_id=leg.leg_id,
+                    symbol=leg.symbol,
+                    side=leg.side,
+                    order_type=OrderType.LIMIT if is_limit else OrderType.STOP,
+                    qty=leg.qty,
+                    limit_price=leg.trigger_price if is_limit else None,
+                    stop_price=None if is_limit else leg.trigger_price,
+                ))
+        return out
 
     def get_portfolio_state(self) -> PortfolioState:
         equity = self._cash + sum(p.market_value for p in self._positions.values())

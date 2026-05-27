@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.core.models import FilledOrder, Order, Position, PortfolioState
+from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
 
 
 class BaseBroker(ABC):
     """Abstract base class for all brokers."""
+
+    def get_open_orders(self, symbol: str | None = None) -> list[OpenOrder]:
+        """List resting (open) orders, optionally for one symbol.
+
+        Used to reconcile resting protective legs (so polled stop/take-profit
+        checks act only as a backup) and to find the order to cancel/replace on
+        an ADJUST_STOP. Default returns [] for brokers that don't track them.
+        """
+        return []
 
     @abstractmethod
     def submit_order(self, order: Order) -> FilledOrder:

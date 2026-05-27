@@ -6,7 +6,7 @@ from datetime import datetime
 from loguru import logger
 
 from src.core.exceptions import BrokerError
-from src.core.models import FilledOrder, Order, Position, PortfolioState
+from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.execution.base import BaseBroker
 
@@ -19,15 +19,25 @@ try:
         StopLimitOrderRequest,
         TakeProfitRequest,
         StopLossRequest,
+        GetOrdersRequest,
     )
     from alpaca.trading.enums import (
         OrderSide as AlpacaSide,
         OrderClass as AlpacaOrderClass,
         OrderStatus,
+        QueryOrderStatus,
         TimeInForce,
     )
 except ImportError:
     TradingClient = None
+
+
+_ALPACA_TO_ORDER_TYPE = {
+    "market": OrderType.MARKET,
+    "limit": OrderType.LIMIT,
+    "stop": OrderType.STOP,
+    "stop_limit": OrderType.STOP_LIMIT,
+}
 
 _TERMINAL_STATUSES = frozenset(
     {
@@ -187,6 +197,35 @@ class AlpacaBroker(BaseBroker):
             )
         except Exception:
             return None
+
+    def get_open_orders(self, symbol: str | None = None) -> list[OpenOrder]:
+        """Open orders at Alpaca (e.g. resting bracket protective legs)."""
+        try:
+            req = GetOrdersRequest(
+                status=QueryOrderStatus.OPEN,
+                symbols=[symbol] if symbol else None,
+            )
+            orders = self._client.get_orders(filter=req)
+        except Exception as e:
+            logger.warning(f"Failed to fetch open orders: {e}")
+            return []
+
+        out: list[OpenOrder] = []
+        for o in orders:
+            side = OrderSide.BUY if str(o.side).split(".")[-1].lower() == "buy" else OrderSide.SELL
+            otype = _ALPACA_TO_ORDER_TYPE.get(
+                str(o.order_type).split(".")[-1].lower(), OrderType.MARKET
+            )
+            out.append(OpenOrder(
+                order_id=str(o.id),
+                symbol=o.symbol,
+                side=side,
+                order_type=otype,
+                qty=float(o.qty or 0),
+                limit_price=float(o.limit_price) if o.limit_price else None,
+                stop_price=float(o.stop_price) if o.stop_price else None,
+            ))
+        return out
 
     def get_all_positions(self) -> list[Position]:
         try:

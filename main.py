@@ -282,11 +282,51 @@ def run_paper(settings, strategies_config: dict) -> None:
     mode.start()
 
 
+def run_agent(settings) -> None:
+    """Run the agentic PM trading loop: the LLM agent writes the journal, the
+    executor trades its decisions through RiskManager (bracket orders) -> Broker."""
+    from src.agent.executor import DecisionExecutor
+    from src.agent.orchestrator import AgentTradingLoop
+    from src.agent.session import AgentSession
+    from src.risk.manager import RiskManager
+    from src.trading.modes.agent import AgentTradingMode
+
+    data_provider = create_data_provider(settings)
+    broker = create_broker(settings)
+    risk_manager = RiskManager(
+        max_position_pct=settings.risk.max_position_pct,
+        max_portfolio_risk=settings.risk.max_portfolio_risk,
+        stop_loss_pct=settings.risk.stop_loss_pct,
+        take_profit_pct=settings.risk.take_profit_pct,
+        max_open_positions=settings.risk.max_open_positions,
+        max_stop_distance_pct=settings.risk.max_stop_distance_pct,
+        atr_stop_multiple=settings.risk.atr_stop_multiple,
+        market_halt_threshold_pct=settings.risk.market_halt_threshold_pct,
+        default_risk_reward=settings.risk.default_risk_reward,
+        use_bracket_orders=True,
+    )
+
+    universe = list(settings.trading.symbols)
+    session = AgentSession()
+    orchestrator = AgentTradingLoop(
+        session=session,
+        universe=universe,
+        portfolio_provider=broker.get_portfolio_state,
+    )
+    executor = DecisionExecutor(
+        broker, risk_manager, data_provider, journal=session.journal, universe=universe
+    )
+    logger.info(f"Agent mode: {len(universe)} symbols, broker paper={settings.broker.paper}")
+    AgentTradingMode(
+        orchestrator, executor, intraday_minutes=settings.trading.batch_interval_minutes
+    ).start()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Autostock - Automated Trading System")
     parser.add_argument(
         "--mode",
-        choices=["backtest", "paper", "live"],
+        choices=["backtest", "paper", "live", "agent"],
         default=None,
         help="Trading mode (overrides config)",
     )
@@ -335,6 +375,8 @@ def main():
         )
     elif mode in ("paper", "live"):
         run_paper(settings, strategies_config)
+    elif mode == "agent":
+        run_agent(settings)
     else:
         logger.error(f"Unknown mode: {mode}")
         sys.exit(1)
