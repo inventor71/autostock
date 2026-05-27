@@ -1,9 +1,12 @@
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
 from src.core.models import Order
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.core.exceptions import BrokerError
+from src.execution.brokers.alpaca_broker import AlpacaBroker, TradingClient
 from src.execution.brokers.simulated import SimulatedBroker
 
 
@@ -193,3 +196,34 @@ class TestSimulatedBracketOrders:
         # Protection is gone: a drop no longer sells.
         self.broker.set_current_price("AAPL", 89.0, high=91.0, low=89.0)
         assert self.broker.get_position("AAPL").qty == 10
+
+
+@pytest.mark.skipif(TradingClient is None, reason="alpaca-py not installed")
+class TestAlpacaClockRetry:
+    def _broker(self):
+        return AlpacaBroker(api_key="x", secret_key="y", paper=True)
+
+    def test_retries_then_succeeds(self):
+        broker = self._broker()
+        calls = {"n": 0}
+
+        class _FlakyClient:
+            def get_clock(self):
+                calls["n"] += 1
+                if calls["n"] < 3:
+                    raise RuntimeError("connection aborted")
+                return SimpleNamespace(is_open=True)
+
+        broker._client = _FlakyClient()
+        assert broker.is_market_open(retries=3, delay=0.0) is True
+        assert calls["n"] == 3  # retried past the transient failures
+
+    def test_fails_closed_after_all_retries(self):
+        broker = self._broker()
+
+        class _DeadClient:
+            def get_clock(self):
+                raise RuntimeError("down")
+
+        broker._client = _DeadClient()
+        assert broker.is_market_open(retries=2, delay=0.0) is False

@@ -201,14 +201,22 @@ class AlpacaBroker(BaseBroker):
         except Exception:
             return None
 
-    def is_market_open(self) -> bool:
-        """True only during the regular session. Fails closed (False) on error
-        so we never place orders when the market state is unknown."""
-        try:
-            return bool(self._client.get_clock().is_open)
-        except Exception as e:
-            logger.warning(f"Could not fetch market clock: {e}")
-            return False
+    def is_market_open(self, retries: int = 3, delay: float = 1.0) -> bool:
+        """True only during the regular session.
+
+        Retries on a transient error (e.g. a dropped connection) and only fails
+        closed (False) if every attempt fails, so a brief network blip mid-session
+        doesn't spuriously make us treat the market as closed and defer a cycle."""
+        last_err = None
+        for attempt in range(retries):
+            try:
+                return bool(self._client.get_clock().is_open)
+            except Exception as e:
+                last_err = e
+                if attempt < retries - 1:
+                    time.sleep(delay)
+        logger.warning(f"Could not fetch market clock after {retries} tries: {last_err}")
+        return False
 
     @staticmethod
     def _to_open_order(o, default_symbol: str | None = None) -> OpenOrder:
