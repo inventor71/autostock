@@ -189,11 +189,17 @@ def main() -> None:
         console.print(render(broker, client, data_client))
         return
 
-    with Live(render(broker, client, data_client), console=console, screen=True, refresh_per_second=4) as live:
+    # auto_refresh=False: don't spawn a background redraw thread (its constant
+    # re-rendering made the terminal cursor blink). We redraw only on our own
+    # interval via update(..., refresh=True).
+    with Live(
+        render(broker, client, data_client),
+        console=console, screen=True, auto_refresh=False,
+    ) as live:
         try:
             while True:
                 time.sleep(args.loop)
-                live.update(render(broker, client, data_client))
+                live.update(render(broker, client, data_client), refresh=True)
         except KeyboardInterrupt:
             pass
 
