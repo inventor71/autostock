@@ -81,19 +81,30 @@ def _positions_table(pf) -> Table:
     return t
 
 
-def _orders_table(opens) -> Table:
+def _orders_table(opens, prices) -> Table:
     t = Table(title="Resting orders", box=box.SIMPLE_HEAVY, title_justify="left", expand=False)
     t.add_column("Sym", style="bold cyan")
     t.add_column("Side")
     t.add_column("Role")
-    t.add_column("Price", justify="right")
+    t.add_column("Trigger", justify="right")
+    t.add_column("Now", justify="right")
+    t.add_column("Δ to trigger", justify="right")
     if not opens:
-        t.add_row("—", "", "none", "")
+        t.add_row("—", "", "none", "", "", "")
         return t
     for o in sorted(opens, key=lambda x: (x.symbol, _order_role(x))):
-        price = o.limit_price if o.limit_price is not None else o.stop_price
+        trigger = o.limit_price if o.limit_price is not None else o.stop_price
+        now = prices.get(o.symbol)
         side_color = "green" if o.side == OrderSide.BUY else "red"
-        t.add_row(o.symbol, f"[{side_color}]{o.side.value}[/]", _order_role(o), f"{price:.2f}")
+        if now:
+            delta = (trigger / now - 1) * 100
+            now_str, delta_str = f"{now:.2f}", f"[dim]{delta:+.1f}%[/]"
+        else:
+            now_str, delta_str = "—", ""
+        t.add_row(
+            o.symbol, f"[{side_color}]{o.side.value}[/]", _order_role(o),
+            f"{trigger:.2f}", now_str, delta_str,
+        )
     return t
 
 
@@ -126,12 +137,33 @@ def _fills_table(client) -> Table:
     return t
 
 
-def render(broker, client) -> Group:
+def _latest_prices(symbols, data_client, known) -> dict:
+    """Current prices for the given symbols; reuse held positions' price, fetch
+    the rest (e.g. a pending-entry name we don't hold yet) from the data API."""
+    prices = dict(known)
+    missing = [s for s in symbols if s not in prices]
+    if missing and data_client is not None:
+        try:
+            from alpaca.data.requests import StockLatestTradeRequest
+            trades = data_client.get_stock_latest_trade(
+                StockLatestTradeRequest(symbol_or_symbols=missing)
+            )
+            for sym, tr in trades.items():
+                prices[sym] = float(tr.price)
+        except Exception:
+            pass
+    return prices
+
+
+def render(broker, client, data_client) -> Group:
     pf = broker.get_portfolio_state()
+    opens = broker.get_open_orders()
+    held_prices = {sym: p.current_price for sym, p in pf.positions.items()}
+    prices = _latest_prices({o.symbol for o in opens}, data_client, held_prices)
     return Group(
         _summary(pf),
         _positions_table(pf),
-        _orders_table(broker.get_open_orders()),
+        _orders_table(opens, prices),
         _fills_table(client),
     )
 
@@ -147,16 +179,21 @@ def main() -> None:
     s = get_settings()
     broker = AlpacaBroker(api_key=s.alpaca_api_key, secret_key=s.alpaca_secret_key, paper=s.broker.paper)
     client = broker._client
+    try:
+        from alpaca.data.historical import StockHistoricalDataClient
+        data_client = StockHistoricalDataClient(s.alpaca_api_key, s.alpaca_secret_key)
+    except Exception:
+        data_client = None
 
     if args.loop is None:
-        console.print(render(broker, client))
+        console.print(render(broker, client, data_client))
         return
 
-    with Live(render(broker, client), console=console, screen=True, refresh_per_second=4) as live:
+    with Live(render(broker, client, data_client), console=console, screen=True, refresh_per_second=4) as live:
         try:
             while True:
                 time.sleep(args.loop)
-                live.update(render(broker, client))
+                live.update(render(broker, client, data_client))
         except KeyboardInterrupt:
             pass
 
