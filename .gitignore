@@ -47,3 +47,6 @@ Thumbs.db
 # Reports
 reports/
 *.html
+
+# Agent journal (runtime state; CLAUDE.md template lives in src/agent/templates/)
+workspace/
