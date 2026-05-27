@@ -26,7 +26,9 @@ PY="$ROOT/venv/bin/python"
 
 DEC_CMD="tail -F workspace/decisions.jsonl 2>/dev/null | jq '.'"
 STATUS_CMD="$PY scripts/status.py --loop 3"
-LOG_CMD="tail -F logs/autostock.log"
+# Re-colorize the plain log file at display time (loguru strips color in the
+# file sink); see scripts/logcolor.awk.
+LOG_CMD="tail -F logs/autostock.log | awk -f scripts/logcolor.awk"
 # Turn telemetry (cost/activity per turn) + closed round-trips, as they happen.
 EVENTS_CMD="tail -F workspace/turns.jsonl workspace/trades.jsonl 2>/dev/null"
 
