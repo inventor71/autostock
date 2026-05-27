@@ -117,6 +117,20 @@ class TestDecisionExecutor:
         journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=285.0))
         assert ex.execute_pending()[0].status == "skipped_hold"
 
+    def test_batch_dedups_same_symbol_to_latest(self, tmp_path):
+        # Two HOLDs for one symbol in a single batch must not place-then-replace
+        # (which raced and failed live for TSLA). Only the latest should apply.
+        ex, broker, journal = _make(tmp_path)
+        broker.set_current_price("AAPL", 300.0)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=285.0, target=350.0))
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=285.0, target=360.0))
+        outcomes = ex.execute_pending()
+        assert len(outcomes) == 1  # collapsed to the latest decision
+        opens = broker.get_open_orders("AAPL")
+        assert any(o.limit_price == 360.0 for o in opens)       # latest target placed
+        assert not any(o.limit_price == 350.0 for o in opens)   # superseded one not placed
+
     def test_sell_reduces_position(self, tmp_path):
         ex, broker, journal = _make(tmp_path)
         broker.set_current_price("AAPL", 100.0)

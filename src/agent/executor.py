@@ -14,6 +14,7 @@ then holds it).
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -93,10 +94,19 @@ class DecisionExecutor:
         if not pending:
             return []
 
+        # Collapse multiple decisions for the same symbol in this batch to the
+        # latest one — a later call supersedes earlier ones. This prevents e.g.
+        # two HOLDs for one name placing a protective order and then immediately
+        # trying to replace it within a single cycle.
+        latest_by_symbol: dict[str, Decision] = {}
+        for d in pending:
+            latest_by_symbol[d.symbol] = d
+        batch = list(latest_by_symbol.values())
+
         self._update_market_halt()
 
         outcomes: list[ExecutionOutcome] = []
-        for d in pending:
+        for d in batch:
             try:
                 outcomes.append(self._execute_one(d))
             except Exception as e:
@@ -201,8 +211,7 @@ class DecisionExecutor:
         if already:
             return ExecutionOutcome(d, "skipped_hold", "already protected at this stop")
 
-        for o in opens:
-            self.broker.cancel_order(o.order_id)
+        self._cancel_and_wait(d.symbol, opens)
 
         if target is not None:
             order = Order(
@@ -219,6 +228,18 @@ class DecisionExecutor:
         if target is not None:
             detail += f" target {target:.2f}"
         return ExecutionOutcome(d, "executed", detail, order_id=filled.order_id)
+
+    def _cancel_and_wait(self, symbol: str, opens, timeout: float = 6.0, interval: float = 0.5) -> None:
+        """Cancel the given orders, then wait for the broker to release the held
+        qty before a replacement is submitted. Alpaca cancellation is async, so
+        re-submitting immediately fails with 'insufficient qty available'."""
+        for o in opens:
+            self.broker.cancel_order(o.order_id)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.broker.get_open_orders(symbol):
+                return
+            time.sleep(interval)
 
     # ------------------------------------------------------------------ #
     # Reconciliation helpers
