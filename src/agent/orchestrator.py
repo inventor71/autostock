@@ -65,7 +65,7 @@ class AgentTradingLoop:
                 logger.warning(f"portfolio_provider failed, using journal: {exc}")
         return self.journal.list_positions()
 
-    def _run(self, prompt: str) -> AgentTurnResult:
+    def _run(self, prompt: str, turn_type: str) -> AgentTurnResult:
         before = len(self.journal.read_decisions())
         result = self.session.run_turn(prompt)
         self.last_new_decisions = self.journal.read_decisions()[before:]
@@ -81,23 +81,32 @@ class AgentTradingLoop:
             "Turn produced {} decision(s); {} in-universe, {} rejected",
             len(self.last_new_decisions), len(self.last_kept), len(self.last_rejected),
         )
+        # Capture the turn's cost/activity (ephemeral CLI telemetry).
+        from src.agent.turn_log import record_turn
+        record_turn(
+            self.journal.root / "turns.jsonl",
+            turn_type=turn_type,
+            model=getattr(self.session, "model", "unknown"),
+            num_decisions=len(self.last_new_decisions),
+            raw=result.raw,
+        )
         return result
 
     # ------------------------------------------------------------------ #
     # Turn types
     # ------------------------------------------------------------------ #
     def run_morning_research(self) -> AgentTurnResult:
-        return self._run(prompts.morning_research_prompt(self.universe, self.held_symbols()))
+        return self._run(prompts.morning_research_prompt(self.universe, self.held_symbols()), "research")
 
     def run_intraday(self, quotes: dict[str, float] | None = None) -> AgentTurnResult:
-        return self._run(prompts.intraday_prompt(quotes, self.held_symbols()))
+        return self._run(prompts.intraday_prompt(quotes, self.held_symbols()), "intraday")
 
     def run_eod_review(self, outcomes: list[str] | None = None) -> AgentTurnResult:
         # `outcomes` are richer (levels vs price, P&L) when the caller assembles
         # them from the broker; otherwise fall back to a plain decision list.
         if outcomes is None:
             outcomes = [f"{d.symbol} {d.action}" for d in self.journal.read_decisions()[-20:]]
-        return self._run(prompts.eod_review_prompt(outcomes))
+        return self._run(prompts.eod_review_prompt(outcomes), "eod")
 
     # ------------------------------------------------------------------ #
     def schedule(self, scheduler, intraday_minutes: int = 30) -> None:

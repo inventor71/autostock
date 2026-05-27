@@ -63,18 +63,25 @@ class AgentTradingMode:
 
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
-        from src.agent.equity_log import record_equity
+        from src.agent.equity_log import fetch_benchmark, record_equity
         from src.agent.review import outcome_lines
+        from src.agent.trades_log import record_trades
 
         decisions = self.executor.journal.read_decisions()
         outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
         self.orchestrator.run_eod_review(outcomes=outcomes)
         self.executor.execute_pending()
-        # Daily mark for the track record (equity curve / returns).
+
+        # Daily marks for the track record.
+        root = self.executor.journal.root
         record_equity(
             self.executor.broker.get_portfolio_state(),
-            self.executor.journal.root / "equity.jsonl",
+            root / "equity.jsonl",
+            benchmark=fetch_benchmark(self.executor.data_provider),
         )
+        client = getattr(self.executor.broker, "_client", None)
+        if client is not None:  # Alpaca: reconstruct closed round-trips
+            record_trades(client, root / "trades.jsonl")
 
     # ------------------------------------------------------------------ #
     def start(self) -> None:

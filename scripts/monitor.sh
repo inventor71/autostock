@@ -5,7 +5,8 @@
 #   ┌─────────────────┬───────────────────────────┐
 #   │ decisions.jsonl │ account dashboard (status) │
 #   │   (live)        ├───────────────────────────┤
-#   │                 │ agent log (autostock.log) │
+#   ├─────────────────┤ agent log (autostock.log) │
+#   │ turns + trades  │                            │
 #   └─────────────────┴───────────────────────────┘
 #
 # Run inside tmux  -> opens the layout as a NEW WINDOW in the current session
@@ -26,6 +27,8 @@ PY="$ROOT/venv/bin/python"
 DEC_CMD="tail -F workspace/decisions.jsonl 2>/dev/null | jq '.'"
 STATUS_CMD="$PY scripts/status.py --loop 3"
 LOG_CMD="tail -F logs/autostock.log"
+# Turn telemetry (cost/activity per turn) + closed round-trips, as they happen.
+EVENTS_CMD="tail -F workspace/turns.jsonl workspace/trades.jsonl 2>/dev/null"
 
 if [ "${1:-}" = "kill" ]; then
   if tmux kill-session -t "$NAME" 2>/dev/null; then echo "stopped session '$NAME'"; fi
@@ -39,6 +42,7 @@ build_layout() {
   local first="$1" right
   right=$(tmux split-window -h -P -F '#{pane_id}' -t "$first" -c "$ROOT" "$STATUS_CMD")
   tmux split-window -v -t "$right" -c "$ROOT" "$LOG_CMD"
+  tmux split-window -v -t "$first" -c "$ROOT" "$EVENTS_CMD"
   tmux select-pane -t "$first"
 }
 

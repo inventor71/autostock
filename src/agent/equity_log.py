@@ -16,18 +16,33 @@ from loguru import logger
 from src.core.models import PortfolioState
 
 
-def snapshot(portfolio: PortfolioState) -> dict:
-    """Build an equity/P&L snapshot dict from a portfolio state."""
+def snapshot(portfolio: PortfolioState, benchmark: dict | None = None) -> dict:
+    """Build an equity/P&L snapshot dict from a portfolio state.
+
+    ``benchmark`` (e.g. ``{"SPY": 750.6, "QQQ": 730.3, "VIX": 16.6}``) is stored
+    alongside so relative performance / regime can be reconstructed and profile
+    A/Bs normalized for market conditions.
+    """
     invested = sum(p.market_value for p in portfolio.positions.values())
     open_pnl = sum(p.unrealized_pnl for p in portfolio.positions.values())
-    return {
+    equity = portfolio.equity
+    largest = max((p.market_value for p in portfolio.positions.values()), default=0.0)
+
+    def _pct(x: float) -> float:
+        return round(x / equity * 100, 2) if equity else 0.0
+
+    snap = {
         "ts": datetime.now().isoformat(timespec="seconds"),
         "date": datetime.now().date().isoformat(),
-        "equity": round(portfolio.equity, 2),
+        "equity": round(equity, 2),
         "cash": round(portfolio.cash, 2),
         "invested": round(invested, 2),
         "open_pnl": round(open_pnl, 2),
         "position_count": portfolio.position_count,
+        # Exposure / risk discipline
+        "invested_pct": _pct(invested),
+        "cash_pct": _pct(portfolio.cash),
+        "largest_pos_pct": _pct(largest),
         "positions": [
             {
                 "symbol": sym,
@@ -39,11 +54,25 @@ def snapshot(portfolio: PortfolioState) -> dict:
             for sym, p in sorted(portfolio.positions.items())
         ],
     }
+    if benchmark:
+        snap["benchmark"] = {k: round(float(v), 2) for k, v in benchmark.items() if v is not None}
+    return snap
 
 
-def record_equity(portfolio: PortfolioState, path: str | Path) -> dict:
+def fetch_benchmark(data_provider, symbols: tuple[str, ...] = ("SPY", "QQQ", "^VIX")) -> dict:
+    """Best-effort latest prices for benchmark symbols (skips ones that error)."""
+    out: dict[str, float] = {}
+    for sym in symbols:
+        try:
+            out[sym.lstrip("^")] = float(data_provider.get_latest_price(sym))
+        except Exception:
+            continue
+    return out
+
+
+def record_equity(portfolio: PortfolioState, path: str | Path, benchmark: dict | None = None) -> dict:
     """Append a snapshot of the account to the JSONL equity log; return it."""
-    snap = snapshot(portfolio)
+    snap = snapshot(portfolio, benchmark=benchmark)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
