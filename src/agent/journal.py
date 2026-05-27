@@ -13,6 +13,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
 
+from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
 # repo root: src/agent/journal.py -> parents[2]
@@ -110,7 +111,11 @@ class Journal:
             line = line.strip()
             if not line:
                 continue
-            decision = Decision.model_validate_json(line)
+            try:
+                decision = Decision.model_validate_json(line)
+            except Exception as exc:  # one malformed LLM-written line must not sink the read
+                logger.warning(f"Skipping unparseable decision line: {exc}")
+                continue
             if symbol is not None and decision.symbol != symbol.upper():
                 continue
             if since is not None and decision.ts < since:

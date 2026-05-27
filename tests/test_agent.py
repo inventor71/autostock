@@ -7,8 +7,10 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
+from src.agent import prompts
 from src.agent.journal import Decision, Journal
-from src.agent.session import AgentSession
+from src.agent.orchestrator import AgentTradingLoop, filter_in_universe
+from src.agent.session import AgentSession, AgentTurnResult
 from src.agent.tools import market
 
 
@@ -294,3 +296,121 @@ class TestAgentSession:
         sess = AgentSession(workspace=tmp_path / "ws", runner=runner)
         with pytest.raises(RuntimeError, match="cli blew up"):
             sess.run_turn("x")
+
+
+# --------------------------------------------------------------------------- #
+# Turn prompts
+# --------------------------------------------------------------------------- #
+class TestPrompts:
+    def test_morning_has_universe_held_and_discovery(self):
+        p = prompts.morning_research_prompt(["AAPL", "MSFT"], held=["NVDA"])
+        assert "Morning research" in p
+        assert "AAPL" in p and "MSFT" in p
+        assert "NVDA" in p
+        assert "scoreboard" in p  # pure-LLM discovery via the scoreboard tool
+        assert "advisory only" in p
+
+    def test_intraday_includes_quotes(self):
+        p = prompts.intraday_prompt(quotes={"AAPL": 300.0}, held=["AAPL"])
+        assert "Intraday" in p
+        assert "AAPL=300.0" in p
+
+    def test_eod_mentions_lessons_and_grade(self):
+        p = prompts.eod_review_prompt(["AAPL BUY"])
+        assert "lessons.md" in p
+        assert "AAPL BUY" in p
+
+
+# --------------------------------------------------------------------------- #
+# Orchestrator
+# --------------------------------------------------------------------------- #
+class _FakeSession:
+    def __init__(self, journal, to_write=None):
+        self.journal = journal
+        self.prompts: list[str] = []
+        self._to_write = to_write or []
+
+    def run_turn(self, prompt, system_prompt=None):
+        self.prompts.append(prompt)
+        for d in self._to_write:
+            self.journal.append_decision(d)
+        return AgentTurnResult(result="ok", session_id="sid", resumed=False, raw={})
+
+
+class TestFilterInUniverse:
+    def test_split(self):
+        ds = [Decision(symbol="AAPL", action="BUY"), Decision(symbol="ZZZZ", action="BUY")]
+        kept, rejected = filter_in_universe(ds, ["AAPL", "MSFT"])
+        assert [d.symbol for d in kept] == ["AAPL"]
+        assert [d.symbol for d in rejected] == ["ZZZZ"]
+
+
+class TestOrchestrator:
+    def test_morning_runs_and_passes_prompt(self, tmp_path):
+        sess = _FakeSession(Journal(root=tmp_path / "ws"))
+        loop = AgentTradingLoop(session=sess, universe=["AAPL", "MSFT"])
+        res = loop.run_morning_research()
+        assert res.result == "ok"
+        assert "Morning research" in sess.prompts[0]
+        assert "AAPL" in sess.prompts[0]
+
+    def test_out_of_universe_decision_is_flagged(self, tmp_path):
+        sess = _FakeSession(
+            Journal(root=tmp_path / "ws"),
+            to_write=[Decision(symbol="AAPL", action="BUY"), Decision(symbol="ZZZZ", action="BUY")],
+        )
+        loop = AgentTradingLoop(session=sess, universe=["AAPL", "MSFT"])
+        loop.run_intraday()
+        assert len(loop.last_new_decisions) == 2
+        assert [d.symbol for d in loop.last_kept] == ["AAPL"]
+        assert [d.symbol for d in loop.last_rejected] == ["ZZZZ"]
+
+    def test_held_from_portfolio_provider(self, tmp_path):
+        j = Journal(root=tmp_path / "ws")
+        j.init()
+
+        class _PF:
+            positions = {"NVDA": object(), "AMD": object()}
+
+        loop = AgentTradingLoop(
+            session=_FakeSession(j), universe=["NVDA", "AMD"], portfolio_provider=lambda: _PF()
+        )
+        assert loop.held_symbols() == ["AMD", "NVDA"]
+
+    def test_held_falls_back_to_journal(self, tmp_path):
+        j = Journal(root=tmp_path / "ws")
+        j.init()
+        j.write_position("AAPL", "# thesis")
+        loop = AgentTradingLoop(session=_FakeSession(j), universe=["AAPL"])
+        assert loop.held_symbols() == ["AAPL"]
+
+    def test_schedule_registers_three_turns(self, tmp_path):
+        loop = AgentTradingLoop(session=_FakeSession(Journal(root=tmp_path / "ws")), universe=["AAPL"])
+
+        class _FakeScheduler:
+            def __init__(self):
+                self.jobs = []
+
+            def add_market_open_job(self, func, job_id):
+                self.jobs.append(job_id)
+
+            def add_batch_job(self, func, interval_minutes, job_id):
+                self.jobs.append((job_id, interval_minutes))
+
+            def add_market_close_job(self, func, job_id):
+                self.jobs.append(job_id)
+
+        sch = _FakeScheduler()
+        loop.schedule(sch, intraday_minutes=20)
+        assert "agent_morning" in sch.jobs
+        assert "agent_eod" in sch.jobs
+        assert ("agent_intraday", 20) in sch.jobs
+
+
+class TestRobustDecisionRead:
+    def test_skips_malformed_line(self, tmp_path):
+        j = Journal(root=tmp_path / "ws")
+        j.decisions_file.parent.mkdir(parents=True, exist_ok=True)
+        good = Decision(symbol="AAPL", action="BUY").model_dump_json()
+        j.decisions_file.write_text(good + "\n{not valid json}\n" + good + "\n")
+        assert len(j.read_decisions()) == 2  # malformed middle line skipped
