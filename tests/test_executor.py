@@ -5,7 +5,7 @@ import pandas as pd
 from src.agent.executor import DecisionExecutor
 from src.agent.journal import Decision, Journal
 from src.agent.review import outcome_lines
-from src.core.models import Order
+from src.core.models import OpenOrder, Order
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.execution.brokers.simulated import SimulatedBroker
 from src.risk.manager import RiskManager
@@ -251,3 +251,30 @@ class TestSimulatedOpenOrders:
         opens = broker.get_open_orders("AAPL")
         assert {o.order_type for o in opens} == {OrderType.LIMIT, OrderType.STOP}
         assert all(o.side == OrderSide.SELL for o in opens)
+
+
+class TestCancelAndWait:
+    def test_polls_until_orders_clear(self, tmp_path):
+        # _cancel_and_wait must cancel, then poll until the broker reports no
+        # open orders (Alpaca cancels async -> qty stays held until it settles),
+        # so a replacement isn't submitted while the qty is still reserved.
+        ex, _, _ = _make(tmp_path)
+        leg = OpenOrder(
+            order_id="x", symbol="AAPL", side=OrderSide.SELL,
+            order_type=OrderType.STOP, qty=10, stop_price=90.0,
+        )
+        cancelled, polls = [], {"n": 0}
+
+        class _AsyncCancelBroker:
+            def cancel_order(self, order_id):
+                cancelled.append(order_id)
+                return True
+
+            def get_open_orders(self, symbol=None):
+                polls["n"] += 1
+                return [leg] if polls["n"] <= 2 else []  # clears on the 3rd poll
+
+        ex.broker = _AsyncCancelBroker()
+        ex._cancel_and_wait("AAPL", [leg], timeout=2.0, interval=0.01)
+        assert cancelled == ["x"]  # the order was cancelled
+        assert polls["n"] >= 3     # waited (polled) until open orders cleared
