@@ -450,3 +450,38 @@ class TestRobustDecisionRead:
         good = Decision(symbol="AAPL", action="BUY").model_dump_json()
         j.decisions_file.write_text(good + "\n{not valid json}\n" + good + "\n")
         assert len(j.read_decisions()) == 2  # malformed middle line skipped
+
+
+# --------------------------------------------------------------------------- #
+# Equity log
+# --------------------------------------------------------------------------- #
+class TestEquityLog:
+    def _portfolio(self):
+        from src.core.models import PortfolioState, Position
+        return PortfolioState(
+            cash=90000.0, equity=100000.0,
+            positions={
+                "AAPL": Position(symbol="AAPL", qty=10, avg_entry_price=300.0,
+                                 current_price=310.0, unrealized_pnl=100.0, market_value=3100.0),
+            },
+        )
+
+    def test_record_and_read(self, tmp_path):
+        from src.agent.equity_log import record_equity, read_equity
+        path = tmp_path / "equity.jsonl"
+        snap = record_equity(self._portfolio(), path)
+        assert snap["equity"] == 100000.0
+        assert snap["cash"] == 90000.0
+        assert snap["invested"] == 3100.0
+        assert snap["open_pnl"] == 100.0
+        assert snap["position_count"] == 1
+        assert snap["positions"][0]["symbol"] == "AAPL"
+        # appends, oldest first
+        record_equity(self._portfolio(), path)
+        records = read_equity(path)
+        assert len(records) == 2
+        assert records[0]["equity"] == 100000.0
+
+    def test_read_missing_is_empty(self, tmp_path):
+        from src.agent.equity_log import read_equity
+        assert read_equity(tmp_path / "nope.jsonl") == []

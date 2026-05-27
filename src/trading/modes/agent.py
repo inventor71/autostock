@@ -63,12 +63,18 @@ class AgentTradingMode:
 
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
+        from src.agent.equity_log import record_equity
         from src.agent.review import outcome_lines
 
         decisions = self.executor.journal.read_decisions()
         outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
         self.orchestrator.run_eod_review(outcomes=outcomes)
         self.executor.execute_pending()
+        # Daily mark for the track record (equity curve / returns).
+        record_equity(
+            self.executor.broker.get_portfolio_state(),
+            self.executor.journal.root / "equity.jsonl",
+        )
 
     # ------------------------------------------------------------------ #
     def start(self) -> None:
