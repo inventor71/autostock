@@ -28,6 +28,26 @@ class TradingScheduler:
         )
         logger.info(f"Scheduled batch job '{job_id}' every {interval_minutes} min")
 
+    def add_daily_job(
+        self,
+        func,
+        hour: int,
+        minute: int = 0,
+        job_id: str = "daily",
+        day_of_week: str = "mon-fri",
+        timezone: str = "US/Eastern",
+    ) -> None:
+        """Run a job daily at a given ET time (e.g. pre-market research at 09:00)."""
+        self._scheduler.add_job(
+            func,
+            trigger=CronTrigger(
+                day_of_week=day_of_week, hour=hour, minute=minute, timezone=timezone
+            ),
+            id=job_id,
+            replace_existing=True,
+        )
+        logger.info(f"Scheduled daily job '{job_id}' at {hour:02d}:{minute:02d} {timezone}")
+
     def add_market_open_job(self, func, job_id: str = "market_open") -> None:
         """Run a job at US market open (9:30 AM ET, Mon-Fri)."""
         self._scheduler.add_job(

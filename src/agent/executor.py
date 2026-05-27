@@ -81,6 +81,12 @@ class DecisionExecutor:
     # Execute pending decisions
     # ------------------------------------------------------------------ #
     def execute_pending(self) -> list[ExecutionOutcome]:
+        # Trade only during the regular session; off-hours, leave decisions
+        # pending (cursor untouched) so they execute at the next open.
+        if not self.broker.is_market_open():
+            logger.info("Market closed; deferring decision execution")
+            return []
+
         decisions = self.journal.read_decisions()
         cursor = self._load_cursor()
         pending = decisions[cursor:]
@@ -211,6 +217,8 @@ class DecisionExecutor:
 
     def run_risk_exits(self) -> list:
         """Polled stop/take-profit backup for positions WITHOUT resting protection."""
+        if not self.broker.is_market_open():
+            return []
         portfolio = self.broker.get_portfolio_state()
         for sym, pos in portfolio.positions.items():
             try:

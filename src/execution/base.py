@@ -17,6 +17,12 @@ class BaseBroker(ABC):
         """
         return []
 
+    def is_market_open(self) -> bool:
+        """Whether the regular session is open right now. Order placement is
+        gated on this for the live agent path. Default True (simulated/backtest
+        brokers are always 'open')."""
+        return True
+
     @abstractmethod
     def submit_order(self, order: Order) -> FilledOrder:
         """Submit an order for execution."""

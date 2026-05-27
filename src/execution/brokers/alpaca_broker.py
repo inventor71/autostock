@@ -198,6 +198,15 @@ class AlpacaBroker(BaseBroker):
         except Exception:
             return None
 
+    def is_market_open(self) -> bool:
+        """True only during the regular session. Fails closed (False) on error
+        so we never place orders when the market state is unknown."""
+        try:
+            return bool(self._client.get_clock().is_open)
+        except Exception as e:
+            logger.warning(f"Could not fetch market clock: {e}")
+            return False
+
     def get_open_orders(self, symbol: str | None = None) -> list[OpenOrder]:
         """Open orders at Alpaca (e.g. resting bracket protective legs)."""
         try:

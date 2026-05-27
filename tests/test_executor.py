@@ -119,6 +119,19 @@ class TestDecisionExecutor:
         assert any(o.stop_price == 95.0 for o in opens)   # tightened 90 -> 95
         assert any(o.limit_price == 130.0 for o in opens)  # target preserved
 
+    def test_defers_execution_when_market_closed(self, tmp_path):
+        ex, broker, journal = _make(tmp_path, price=100.0)
+        broker.set_current_price("AAPL", 100.0)
+        broker.is_market_open = lambda: False  # market closed
+        journal.append_decision(Decision(symbol="AAPL", action="BUY", stop=95.0, target=120.0))
+        assert ex.execute_pending() == []  # deferred, nothing placed
+        assert broker.get_position("AAPL") is None
+        # Reopen: the still-pending decision now executes (cursor was untouched).
+        broker.is_market_open = lambda: True
+        out = ex.execute_pending()
+        assert out and out[0].status == "executed"
+        assert broker.get_position("AAPL") is not None
+
     def test_adjust_stop_ratchet_rejects_loosening(self, tmp_path):
         ex, broker, journal = _make(tmp_path, price=100.0)
         broker.set_current_price("AAPL", 100.0)
