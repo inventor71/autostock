@@ -1,10 +1,14 @@
-from datetime import datetime
+import json
+import uuid
+from datetime import date, datetime
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 from pydantic import ValidationError
 
 from src.agent.journal import Decision, Journal
+from src.agent.session import AgentSession
 from src.agent.tools import market
 
 
@@ -188,3 +192,85 @@ class TestToolsCLI:
         assert rc == 0
         data = json.loads(capsys.readouterr().out)
         assert {row["symbol"] for row in data} == {"AAPL", "MSFT"}
+
+
+# --------------------------------------------------------------------------- #
+# Agent session (no real claude CLI: runner is injected)
+# --------------------------------------------------------------------------- #
+class _FakeRunner:
+    def __init__(self, stdout: str, returncode: int = 0, stderr: str = ""):
+        self.calls: list[dict] = []
+        self._stdout = stdout
+        self._returncode = returncode
+        self._stderr = stderr
+
+    def __call__(self, cmd, *, input, cwd, timeout):
+        self.calls.append({"cmd": cmd, "input": input, "cwd": cwd, "timeout": timeout})
+        return SimpleNamespace(returncode=self._returncode, stdout=self._stdout, stderr=self._stderr)
+
+
+def _ok_payload(result="done", session_id="srv-sid"):
+    return json.dumps({"type": "result", "result": result, "is_error": False, "session_id": session_id})
+
+
+class TestAgentSession:
+    def test_first_turn_creates_session(self, tmp_path):
+        runner = _FakeRunner(_ok_payload("wrote AAPL thesis"))
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner)
+        res = sess.run_turn("analyze AAPL")
+
+        cmd = runner.calls[0]["cmd"]
+        assert "-p" in cmd
+        assert cmd[cmd.index("--output-format") + 1] == "json"
+        assert "--session-id" in cmd and "--resume" not in cmd
+        # allowedTools is one comma-joined arg with web + restricted Bash
+        allow = cmd[cmd.index("--allowedTools") + 1]
+        assert "WebSearch" in allow
+        assert "Bash(python -m src.agent.tools:*)" in allow
+        # prompt goes on stdin; cwd is the workspace
+        assert runner.calls[0]["input"] == "analyze AAPL"
+        assert runner.calls[0]["cwd"].endswith("ws")
+        assert res.result == "wrote AAPL thesis"
+        assert res.resumed is False
+        assert sess.is_started()
+
+    def test_second_turn_resumes(self, tmp_path):
+        runner = _FakeRunner(_ok_payload())
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner)
+        sess.run_turn("turn 1")
+        res2 = sess.run_turn("turn 2")
+        cmd2 = runner.calls[1]["cmd"]
+        assert "--resume" in cmd2 and "--session-id" not in cmd2
+        assert res2.resumed is True
+
+    def test_started_marker_persists_across_instances(self, tmp_path):
+        ws = tmp_path / "ws"
+        day = date(2026, 5, 27)
+        AgentSession(workspace=ws, runner=_FakeRunner(_ok_payload()), session_date=day).run_turn("t1")
+        # A fresh instance (e.g. next cron invocation) must see the started session.
+        runner2 = _FakeRunner(_ok_payload())
+        sess_b = AgentSession(workspace=ws, runner=runner2, session_date=day)
+        assert sess_b.is_started()
+        sess_b.run_turn("t2")
+        assert "--resume" in runner2.calls[0]["cmd"]
+
+    def test_session_id_deterministic_per_day(self, tmp_path):
+        a = AgentSession(workspace=tmp_path / "ws", session_date=date(2026, 1, 1))
+        b = AgentSession(workspace=tmp_path / "ws2", session_date=date(2026, 1, 1))
+        c = AgentSession(workspace=tmp_path / "ws3", session_date=date(2026, 1, 2))
+        assert a.session_id == b.session_id  # same day -> same id
+        assert a.session_id != c.session_id  # new day -> fresh id
+        uuid.UUID(a.session_id)  # valid UUID
+
+    def test_raises_on_error_payload(self, tmp_path):
+        runner = _FakeRunner(json.dumps({"is_error": True, "result": "boom"}))
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner)
+        with pytest.raises(RuntimeError, match="boom"):
+            sess.run_turn("x")
+        assert not sess.is_started()  # a failed first turn must not mark started
+
+    def test_raises_on_nonzero_exit(self, tmp_path):
+        runner = _FakeRunner("", returncode=1, stderr="cli blew up")
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner)
+        with pytest.raises(RuntimeError, match="cli blew up"):
+            sess.run_turn("x")
