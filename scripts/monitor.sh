@@ -29,8 +29,9 @@ STATUS_CMD="$PY scripts/status.py --loop 3"
 # Re-colorize the plain log file at display time (loguru strips color in the
 # file sink); see scripts/logcolor.awk.
 LOG_CMD="tail -F logs/autostock.log | awk -f scripts/logcolor.awk"
-# Turn telemetry (cost/activity per turn) + closed round-trips, as they happen.
-EVENTS_CMD="tail -F workspace/turns.jsonl workspace/trades.jsonl 2>/dev/null"
+# Turn telemetry (cost/activity per turn) + closed round-trips, as they happen,
+# condensed to one scannable line each by scripts/events.jq.
+EVENTS_CMD="tail -F workspace/turns.jsonl workspace/trades.jsonl 2>/dev/null | jq -Rr --unbuffered -f scripts/events.jq"
 
 if [ "${1:-}" = "kill" ]; then
   if tmux kill-session -t "$NAME" 2>/dev/null; then echo "stopped session '$NAME'"; fi
@@ -38,13 +39,24 @@ if [ "${1:-}" = "kill" ]; then
   exit 0
 fi
 
-# Build the 3-pane layout starting from a pane already running the decisions
-# stream. $1 = that pane's id.
+# Build the 4-pane layout starting from a pane already running the decisions
+# stream. $1 = that pane's id. Each pane gets a title shown on its top border.
 build_layout() {
-  local first="$1" right
-  right=$(tmux split-window -h -P -F '#{pane_id}' -t "$first" -c "$ROOT" "$STATUS_CMD")
-  tmux split-window -v -t "$right" -c "$ROOT" "$LOG_CMD"
-  tmux split-window -v -t "$first" -c "$ROOT" "$EVENTS_CMD"
+  local first="$1" right logp eventp
+  right=$(tmux split-window -h -P -F '#{pane_id}'  -t "$first" -c "$ROOT" "$STATUS_CMD")
+  logp=$(tmux split-window -v -P -F '#{pane_id}'   -t "$right" -c "$ROOT" "$LOG_CMD")
+  eventp=$(tmux split-window -v -P -F '#{pane_id}' -t "$first" -c "$ROOT" "$EVENTS_CMD")
+
+  tmux select-pane -t "$first"  -T "decisions (live)"
+  tmux select-pane -t "$eventp" -T "turns + trades"
+  tmux select-pane -t "$right"  -T "account dashboard"
+  tmux select-pane -t "$logp"   -T "agent log"
+
+  # Show each pane's title on its top border (active pane highlighted).
+  tmux set-option -w -t "$first" pane-border-status top
+  tmux set-option -w -t "$first" pane-border-format \
+    "#{?pane_active,#[reverse],} #{pane_title} #[default]"
+
   tmux select-pane -t "$first"
 }
 
