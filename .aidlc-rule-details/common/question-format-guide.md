@@ -5,6 +5,14 @@
 ### Rule: Never Ask Questions in Chat
 **CRITICAL**: You must NEVER ask questions directly in the chat. ALL questions must be placed in dedicated question files.
 
+### Rule: Write Question Files in Korean (한국어)
+**CRITICAL**: All question files MUST be authored in Korean by default. This includes the question text,
+the multiple-choice option labels/descriptions, and any intent-analysis or instructional preamble in the file.
+Keep the structural tokens unchanged and in place: the option letters (`A) B) C) ... X)`), the mandatory
+`X) Other`-equivalent last option (write it as `X) 기타`), and the `[Answer]:` tags. Code identifiers, file
+paths, and technical terms may remain in English where translating would reduce clarity. This is the project
+default — only switch languages if the user explicitly requests another language.
+
 ### Question File Format
 
 #### File Naming Convention

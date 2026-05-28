@@ -113,3 +113,86 @@ Tests 155 → 179. Working tree clean.
 **Remaining (deferred)**: Q-1 (WorkspaceStore), Q-3 (`get_status` mode), Q-4 (test coverage:
 TradingEngine/LLM/providers/AgentSession), Q-5 (lazy imports), H-1 (short positions),
 H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessment.md`.
+
+## New Feature Track: Dynamic Intraday Pattern Detection (F1)
+- **Started**: 2026-05-28. **Stage**: INCEPTION → Requirements Analysis (intent/feasibility), minimal.
+- **Requirements doc**: `aidlc-docs/inception/requirements/intraday-pattern-feature.md`
+- **Feasibility verdict**: observation valid; naive "LLM predicts shifting patterns" risky
+  (non-stationarity → ~20–60 sessions/regime, not backtestable, narrative-overfitting risk).
+  Reframed to "falsifiable hypothesis lifecycle + honest out-of-sample scoring" on the existing
+  agent/journal/EOD-review architecture. Phased P0→P3.
+- **User decision**: build **P0 only first (exploratory)** — answer "do these patterns
+  statistically exist & persist?" with real data, then re-decide P1+.
+- **P0 plan — DONE 2026-05-28** (15 new tests; suite 179 → 194 green):
+  - [x] `src/data/intraday_features.py` — pure per-session features + `FEATURE_COLUMNS`
+  - [x] `src/data/intraday_store.py` — CSV-backed `IntradayFeatureStore` (`data/intraday/`), idempotent on (date,symbol)
+  - [x] `src/data/intraday_collector.py` — `sessionize`/`features_for_symbol`/`collect` + CLI (`backfill`/`today`)
+  - [x] `src/data/intraday_analysis.py` — `Hypothesis` registry, conditional edge (n/hit_rate/excess/t-stat),
+        rolling-window stability, md/JSON report + CLI
+  - [x] `tests/test_intraday.py` — features (example + Hypothesis invariants), store round-trip/idempotency,
+        collector sessionize/prev-close-chaining/failure-tolerance, analysis injected-pattern vs flat
+  - **Live-validated**: real yfinance backfill (AAPL, 14 sessions) → report rendered; rolling view already
+    shows a candidate pattern flipping sign across windows (non-stationarity made visible — the intended signal).
+  - Decisions: CSV (no new dep; pyarrow absent, pandas 3.0 present, swappable backend), MINUTE_5 bars via
+    existing provider, universe from `config/settings.yaml`; no LLM/web/trading in P0.
+  - **P0+ (2026-05-28): Alpaca + date-range backfill added** for deep multi-year history. `collect()` takes
+    `start`/`end` (limit dropped in range mode); CLI `backfill --provider {yfinance,alpaca} --start --end`.
+    2 new collector tests (range vs limit call routing); suite 194 → 196 green. Live-validated: Alpaca pulled
+    107,633 AAPL 5m bars (2024-01→2026-05) → 633 sessions; report over 647 sessions shows only
+    `gap_down_reversion` flickering (t≈2.8 but n=12 with one window flipping negative) — the small-sample /
+    non-stationarity reality, and the case for a full-universe backfill (×~105 → ~100× the conditional n).
+  - **Next (user re-decides):** run a full-universe Alpaca backfill, read the stability report, then decide whether
+    P1 (hypothesis lifecycle in journal + EOD out-of-sample scoring) is worth building.
+
+## New Feature Track: Human-Steering Console for Agent Mode (F2)
+- **Started**: 2026-05-28. **Stage**: INCEPTION → Requirements Analysis (comprehensive-leaning), awaiting answers at the gate.
+- **Goal**: A console on `main.py --mode agent` for human-in-the-loop steering in natural language
+  (e.g. "sell AAPL"). Must (1) carry out the intent, (2) durably log the intervention, and (3) keep the
+  running agent consistent (the agent becomes aware of the human change so its journal/theses/protection
+  don't drift). Headline value: correcting an AI mistake quickly in plain language.
+- **Integration surface mapped** (read 2026-05-28): `main.run_agent` → `modes/agent.AgentTradingMode`
+  (scheduler + `while True` loop) → `agent/orchestrator.AgentTradingLoop` (LLM turns, journal writes) +
+  `agent/executor.DecisionExecutor` (the ONLY order-placing path: journal `decisions.jsonl` → RiskManager
+  bracket → Broker, cursor-idempotent) over the file-based `agent/journal.Journal` (workspace/).
+- **Questions doc**: `aidlc-docs/inception/requirements/human-steering-console-questions.md` (answered).
+  **Requirements doc**: `aidlc-docs/inception/requirements/human-steering-console.md`.
+- **Confirmed decisions (2026-05-28):** Q1=B in-process REPL thread; Q2=C hybrid (structured verbs +
+  NL notes); Q3=B echo+confirm for trades; Q4=C trades+lifecycle+context steering; Q5=B passive channel +
+  immediate reconcile turn; Q6=A same RiskManager→Broker gate; Q7=A structured logging now (learning deferred);
+  Q8=A new worktree+branch; Q9=A security enforced; Q10=B PBT partial.
+- **Core NFR (NFR-1):** single serialized command path (lock/queue) shared by console + scheduler +
+  reconcile turn — avoids broker/cursor/CLI-session races. Same queue enables a future file-drop front-end
+  (headless/detached) cheaply. **Open assumption:** trader run attached (foreground/tmux), not detached —
+  to confirm at approval (else 1st front-end becomes file-drop).
+- **Extension Configuration (F2):** Security Baseline = Enabled (enforce; applicable SECURITY-03/11/13/15,
+  others N/A — local CLI). Property-Based Testing = Partial (PBT-02/03/07/08/09; Hypothesis; parser +
+  HumanDirective record round-trip). Consistent with the project-wide config above.
+- **Execution plan**: `aidlc-docs/inception/plans/execution-plan.md` (Workflow Planning). Risk: Medium–High
+  (touches live order path + adds concurrency to the running daemon); rollback easy (worktree/branch).
+- **Single unit**: `human-steering-console`. Internal build sequence: record/channel/`source` tag → parser/log →
+  serialized command path + lifecycle state → human-trade route via executor → reconcile turn + prompts → REPL + wiring.
+- **Stage Progress (F2)**:
+  - [x] Workspace Detection — reused (brownfield, existing project).
+  - [x] Reverse Engineering — reused (artifacts already exist).
+  - [x] Requirements Analysis — complete 2026-05-28 (requirements.md; extensions recorded). **Approved.**
+  - [x] User Stories — **SKIP** (single-operator tool; workflows captured as FRs; user chose Approve & Continue).
+  - [x] Workflow Planning — complete 2026-05-28 (execution-plan.md). **Approved** ("승인할게. 진행하자").
+  - [x] Application Design — **SKIP** (folded into Functional Design; single small component set).
+  - [x] Units Generation — **SKIP** (single cohesive unit).
+  - [x] Functional Design — **COMPLETE** 2026-05-29 (awaiting approval). Q1–Q10 + clarification CQ1–CQ6 answered.
+        Artifacts in `aidlc-docs/construction/human-steering-console/functional-design/`: domain-entities.md,
+        business-logic-model.md, business-rules.md, frontend-components.md.
+        **Key locked decisions:** all `/command` slash grammar; `/buy SYM <N$|Nsh>`, `/sell SYM <N%|Nsh|N$>`
+        (reject bad/missing unit); `[y/N]` confirm, `CONFIRM` keyword for `/flatten all`+`/kill`; loguru stdout
+        off→file + console as a monitor.sh pane (console==daemon, in-process REPL); async reconcile on trades+directives.
+        **Human-approval gate (Q8, scope addition → requirements §8.1 FR-8):** human trade → symbol human-locked →
+        agent BUY/SELL on it parked as PendingApproval (`/pending`,`/approve|/reject`); approve→unlock, reject→count++,
+        2 rejects→denied-for-day; `/unlock` manual, ET-date auto-clear; protective orders + risk-exits exempt;
+        approve/reject outcome fed back to agent. RunState(pause/halt) not persisted (restart→running, Q9=A).
+        **Test env (CQ6=A):** separate Alpaca paper account (already created) + isolated workspace for manual smoke.
+        **Worktree deferred to Code Generation entry** (design = docs only).
+  - [→] NFR Requirements — NEXT (minimal).
+  - [ ] NFR Requirements — **EXECUTE (minimal)** (tech stack: no new runtime deps, stdlib threading/cmd, Hypothesis).
+  - [ ] NFR Design — **EXECUTE** (single serialized command path + turn-lock; security placement; fault isolation).
+  - [ ] Infrastructure Design — **SKIP** (local CLI, no infra change).
+  - [ ] Code Generation — **EXECUTE**. [ ] Build and Test — **EXECUTE** (no-regression of 196 tests + new PBT/concurrency).
