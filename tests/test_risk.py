@@ -144,8 +144,9 @@ class TestRiskManager:
         assert order is not None
         assert order.qty == 30  # 30% of 100 shares
 
-    def test_partial_sell_zero_percent_sells_minimum(self):
-        """Test edge case: sell_pct=0 should sell at least 1 share."""
+    def test_partial_sell_zero_percent_returns_no_order(self):
+        """sell_pct=0 means sell nothing -> no order. (The old code wrongly forced
+        a 1-share sell, which could oversell a small/fractional position.)"""
         signal = TradeSignal(symbol="AAPL", signal=Signal.SELL, confidence=0.7, sell_pct=0.0)
         portfolio = PortfolioState(
             cash=50000,
@@ -153,11 +154,11 @@ class TestRiskManager:
             positions={"AAPL": Position(symbol="AAPL", qty=100, avg_entry_price=150)},
         )
         order = self.rm.evaluate_signal(signal, 140.0, portfolio)
-        assert order is not None
-        assert order.qty == 1  # Minimum 1 share
+        assert order is None
 
-    def test_partial_sell_small_position(self):
-        """Test partial sell with small position rounds to at least 1 share."""
+    def test_partial_sell_keeps_fractional(self):
+        """Partial sell keeps fractional sizing (Alpaca supports fractional shares)
+        instead of rounding up to a whole share, which oversold the intent."""
         signal = TradeSignal(symbol="AAPL", signal=Signal.SELL, confidence=0.7, sell_pct=0.3)
         portfolio = PortfolioState(
             cash=50000,
@@ -166,8 +167,21 @@ class TestRiskManager:
         )
         order = self.rm.evaluate_signal(signal, 150.0, portfolio)
         assert order is not None
-        # 30% of 2 shares = 0.6, rounded to 0, but minimum is 1
-        assert order.qty == 1
+        assert order.qty == pytest.approx(0.6)  # 30% of 2 shares, fractional
+
+    def test_full_sell_of_fractional_position_is_exact(self):
+        """Full exit (sell_pct=1.0) of a sub-1-share position sells the EXACT
+        held quantity -- the old int()+min-1 tried to sell 1 share of 0.5 held,
+        which the broker would reject/oversell."""
+        signal = TradeSignal(symbol="AAPL", signal=Signal.SELL, sell_pct=1.0)
+        portfolio = PortfolioState(
+            cash=50000,
+            equity=50050,
+            positions={"AAPL": Position(symbol="AAPL", qty=0.5, avg_entry_price=100)},
+        )
+        order = self.rm.evaluate_signal(signal, 100.0, portfolio)
+        assert order is not None
+        assert order.qty == pytest.approx(0.5)  # exact, not rounded up to 1
 
 
 class TestRiskManagerBracket:

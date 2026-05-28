@@ -268,9 +268,18 @@ class RiskManager:
         sell_pct = getattr(signal, "sell_pct", 1.0)
         sell_pct = max(0.0, min(1.0, sell_pct))  # Clamp to 0-1 range
 
-        qty = int(position.qty * sell_pct)
+        # Sell the requested fraction of the ACTUAL position. A full exit sells
+        # the exact held quantity -- never truncate to int, which broke fractional
+        # positions (int(0.5)=0 then forced a 1-share oversell) and was
+        # inconsistent with the stop/take-profit exits that sell position.qty as a
+        # float. Fractional sizing is kept so Alpaca fractional shares exit cleanly.
+        qty = min(round(position.qty * sell_pct, 9), position.qty)
         if qty <= 0:
-            qty = 1  # Minimum 1 share
+            logger.debug(
+                f"Sell quantity rounds to 0 for {signal.symbol} "
+                f"(sell_pct={sell_pct:.2f}), skipping"
+            )
+            return None
 
         logger.info(
             f"Risk approved: SELL {qty} {signal.symbol} @ ~{price:.2f} "
