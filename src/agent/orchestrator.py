@@ -5,7 +5,8 @@ This is the agentic path's own loop — deliberately NOT a ``BaseStrategy`` on
 in one turn). It sequences the daily turn types (morning research / intraday /
 EOD review), supplies live context (universe menu, held positions), and tracks
 which decisions each turn produced. It writes only to the journal; reading
-``decisions.jsonl`` and executing via RiskManager/Broker is Phase 3.
+``decisions.jsonl`` and executing via RiskManager/Broker is the DecisionExecutor's
+job (see ``src/agent/executor.py``).
 """
 
 from __future__ import annotations
@@ -50,10 +51,10 @@ class AgentTradingLoop:
         self.research_model = research_model
         self.research_timeout = research_timeout
         # Optional source of real holdings (a broker); falls back to the journal's
-        # tracked theses so the loop is usable before execution is wired (Phase 3).
+        # tracked theses when no broker is supplied.
         self.portfolio_provider = portfolio_provider
 
-        # Populated after each turn for inspection / Phase 3 handoff.
+        # Populated after each turn for inspection and the executor handoff.
         self.last_new_decisions: list[Decision] = []
         self.last_kept: list[Decision] = []
         self.last_rejected: list[Decision] = []

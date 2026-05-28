@@ -245,18 +245,3 @@ class AgentSession:
             resumed=resume,
             raw=payload,
         )
-
-
-def research_prompt(symbols: list[str]) -> str:
-    """A minimal morning-research instruction (Phase 2 will enrich turn prompts)."""
-    names = ", ".join(symbols)
-    return (
-        "Morning research turn. Read your CLAUDE.md and journal first.\n"
-        f"Focus symbols: {names}.\n"
-        "Use the market-data tools (quote/indicators/scoreboard/fundamentals/news) "
-        "and web research as needed. For each focus symbol, write or update its "
-        "thesis and plan (entry/stop/target) in positions/<SYMBOL>.md, refresh "
-        "regime.md and watchlist.md, and append any actionable decisions to "
-        "decisions.jsonl following the schema in CLAUDE.md. You are advisory only "
-        "— do not attempt to place orders."
-    )

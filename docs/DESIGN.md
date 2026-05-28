@@ -7,7 +7,10 @@
 
 ## 1. 개요
 
-Autostock은 **데이터 수집 → 신호 생성 → 리스크 관리 → 주문 실행**의 파이프라인을 추상화한 자동 매매 프레임워크다. 동일한 전략 코드를 **백테스트 / 페이퍼 트레이딩 / 실시간 매매** 세 가지 모드에서 그대로 재사용할 수 있도록 설계되었다.
+Autostock은 **데이터 수집 → 신호 생성 → 리스크 관리 → 주문 실행**의 파이프라인을 추상화한 자동 매매 프레임워크다. 두 가지 오케스트레이션 경로를 제공한다:
+
+- **전략 경로**(원형): 동일한 전략 코드를 **백테스트 / 페이퍼 트레이딩 / 실시간 매매** 모드에서 그대로 재사용. `TradingEngine`이 심볼별로 전략을 돌린다.
+- **에이전트 경로**(신규): LLM "포트폴리오 매니저"가 책 전체를 매일 추론해 결정을 저널에 쓰고, 결정론적 `DecisionExecutor`가 이를 브래킷 주문으로 체결한다(`--mode agent`). → §5.8 참고.
 
 핵심 특징:
 
@@ -15,6 +18,7 @@ Autostock은 **데이터 수집 → 신호 생성 → 리스크 관리 → 주�
 - **전략 다양성**: 기술적 분석 4종, ML 2종, LLM, 앙상블을 동일 인터페이스로 제공.
 - **백테스트-실거래 일관성**: `RiskManager`와 전략 로직을 백테스트와 실거래가 공유하여 결과 괴리를 최소화.
 - **LLM 자기개선 루프**: 백테스트 결과를 LLM이 분석해 트레이딩 프롬프트를 자동으로 버전업.
+- **에이전트 PM**: 두 번째 경로로, LLM이 자문(저널 작성)을 맡고 실행은 결정론적 Python(RiskManager → Broker)이 전담하는 brain/body 분리 구조.
 
 ---
 
@@ -65,7 +69,11 @@ Autostock은 **데이터 수집 → 신호 생성 → 리스크 관리 → 주�
                             ensemble                 Alpaca Broker
 ```
 
-**레이어 의존 방향**: `trading`·`backtest` → `strategy`·`risk`·`execution`·`data` → `core`
+> 위 다이어그램은 **전략 경로**(backtest/paper/realtime)를 나타낸다. **에이전트 경로**(`--mode agent`)는
+> `TradingEngine`을 거치지 않고 별도 루프를 돈다 — LLM PM(brain)이 저널에 결정을 쓰고, `DecisionExecutor`(body)가
+> 같은 `RiskManager`·`Broker`로 체결한다. 상세는 §5.8.
+
+**레이어 의존 방향**: `trading`·`backtest`·`agent` → `strategy`·`risk`·`execution`·`data` → `core`
 (상위 레이어만 하위를 참조하며, `core`는 누구에게도 의존하지 않는다.)
 
 ---
@@ -269,6 +277,42 @@ optimizer.py  ParameterOptimizer — param_grid 전수조합 그리드서치
 - `logger.py`: loguru 기반 로깅 설정 (`setup_logging`)
 - `alerts.py`: Slack/Telegram 알림 (config의 `monitoring`에서 토글)
 
+### 5.8 Agent 경로 (`src/agent/`) — LLM 포트폴리오 매니저
+
+전략 경로와 별개의 두 번째 오케스트레이션 경로다. `TradingEngine`이 심볼별로 도는 것과 달리,
+LLM PM이 **책 전체를 한 턴에** 추론한다. **brain/body 분리**가 핵심 설계다: LLM은 자문(저널 작성)만 하고,
+주문은 결정론적 Python만 넣는다.
+
+```
+AgentTradingMode (trading/modes/agent.py)   장중 인식 스케줄로 두 축을 합성
+├─ AgentTradingLoop (orchestrator.py)   brain: 일일 턴(리서치/장중/EOD) 시퀀싱
+│   └─ AgentSession (session.py)        로컬 `claude -p` CLI를 하루 단위 세션으로 래핑
+│        └─ Journal (journal.py)        파일 기반 영속 메모리(durable memory)
+│             ├─ decisions.jsonl        기계 실행용 Decision 라인(append-only)
+│             ├─ positions/<SYM>.md     종목별 논지(thesis)·계획(entry/stop/target)
+│             └─ regime/watchlist/lessons.md
+└─ DecisionExecutor (executor.py)       body: 결정을 읽어 실행 — 유일한 주문 경로
+     ├─ 풀 제약·만료·서킷브레이커 검사
+     ├─ RiskManager(브래킷 모드) → Broker
+     └─ 커서(.executor_state.json)로 멱등 실행
+```
+
+**핵심 설계 포인트**:
+
+- **brain/body 분리**: 에이전트는 `decisions.jsonl`에 제안을 append할 뿐, 실행기만 주문을 넣는다.
+  실행기는 모든 결정을 다른 경로와 **동일한 게이트**(`RiskManager` → `Broker`)에 통과시킨다.
+- **저널 = 단일 진실 출처**: 일일 CLI 세션은 하루 안의 연속성만 담당하고, 날짜가 바뀌면 새 세션을 쓴다.
+  durable state는 전부 `workspace/`의 파일(gitignore된 런타임 상태).
+- **멱등 실행**: 커서가 처리한 결정 라인 수를 기록해, 재실행해도 동일 브래킷을 한 번만 제출한다
+  (이후엔 거래소가 OCO를 보유).
+- **자문-실행 시간 분리**: 리서치는 장 시작 전에 앞서 돌 수 있지만(`is_market_open`이 False면 결정은 pending 유지),
+  실행은 정규장에서만 일어난다.
+- **텔레메트리/장부**: `turn_log`(턴별 비용), `equity_log`(일일 자산 vs 벤치마크), `trades_log`(완료된 라운드트립),
+  `review.py`(EOD 셀프리뷰 → lessons.md).
+
+> 참고: 실행기가 Alpaca에 한해 trade-ledger를 재구성할 때 브로커의 비공개 속성에 접근하는 등 일부 누수가 있다 —
+> §9 및 `aidlc-docs/inception/reverse-engineering/code-quality-assessment.md`(S-4) 참고.
+
 ---
 
 ## 6. 주요 데이터 흐름
@@ -353,11 +397,25 @@ prompts/           트레이딩 프롬프트 텍스트 + 버전 히스토리 JSO
 
 > 설계 검토 중 발견된 사항. 향후 작업 시 참고.
 
-1. ~~**`RealtimeTradingMode`의 속성 불일치**: `self.engine.symbols` 참조로 실시간 모드 구동 즉시 `AttributeError`~~ → **해결됨.** `self.engine.universe`로 수정. 더불어 `_on_bar`가 봉 수신 때마다 universe 전체를 재로드하던 비효율을 제거하고, 새로 추가한 `TradingEngine.run_cycle_for_symbol(symbol, latest_price)`로 **틱된 단일 심볼만** 처리하도록 개선했다 (해당 심볼의 손절/익절 검사 + 전략 실행). 단, 동적 심볼 선정(`supports_selection`)은 universe 레벨 개념이므로 per-symbol 실시간 경로에서는 적용되지 않는다.
-2. **`get_status()`의 하드코딩** (`trading/engine.py:177`): `"mode": "live"` 고정. 실제 모드를 반영하도록 개선 여지.
-3. **LLM 개선 루프의 재백테스트 미자동화**: `run_improvement_cycle`/`_run_prompt_improvement`가 새 프롬프트로 자동 재백테스트하지 않아, 반복 개선 시 동일 성과 데이터를 재사용한다 (코드 주석에도 명시됨).
-4. **`BacktestResult.trades` 미채움**: 백테스트는 trades를 dict 리스트로 모으지만 `BacktestResult.trades`(FilledOrder 리스트)에는 저장하지 않아, `auto_improver`의 거래 단위 분석이 제한적으로 동작.
-5. **숏 포지션 미지원**: `PositionSide.SHORT` 열거형은 있으나 리스크/실행 로직은 롱 온리 가정.
+**구조적 리팩터링(진행 중, AI-DLC)** — 상세·증거·수정안은
+`aidlc-docs/inception/reverse-engineering/code-quality-assessment.md` 참고:
+
+1. **리스크 청산 로직 3중 중복** (S-1): `TradingEngine._check_risk_exits` /
+   `_check_symbol_risk_exit` / `DecisionExecutor.run_risk_exits`가 같은 로직을 따로 구현.
+2. **`RiskManager`의 이중 모드** (S-2): `use_bracket_orders` 불리언으로 동작이 갈리고,
+   실행기가 주입된 인스턴스를 런타임에 변이시킨다.
+3. **config 싱글톤 직접 참조** (S-3): `src/` 내 여러 모듈이 `get_settings()`를 직접 당겨써 DI 원칙을 위반.
+4. **브로커 추상화 누수** (S-4): `getattr(broker, "_client")` 등으로 Alpaca 전용 동작을 덕타이핑.
+
+**기타 개선 포인트(보류)**:
+
+5. **`get_status()`의 하드코딩** (`trading/engine.py:278` 부근): `"mode": "live"` 고정. (Q-3)
+6. **LLM 개선 루프의 재백테스트 미자동화**: `_run_prompt_improvement`가 새 프롬프트로 자동 재백테스트하지 않아, 반복 개선 시 동일 성과 데이터를 재사용한다.
+7. **`BacktestResult.trades` 미채움**: 백테스트는 trades를 dict 리스트로 모으지만 `BacktestResult.trades`(FilledOrder 리스트)에는 저장하지 않아, `auto_improver`의 거래 단위 분석이 제한적으로 동작.
+8. **숏 포지션 미지원** (H-1): `PositionSide.SHORT` 열거형은 있으나 리스크/실행 로직은 롱 온리 가정.
+
+> **해결됨**: `RealtimeTradingMode`의 `engine.symbols` → `engine.universe` 속성 불일치, 및 봉 수신마다
+> universe 전체를 재로드하던 비효율(`run_cycle_for_symbol`로 틱된 단일 심볼만 처리).
 
 ---
 

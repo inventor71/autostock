@@ -1,6 +1,6 @@
 # Autostock - 자동 주식 거래 시스템
 
-미국 주식(NYSE/NASDAQ) 대상 자동 매매 시스템. 기술적 분석부터 ML 전략까지 지원.
+미국 주식(NYSE/NASDAQ) 대상 자동 매매 시스템. 기술적 분석·ML·LLM 전략과, LLM이 포트폴리오를 직접 운용하는 에이전트 모드를 지원.
 
 ---
 
@@ -12,8 +12,10 @@
 | **페이퍼 트레이딩** | Alpaca 모의 계좌에서 실제 시장과 동일한 조건으로 자동 매매 |
 | **기술적 전략 4종** | MA Crossover, RSI, MACD, Bollinger Bands |
 | **ML 전략 2종** | Random Forest, LSTM |
+| **LLM 전략** | Claude/OpenAI가 OHLCV·뉴스를 분석해 신호 생성 (프롬프트 자동개선 루프 포함) |
+| **에이전트 모드** | LLM PM이 매일 리서치→저널→결정을 작성하고, 결정론적 실행기가 RiskManager 경유로 브래킷 주문 실행 (`--mode agent`) |
 | **앙상블** | 복수 전략을 투표/가중치 방식으로 결합 |
-| **리스크 관리** | 포지션 사이징, 손절/익절 자동 실행 |
+| **리스크 관리** | 포지션 사이징, 손절/익절 자동 실행, 브래킷(OCO) 주문, 서킷 브레이커 |
 | **파라미터 최적화** | Grid search로 전략 파라미터 탐색 |
 | **배치/실시간 모드** | 주기적 실행 또는 WebSocket 스트리밍 |
 
@@ -52,7 +54,7 @@ python main.py --mode backtest --log-level DEBUG
 출력 예시:
 ```
 ==================================================
-Strategy: ma_crossover | Symbol: AAPL
+Strategy: ma_crossover | Universe: 2 symbols
 Period: 2023-01-01 to 2024-01-01
 ==================================================
 Total Return: 12.34%
@@ -73,6 +75,24 @@ python main.py --mode paper
 # 실시간 모드 (config/settings.yaml에서 trading.mode: realtime 설정)
 python main.py --mode paper
 ```
+
+### 2-1. 에이전트 모드 (LLM PM)
+
+LLM 에이전트가 매일 리서치하고, 종목별 논지(thesis)와 결정(decision)을 저널에 기록하면,
+결정론적 실행기가 RiskManager를 거쳐 브래킷 주문으로 체결합니다. 에이전트는 **자문 역할만** 하며
+주문은 실행기만 넣습니다. 로컬 `claude` CLI(구독 인증)를 브레인으로 사용합니다.
+
+```bash
+# 오늘 세션 이어서 시작 (같은 날 재시작 시 리서치 생략)
+python main.py --mode agent
+
+# 깨끗한 세션으로 새로 시작
+python main.py --mode agent --fresh
+```
+
+스케줄(ET): 장 시작 전 ~09:00 리서치 → 09:30 개장 시 실행 → 장중 N분마다 → 15:55 EOD 리뷰.
+저널·결정·로그는 `workspace/`(gitignore)에 영속화됩니다. 모델은 `config/settings.yaml`의
+`agent.model`(장중/EOD)·`agent.research_model`(리서치)로 설정합니다.
 
 ### 3. 전략 변경
 
@@ -192,16 +212,19 @@ python -m pytest tests/ -v
 
 ```
 autostock/
-├── main.py                 # 진입점 (--mode backtest/paper)
+├── main.py                 # 진입점 (--mode backtest/paper/live/agent)
 ├── config/                 # 설정 파일
 ├── src/
 │   ├── core/               # 타입, 모델, 예외
-│   ├── data/providers/     # 데이터 수집 (yfinance, alpaca)
-│   ├── strategy/           # 전략 (technical, ml, ensemble)
+│   ├── data/providers/     # 데이터 수집 (yfinance, alpaca, 뉴스)
+│   ├── strategy/           # 전략 (technical, ml, llm, ensemble)
 │   ├── execution/brokers/  # 주문 실행 (alpaca, simulated)
-│   ├── risk/               # 리스크 관리
+│   ├── risk/               # 리스크 관리 (사이징, 브래킷, 서킷브레이커)
 │   ├── backtest/           # 백테스트 엔진
-│   ├── trading/            # 트레이딩 엔진 + 스케줄러
+│   ├── trading/            # 트레이딩 엔진 + 스케줄러 + 실행 모드(batch/realtime/agent)
+│   ├── agent/              # 에이전트 모드 (LLM PM 오케스트레이터 + 결정 실행기 + 저널)
 │   └── monitoring/         # 로깅, 알림
-└── tests/                  # 테스트 (42개)
+└── tests/                  # 테스트 (pytest)
 ```
+
+> 자세한 내부 구조·설계 의도는 [docs/DESIGN.md](docs/DESIGN.md) 참고.

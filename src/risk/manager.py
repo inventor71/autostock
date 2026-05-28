@@ -30,10 +30,10 @@ class RiskManager:
     (so per-trade risk is capped at ``max_portfolio_risk`` instead of being
     computed against a fixed assumed stop).
 
-    It is **disabled by default** so the legacy market-order + polled-stop path
-    is byte-for-byte unchanged until the agent orchestrator opts in (Phase 3),
-    which also supplies ``protected_symbols`` to the stop/take checks so a
-    resting bracket and the polled backup never double-exit the same position.
+    It is **disabled by default**: the strategy path (TradingEngine) uses the
+    legacy market-order + polled-stop behavior, while the agent path enables it.
+    The agent path also supplies ``protected_symbols`` to the stop/take checks so
+    a resting bracket and the polled backup never double-exit the same position.
     """
 
     def __init__(
@@ -284,7 +284,7 @@ class RiskManager:
         )
 
     # ------------------------------------------------------------------ #
-    # Stop adjustment (ADJUST_STOP, used by the agent path in Phase 3)
+    # Stop adjustment (ADJUST_STOP, used by the agent path)
     # ------------------------------------------------------------------ #
     def ratchet_stop(
         self,
