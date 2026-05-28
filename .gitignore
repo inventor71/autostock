@@ -25,6 +25,7 @@ env/
 # Data and models
 data/*.csv
 data/*.parquet
+data/intraday/
 models/*.pkl
 models/*.pt
 models/*.pth
