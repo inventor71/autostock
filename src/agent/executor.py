@@ -25,6 +25,7 @@ from src.agent.journal import Decision, Journal
 from src.agent.tools import market
 from src.core.models import Order, TradeSignal
 from src.core.types import OrderClass, OrderSide, OrderType, Signal
+from src.risk.exits import run_polled_exits
 
 
 @dataclass
@@ -50,10 +51,16 @@ class DecisionExecutor:
         *,
         universe: list[str],
     ):
+        # The agent path REQUIRES a RiskManager constructed with bracket-mode
+        # enabled — it builds resting brackets from the agent's levels. Validate
+        # explicitly instead of silently flipping a flag on the injected object.
+        if not risk_manager.use_bracket_orders:
+            raise ValueError(
+                "DecisionExecutor requires a RiskManager constructed with "
+                "use_bracket_orders=True"
+            )
         self.broker = broker
         self.risk_manager = risk_manager
-        # The agent path trades via resting brackets built from its levels.
-        self.risk_manager.use_bracket_orders = True
         self.data_provider = data_provider
         self.journal = journal or Journal()
         self.universe = {s.upper() for s in universe}
@@ -260,24 +267,15 @@ class DecisionExecutor:
             return set()
 
     def run_risk_exits(self) -> list:
-        """Polled stop/take-profit backup for positions WITHOUT resting protection."""
+        """Polled stop/take-profit backup for positions WITHOUT resting protection.
+
+        Market-hours gated (off-hours the bracket order at the exchange is the
+        sole line of defense); see ``src/risk/exits.py`` for the shared logic.
+        """
         if not self.broker.is_market_open():
             return []
-        portfolio = self.broker.get_portfolio_state()
-        for sym, pos in portfolio.positions.items():
-            try:
-                pos.update_price(self.data_provider.get_latest_price(sym))
-            except Exception:
-                pass
-        protected = self.protected_symbols()
-        filled = []
-        exits = (
-            self.risk_manager.check_stop_loss(portfolio, protected)
-            + self.risk_manager.check_take_profit(portfolio, protected)
+        return run_polled_exits(
+            self.risk_manager, self.broker, self.broker.get_portfolio_state(),
+            data_provider=self.data_provider,
+            protected_symbols=self.protected_symbols(),
         )
-        for order in exits:
-            try:
-                filled.append(self.broker.submit_order(order))
-            except Exception as e:
-                logger.error(f"Backup exit failed for {order.symbol}: {e}")
-        return filled

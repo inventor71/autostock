@@ -8,6 +8,7 @@ from src.core.models import FilledOrder, Order, PortfolioState, TradeSignal
 from src.core.types import Signal, TimeFrame
 from src.data.base import BaseDataProvider
 from src.execution.base import BaseBroker
+from src.risk.exits import run_polled_exits
 from src.risk.manager import RiskManager
 from src.strategy.base import BaseStrategy
 
@@ -210,29 +211,11 @@ class TradingEngine:
         portfolio: PortfolioState,
         filled_orders: list[FilledOrder],
     ) -> None:
-        # Update current prices
-        for symbol in portfolio.positions:
-            try:
-                price = self.data_provider.get_latest_price(symbol)
-                portfolio.positions[symbol].update_price(price)
-            except Exception:
-                pass
-
-        # Check stop-loss
-        for order in self.risk_manager.check_stop_loss(portfolio):
-            try:
-                filled = self.broker.submit_order(order)
-                filled_orders.append(filled)
-            except Exception as e:
-                logger.error(f"Stop-loss execution failed: {e}")
-
-        # Check take-profit
-        for order in self.risk_manager.check_take_profit(portfolio):
-            try:
-                filled = self.broker.submit_order(order)
-                filled_orders.append(filled)
-            except Exception as e:
-                logger.error(f"Take-profit execution failed: {e}")
+        """Polled stop/take-profit backup for every position; see src/risk/exits.py."""
+        filled_orders.extend(run_polled_exits(
+            self.risk_manager, self.broker, portfolio,
+            data_provider=self.data_provider,
+        ))
 
     def _check_symbol_risk_exit(
         self,
@@ -241,39 +224,16 @@ class TradingEngine:
         portfolio: PortfolioState,
         filled_orders: list[FilledOrder],
     ) -> None:
-        """Check stop-loss / take-profit for a single symbol's position.
+        """Polled stop/take-profit backup for one symbol (realtime per-bar case).
 
-        Used by realtime per-symbol processing. Only the ticked symbol's
-        position is refreshed and acted on; other positions are untouched
-        to avoid trading on stale prices.
+        Only the ticked symbol's position is refreshed and acted on; other
+        positions are untouched to avoid trading on stale prices.
         """
-        position = portfolio.positions.get(symbol)
-        if position is None:
-            return
-
-        # Prefer the streamed price; fall back to a fetch only if needed
-        price = latest_price
-        if price is None:
-            try:
-                price = self.data_provider.get_latest_price(symbol)
-            except Exception as e:
-                logger.error(f"Failed to get price for {symbol}: {e}")
-                return
-        position.update_price(price)
-
-        # RiskManager scans the whole portfolio; keep only this symbol's exits
-        exit_orders = (
-            self.risk_manager.check_stop_loss(portfolio)
-            + self.risk_manager.check_take_profit(portfolio)
-        )
-        for order in exit_orders:
-            if order.symbol != symbol:
-                continue
-            try:
-                filled = self.broker.submit_order(order)
-                filled_orders.append(filled)
-            except Exception as e:
-                logger.error(f"Risk exit execution failed for {symbol}: {e}")
+        filled_orders.extend(run_polled_exits(
+            self.risk_manager, self.broker, portfolio,
+            data_provider=self.data_provider,
+            symbol=symbol, latest_price=latest_price,
+        ))
 
     def get_status(self) -> dict:
         """Get current engine status."""

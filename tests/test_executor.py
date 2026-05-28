@@ -46,7 +46,10 @@ class _StubProvider:
 
 def _make(tmp_path, price=100.0, spy_change=0.0, max_position_pct=0.5):
     broker = SimulatedBroker(initial_capital=100000.0)
-    rm = RiskManager(max_position_pct=max_position_pct)
+    # The agent executor requires a bracket-mode RiskManager (it builds resting
+    # brackets from the agent's levels) — this is now validated at construction
+    # rather than silently flipped on the injected object.
+    rm = RiskManager(max_position_pct=max_position_pct, use_bracket_orders=True)
     provider = _StubProvider(price=price, spy_change=spy_change)
     journal = Journal(root=tmp_path / "ws")
     ex = DecisionExecutor(broker, rm, provider, journal=journal, universe=["AAPL", "MSFT"])
@@ -191,7 +194,7 @@ class TestRiskExitsBackup:
             symbol="AAPL", side=OrderSide.BUY, qty=10,
             order_class=OrderClass.BRACKET, take_profit_price=140.0, stop_loss_price=80.0,
         ))
-        ex = DecisionExecutor(broker, RiskManager(), _StubProvider(price=92.0),
+        ex = DecisionExecutor(broker, RiskManager(use_bracket_orders=True), _StubProvider(price=92.0),
                               journal=Journal(root=tmp_path / "ws"), universe=["AAPL"])
         # Price -8% (beyond the 5% polled threshold), but a resting stop covers it.
         assert ex.run_risk_exits() == []
@@ -201,7 +204,7 @@ class TestRiskExitsBackup:
         broker = SimulatedBroker(initial_capital=100000.0)
         broker.set_current_price("AAPL", 100.0)
         broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))  # no protection
-        ex = DecisionExecutor(broker, RiskManager(), _StubProvider(price=92.0),
+        ex = DecisionExecutor(broker, RiskManager(use_bracket_orders=True), _StubProvider(price=92.0),
                               journal=Journal(root=tmp_path / "ws"), universe=["AAPL"])
         filled = ex.run_risk_exits()  # -8% with no resting stop -> backup fires
         assert len(filled) == 1
