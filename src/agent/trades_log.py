@@ -9,47 +9,14 @@ attribution are TODO (need the originating stop and the exit order type).
 from __future__ import annotations
 
 import json
-from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
 
-
-def match_round_trips(fills: list[dict]) -> list[dict]:
-    """FIFO-match fills into closed round-trips.
-
-    Each fill: ``{"symbol", "side": "buy"|"sell", "qty", "price", "ts"}`` (ts
-    ISO-8601, sortable). A sell closes the oldest open buy lots; each closed lot
-    yields one round-trip record. Open (unsold) lots produce nothing.
-    """
-    lots: dict[str, deque] = defaultdict(deque)  # symbol -> open buy lots [qty, price, ts]
-    trades: list[dict] = []
-    for f in sorted(fills, key=lambda x: x["ts"]):
-        sym, qty, price, ts = f["symbol"], float(f["qty"]), float(f["price"]), f["ts"]
-        if str(f["side"]).lower() == "buy":
-            lots[sym].append([qty, price, ts])
-            continue
-        remaining = qty
-        while remaining > 1e-9 and lots[sym]:
-            lot = lots[sym][0]
-            take = min(remaining, lot[0])
-            entry = lot[1]
-            trades.append({
-                "symbol": sym,
-                "qty": round(take, 6),
-                "entry_price": round(entry, 2),
-                "exit_price": round(price, 2),
-                "opened_at": lot[2],
-                "closed_at": ts,
-                "realized_pnl": round((price - entry) * take, 2),
-                "return_pct": round((price / entry - 1) * 100, 2) if entry else 0.0,
-            })
-            lot[0] -= take
-            remaining -= take
-            if lot[0] <= 1e-9:
-                lots[sym].popleft()
-    return trades
+# match_round_trips moved to src/core/trades.py so the backtest engine can share
+# the exact same FIFO matching; re-exported here for existing callers/tests.
+from src.core.trades import match_round_trips  # noqa: F401 (re-exported)
 
 
 def _trade_key(t: dict) -> str:

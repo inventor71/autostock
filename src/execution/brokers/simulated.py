@@ -62,17 +62,21 @@ class SimulatedBroker(BaseBroker):
         price: float,
         high: float | None = None,
         low: float | None = None,
-    ) -> None:
+    ) -> list[FilledOrder]:
         """Set current price for simulated fills and trigger any resting legs.
 
         ``high``/``low`` let callers feed a bar's intrabar range so resting
         stops/limits trigger on the extreme rather than only the close; both
         default to ``price`` (close-only behaviour).
+
+        Returns the fills from any resting legs the bar's range triggered (empty
+        if none) so callers — e.g. the backtest engine — can record exits that
+        the simulated exchange filled intra-bar.
         """
         self._current_prices[symbol] = price
         if symbol in self._positions:
             self._positions[symbol].update_price(price)
-        self._process_resting(
+        return self._process_resting(
             symbol,
             high if high is not None else price,
             low if low is not None else price,

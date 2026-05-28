@@ -8,8 +8,9 @@ from loguru import logger
 
 from src.backtest.metrics import generate_report
 from src.core.exceptions import InsufficientDataError
-from src.core.models import BacktestResult, Order, PortfolioState
-from src.core.types import OrderSide, Signal
+from src.core.models import BacktestResult, FilledOrder, Order
+from src.core.trades import match_round_trips
+from src.core.types import OrderClass, OrderSide
 from src.execution.brokers.simulated import SimulatedBroker
 from src.risk.manager import RiskManager
 from src.strategy.base import BaseStrategy
@@ -97,7 +98,23 @@ class BacktestEngine:
 
         self.broker.reset()
         equity_curve = []
-        trades = []
+        # Every fill (entries + exits) in match_round_trips format, so metrics
+        # are computed from closed round-trips -- not by counting each fill as a
+        # "trade" (which doubled the count and halved the win rate).
+        fills: list[dict] = []
+        filled_orders: list[FilledOrder] = []
+
+        def _record(fo: FilledOrder | None, ts) -> None:
+            if fo is None or fo.qty <= 0:
+                return
+            filled_orders.append(fo)
+            fills.append({
+                "symbol": fo.symbol,
+                "side": fo.side.value,
+                "qty": float(fo.qty),
+                "price": float(fo.filled_price),
+                "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+            })
 
         self._logger.info(
             f"Backtesting {self.strategy.name} on {len(universe)} symbols: "
@@ -105,42 +122,31 @@ class BacktestEngine:
         )
 
         for i in range(warmup_period, len(reference_bars)):
-            # Update prices for all symbols
+            ts = reference_bars.index[i]
+
+            # Advance prices with the bar's intra-bar range so resting protective
+            # orders trigger on the high/low like a real exchange (gap-safe) --
+            # the same way the live agent's brackets fire at Alpaca. Capture any
+            # exits the bar triggered.
             for symbol in universe:
                 symbol_bars = bars_dict.get(symbol)
                 if symbol_bars is None or i >= len(symbol_bars):
                     continue
-                price = float(symbol_bars.iloc[i]["close"])
-                self.broker.set_current_price(symbol, price)
+                row = symbol_bars.iloc[i]
+                for exit_fill in self.broker.set_current_price(
+                    symbol, float(row["close"]),
+                    high=float(row["high"]), low=float(row["low"]),
+                ):
+                    _record(exit_fill, ts)
 
-            # Get portfolio state
-            portfolio = self.broker.get_portfolio_state()
-
-            # Check stop-loss and take-profit
-            sl_orders = self.risk_manager.check_stop_loss(portfolio)
-            tp_orders = self.risk_manager.check_take_profit(portfolio)
-            for order in sl_orders + tp_orders:
-                try:
-                    filled = self.broker.submit_order(order)
-                    trades.append({
-                        "symbol": filled.symbol,
-                        "side": filled.side.value,
-                        "qty": filled.qty,
-                        "price": filled.filled_price,
-                        "timestamp": reference_bars.index[i],
-                        "pnl": self._calc_trade_pnl(filled, portfolio),
-                    })
-                except Exception as e:
-                    self._logger.debug(f"SL/TP order failed: {e}")
-
-            # Build market data dict for symbol selection
+            # Build look-ahead-safe market data for selection + signals.
             market_data = {}
             for symbol in universe:
                 symbol_bars = bars_dict.get(symbol)
                 if symbol_bars is not None and i < len(symbol_bars):
                     market_data[symbol] = symbol_bars.iloc[:i + 1]
 
-            # Strategy selects symbols if it supports selection
+            portfolio = self.broker.get_portfolio_state()
             if self.strategy.supports_selection():
                 try:
                     selected_symbols = self.strategy.select_symbols(
@@ -152,8 +158,6 @@ class BacktestEngine:
             else:
                 selected_symbols = universe
 
-            # Generate signals for selected symbols
-            portfolio = self.broker.get_portfolio_state()
             for symbol in selected_symbols:
                 history = market_data.get(symbol)
                 if history is None or history.empty:
@@ -166,32 +170,40 @@ class BacktestEngine:
 
                 price = float(history.iloc[-1]["close"])
                 order = self.risk_manager.evaluate_signal(signal, price, portfolio)
+                if order is None:
+                    continue
 
-                if order is not None:
-                    try:
-                        filled = self.broker.submit_order(order)
-                        trades.append({
-                            "symbol": symbol,
-                            "side": filled.side.value,
-                            "qty": filled.qty,
-                            "price": filled.filled_price,
-                            "timestamp": reference_bars.index[i],
-                            "pnl": self._calc_trade_pnl(filled, portfolio),
-                        })
-                        # Refresh portfolio after each trade
-                        portfolio = self.broker.get_portfolio_state()
-                    except Exception as e:
-                        self._logger.debug(f"Order failed: {e}")
+                # A discretionary sell must clear any resting protection first
+                # (mirrors the live executor's cancel-then-act) so stale OCO legs
+                # don't fire on a position the strategy already exited.
+                if order.side == OrderSide.SELL:
+                    for o in self.broker.get_open_orders(symbol):
+                        self.broker.cancel_order(o.order_id)
 
-            # Record equity
-            portfolio = self.broker.get_portfolio_state()
-            equity_curve.append(portfolio.equity)
+                try:
+                    filled = self.broker.submit_order(order)
+                except Exception as e:
+                    self._logger.debug(f"Order failed: {e}")
+                    continue
+                _record(filled, ts)
 
-        # Build result
+                # After an entry, arm a resting OCO (stop + take-profit) so exits
+                # trigger intra-bar at the simulated exchange -- the same path the
+                # live agent uses, instead of a close-only polled check.
+                if order.side == OrderSide.BUY and filled.qty > 0:
+                    _record(self._arm_protection(symbol, filled), ts)
+
+                portfolio = self.broker.get_portfolio_state()
+
+            equity_curve.append(self.broker.get_portfolio_state().equity)
+
+        # Metrics from closed round-trips (FIFO match), shared with the live ledger.
+        round_trips = match_round_trips(fills)
+        trades_for_metrics = [{**rt, "pnl": rt["realized_pnl"]} for rt in round_trips]
         equity_series = pd.Series(
             equity_curve, index=reference_bars.index[warmup_period:]
         )
-        report = generate_report(equity_series, trades, self.initial_capital)
+        report = generate_report(equity_series, trades_for_metrics, self.initial_capital)
 
         result = BacktestResult(
             strategy_name=self.strategy.name,
@@ -206,6 +218,7 @@ class BacktestEngine:
             win_rate=report["win_rate"],
             profit_factor=report["profit_factor"],
             equity_curve=equity_curve,
+            trades=filled_orders,
         )
 
         self._logger.info(
@@ -216,10 +229,27 @@ class BacktestEngine:
 
         return result
 
-    def _calc_trade_pnl(self, filled, portfolio: PortfolioState) -> float:
-        """Calculate PnL for a sell trade."""
-        if filled.side == OrderSide.SELL:
-            pos = portfolio.positions.get(filled.symbol)
-            if pos:
-                return (filled.filled_price - pos.avg_entry_price) * filled.qty
-        return 0.0
+    def _arm_protection(self, symbol: str, entry_fill: FilledOrder) -> FilledOrder | None:
+        """Arm a resting OCO (stop-loss + take-profit) on a freshly entered
+        position, at the RiskManager's configured percentages off the fill price.
+
+        This makes the backtest exit positions the same way the live agent does
+        -- a resting bracket the exchange triggers intra-bar -- rather than a
+        close-only polled stop. Returns the protective fill if the order
+        triggered on the same bar (rare), else None.
+        """
+        entry = entry_fill.filled_price
+        stop = round(entry * (1 - self.risk_manager.stop_loss_pct), 2)
+        target = round(entry * (1 + self.risk_manager.take_profit_pct), 2)
+        try:
+            return self.broker.submit_order(Order(
+                symbol=symbol,
+                side=OrderSide.SELL,
+                qty=entry_fill.qty,
+                order_class=OrderClass.OCO,
+                take_profit_price=target,
+                stop_loss_price=stop,
+            ))
+        except Exception as e:
+            self._logger.debug(f"Could not arm protection for {symbol}: {e}")
+            return None
