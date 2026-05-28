@@ -227,8 +227,10 @@ A full exit of a 0.5-share position computed `int(0.5)=0` → forced 1 → tried
 oversell; inconsistent with the float-qty stop/take exits. **Fix**: fractional-safe
 sizing — full exit sells exact `position.qty`, `sell_pct→0` returns no order.
 
-### M-1 · `PortfolioState.total_value` is a dead duplicate of `equity` — **OPEN (deferred)**
-Nothing reads `total_value`; every caller uses the `equity` field (set by the
-broker). The property recomputes `cash + Σ market_value`, which can diverge from
+### M-1 · `PortfolioState.total_value` is a dead duplicate of `equity` — **FIXED (commit pending)**
+Nothing read `total_value`; every caller uses the `equity` field (set by the
+broker). The property recomputed `cash + Σ market_value`, which can diverge from
 `equity` if position prices are stale — a latent trap for a future caller.
-**Suggested fix**: remove the property or make one derive from the other.
+**Fix**: removed the property; `equity` is now the single source of truth, with a
+comment on the model warning against re-adding a divergent duplicate. The only
+reference (a `test_core.py` assertion) was retargeted to `equity`.

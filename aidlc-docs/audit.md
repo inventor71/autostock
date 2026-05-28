@@ -90,3 +90,12 @@ PBT compliance (partial: PBT-02/03/07/08/09): N/A for U5/U6 — `match_round_tri
 **Context**: CONSTRUCTION → U5, U6 complete (closer-inspection bug fixes)
 
 ---
+
+## Construction U7 (M-1) — Remove dead total_value duplicate
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: "AI-DLC를 이용해서 M-1 수정해줘."
+**AI Response**: Verified `PortfolioState.total_value` was unused by production code (only `test_core.py` + docs referenced it). Removed the property; `equity` (broker-authoritative) is now the single source of account value, with a model comment warning against re-adding a divergent recompute. Retargeted the `test_core.py` assertion to `equity`. Updated DESIGN.md §4 (model description) and §9 (moved M-1 to resolved). 179 tests pass.
+Security compliance: N/A (no security-relevant surface). PBT compliance: N/A (no business logic / property introduced). No blocking findings.
+**Context**: CONSTRUCTION → U7 complete (M-1 fixed)
+
+---

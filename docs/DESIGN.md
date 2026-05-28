@@ -101,7 +101,7 @@ FilledOrder      체결 결과 (filled_price, filled_at, commission)
 Position         보유 포지션 (qty, avg_entry_price, unrealized_pnl)
                  └ update_price()로 시가평가 갱신, cost_basis 프로퍼티
 PortfolioState   계좌 스냅샷 (cash, equity, positions dict)
-                 └ total_value / position_count 프로퍼티
+                 └ equity가 계좌가치 단일 출처(브로커 권위값), position_count 프로퍼티
 BacktestResult   백테스트 성과 (수익률, Sharpe, MDD, 승률, equity_curve)
 ```
 
@@ -402,15 +402,15 @@ prompts/           트레이딩 프롬프트 텍스트 + 버전 히스토리 JSO
 
 1. **`get_status()`의 하드코딩** (`trading/engine.py:278` 부근): `"mode": "live"` 고정. (Q-3)
 2. **LLM 개선 루프의 재백테스트 미자동화**: `_run_prompt_improvement`가 새 프롬프트로 자동 재백테스트하지 않아, 반복 개선 시 동일 성과 데이터를 재사용한다.
-3. **`PortfolioState.total_value` 죽은 중복** (M-1): 아무도 안 읽으며 `equity` 필드와 발산 가능. 제거하거나 단일화 권장.
-4. **테스트 공백** (Q-4): `TradingEngine`·LLM 서브시스템·데이터 제공자·`AgentSession`은 아직 무테스트.
-5. **숏 포지션 미지원** (H-1): `PositionSide.SHORT` 열거형은 있으나 리스크/실행 로직은 롱 온리 가정.
+3. **테스트 공백** (Q-4): `TradingEngine`·LLM 서브시스템·데이터 제공자·`AgentSession`은 아직 무테스트.
+4. **숏 포지션 미지원** (H-1): `PositionSide.SHORT` 열거형은 있으나 리스크/실행 로직은 롱 온리 가정.
 
 > **해결됨**:
 > - `RealtimeTradingMode`의 `engine.symbols` → `engine.universe` 속성 불일치, 및 봉 수신마다 universe 전체를 재로드하던 비효율(`run_cycle_for_symbol`로 틱된 단일 심볼만 처리).
 > - 구조 리팩터링 S-5/S-3/S-1+S-2/S-4 (위 1~4번) 완료.
 > - **백테스트 정합성 (B-1/B-2)**: 메트릭이 라운드트립 기반(`src/core/trades.py::match_round_trips` 공유), 스탑/익절이 봉 high/low로 장중 트리거(resting OCO)되어 실거래와 일치. `BacktestResult.trades`도 채워짐.
 > - **소수 포지션 매도 (B-3)**: `_handle_sell`의 int 절삭·최소 1주 강제 제거 — 전량청산은 정확한 보유수량, fractional 안전.
+> - **계좌가치 단일화 (M-1)**: 죽은 `PortfolioState.total_value` 프로퍼티 제거 — `equity`(브로커 권위값)가 유일 출처.
 
 ---
 

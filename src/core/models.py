@@ -98,14 +98,15 @@ class Position(BaseModel):
 
 
 class PortfolioState(BaseModel):
+    # ``equity`` is the single source of truth for account value: the broker
+    # sets it authoritatively (Alpaca's account equity; the simulated broker
+    # computes cash + Σ market_value). Do not re-add a separate "total_value"
+    # that recomputes from ``positions`` — it can silently diverge from the
+    # broker's number when position prices are stale.
     cash: float
     equity: float
     positions: dict[str, Position] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=datetime.now)
-
-    @property
-    def total_value(self) -> float:
-        return self.cash + sum(p.market_value for p in self.positions.values())
 
     @property
     def position_count(self) -> int:

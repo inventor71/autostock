@@ -100,11 +100,16 @@ Sequential refactoring units, in user-specified order. Remaining findings (Q-*, 
     - `RiskManager._handle_sell`: dropped `int()` truncation + min-1-share floor; full exit sells exact
       `position.qty` (fractional-safe), sell_pct→0 returns no order. Corrected 2 bug-encoding tests + 1 new. 179 green.
 
+  - [x] **U7 (M-1)** — removed dead `PortfolioState.total_value` duplicate. Completed 2026-05-28.
+    - `equity` is now the single source of account value (broker-authoritative); added a model
+      comment warning against re-adding a divergent recompute. `test_core.py` assertion retargeted
+      to `equity`. DESIGN §4/§9 updated. 179 green.
+
 ## Completed Sequence Summary
 **Approved structural sequence** S-5 → S-3 → S-1+S-2 → S-4: all complete.
 **Closer-inspection bugs** (found on re-review) B-1, B-2, B-3: all fixed.
-Tests 155 → 179. Working tree clean (7 unit commits + 2 AI-DLC-docs commits + this).
+**Maintainability** M-1: fixed.
+Tests 155 → 179. Working tree clean.
 **Remaining (deferred)**: Q-1 (WorkspaceStore), Q-3 (`get_status` mode), Q-4 (test coverage:
-TradingEngine/LLM/providers/AgentSession), Q-5 (lazy imports), M-1 (`PortfolioState.total_value`
-dead duplicate), H-1 (short positions), H-2 (dev-env: single venv + ruff), H-3 (repo hygiene).
-See `code-quality-assessment.md`.
+TradingEngine/LLM/providers/AgentSession), Q-5 (lazy imports), H-1 (short positions),
+H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessment.md`.

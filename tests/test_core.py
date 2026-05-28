@@ -46,7 +46,7 @@ class TestModels:
             positions={"AAPL": pos},
         )
         assert portfolio.position_count == 1
-        assert portfolio.total_value == 51600.0
+        assert portfolio.equity == 51600.0  # broker-authoritative account value
 
 
 class TestExceptions:
