@@ -121,6 +121,47 @@ trading:
     - CCI
     - EQIX
     - SPG
+    # AI Infrastructure (data-center supply chain: memory, semicap, power/cooling, networking)
+    # Memory & storage
+    - RMBS
+    - MU
+    - SNDK
+    - WDC
+    - STX
+    # Semi IP / custom silicon / foundry
+    - ARM
+    - MRVL
+    - TSM
+    # Semicap equipment
+    - AMAT
+    - LRCX
+    - KLAC
+    - ASML
+    - TER
+    # Power & analog semis
+    - MPWR
+    - ADI
+    - "ON"
+    # Optical / AI networking
+    - ANET
+    - CIEN
+    - COHR
+    - LITE
+    # AI servers / ODM
+    - DELL
+    - SMCI
+    # Data-center power / electrical / cooling
+    - VRT
+    - ETN
+    - PWR
+    - GEV
+    - NVT
+    - MOD
+    # AI power generation (utilities)
+    - VST
+    - CEG
+    # Data-center REIT
+    - DLR
     # ETFs
     - SPY
     - QQQ
