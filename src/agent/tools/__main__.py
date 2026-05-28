@@ -18,6 +18,18 @@ def _provider():
     return YFinanceProvider()
 
 
+def _broker():
+    from config.config import get_settings
+    from src.execution.brokers.alpaca_broker import AlpacaBroker
+
+    settings = get_settings()
+    return AlpacaBroker(
+        api_key=settings.alpaca_api_key,
+        secret_key=settings.alpaca_secret_key,
+        paper=settings.broker.paper,
+    )
+
+
 def _universe() -> list[str]:
     from config.config import get_settings
     return list(get_settings().trading.symbols)
@@ -38,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Symbols to scan (default: the configured universe).",
     )
 
+    sub.add_parser("account")  # no args: live broker snapshot
+
     args = parser.parse_args(argv)
 
     if args.cmd == "quote":
@@ -51,6 +65,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "scoreboard":
         symbols = args.symbols or _universe()
         out = market.scoreboard(symbols, _provider())
+    elif args.cmd == "account":
+        out = market.account(_broker())
     else:  # pragma: no cover - argparse enforces choices
         parser.error(f"unknown command: {args.cmd}")
 

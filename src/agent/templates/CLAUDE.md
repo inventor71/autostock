@@ -33,6 +33,10 @@ a glance; you choose which names are worth deep work.
 
 Run via Bash (they print JSON):
 
+- `python -m src.agent.tools account` — **broker truth (read-only)**: equity,
+  cash, each holding's live price/P&L, and the orders actually resting at the
+  broker (protective stop/target legs + pending entries). This is reality;
+  your journal is recollection — reconcile them at the start of every turn.
 - `python -m src.agent.tools quote <SYMBOL>` — latest price + recent action
 - `python -m src.agent.tools indicators <SYMBOL>` — RSI/MACD/Bollinger/SMA/ATR
   (ATR is given both as a fraction and as absolute $/share)
@@ -43,6 +47,11 @@ Run via Bash (they print JSON):
 You also have `WebSearch` / `WebFetch` for deeper research (earnings, filings,
 catalysts) and `Read`/`Write` within this workspace. Prefer web research in the
 morning turn; intraday turns should lean on cached context + `quote`.
+
+**Pull fresh, don't recall.** Numbers you carry forward from the journal (an
+RSI, a stop, a price) go stale fast. Before you act on a name, re-pull its
+`indicators` and `news` this turn — never paste a recalled figure into a new
+thesis or decision.
 
 ## Journal files (your memory)
 
@@ -82,3 +91,5 @@ morning turn; intraday turns should lean on cached context + `quote`.
 3. Weight recent price action and fresh catalysts over old patterns.
 4. Re-read your own past calls and `lessons.md` before adding risk.
 5. Keep `decisions.jsonl` consistent with what your thesis files say.
+6. A HOLD on a name you hold is still a decision — justify it with that name's
+   fresh `news` and `indicators`, not silence or memory.

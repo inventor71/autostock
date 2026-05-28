@@ -170,3 +170,64 @@ def news(symbol: str, news_provider=None, limit: int = 8) -> dict:
             for it in items
         ],
     }
+
+
+def _side_str(value: Any) -> str:
+    return value.value if hasattr(value, "value") else str(value)
+
+
+def account(broker) -> dict:
+    """Live broker truth: equity/cash, held positions with P&L, resting orders.
+
+    Read-only. Lets the morning/intraday turns ground decisions in what the
+    account actually holds and what protective (stop/target) or pending-entry
+    orders are live at the broker — not the agent's journal recollection, which
+    can lag a fill or a triggered protective leg.
+    """
+    state = broker.get_portfolio_state()
+
+    orders_error: str | None = None
+    try:
+        open_orders = broker.get_open_orders()
+    except Exception as exc:  # broker truth is best-effort; positions still useful
+        open_orders, orders_error = [], str(exc)
+
+    positions = []
+    for p in sorted(state.positions.values(), key=lambda x: x.symbol):
+        unreal_pct = (
+            (p.current_price / p.avg_entry_price - 1) * 100 if p.avg_entry_price else None
+        )
+        positions.append({
+            "symbol": p.symbol,
+            "qty": _round(p.qty),
+            "avg_entry": _round(p.avg_entry_price, 2),
+            "price": _round(p.current_price, 2),
+            "unrealized_pnl": _round(p.unrealized_pnl, 2),
+            "unrealized_pct": _round(unreal_pct, 2) if unreal_pct is not None else None,
+            "market_value": _round(p.market_value, 2),
+        })
+
+    invested = sum(p.market_value for p in state.positions.values())
+    out: dict[str, Any] = {
+        "equity": _round(state.equity, 2),
+        "cash": _round(state.cash, 2),
+        "invested": _round(invested, 2),
+        "invested_pct": _round(invested / state.equity * 100, 2) if state.equity else None,
+        "position_count": len(positions),
+        "positions": positions,
+        "open_orders": [
+            {
+                "order_id": o.order_id,
+                "symbol": o.symbol,
+                "side": _side_str(o.side),
+                "type": _side_str(o.order_type),
+                "qty": _round(o.qty),
+                "limit": _round(o.limit_price, 2) if o.limit_price is not None else None,
+                "stop": _round(o.stop_price, 2) if o.stop_price is not None else None,
+            }
+            for o in open_orders
+        ],
+    }
+    if orders_error is not None:
+        out["open_orders_error"] = orders_error
+    return out

@@ -180,6 +180,48 @@ class TestMarketTools:
         assert n["news"][0]["link"] == "http://example/1"
         assert n["news"][0]["title"] == "Apple soars"
 
+    def test_account(self):
+        from src.core.models import OpenOrder, PortfolioState, Position
+        from src.core.types import OrderSide, OrderType
+
+        class FakeBroker:
+            def get_portfolio_state(self):
+                return PortfolioState(
+                    cash=5000.0, equity=11000.0,
+                    positions={
+                        "AAPL": Position(symbol="AAPL", qty=10, avg_entry_price=100.0,
+                                         current_price=110.0, unrealized_pnl=100.0,
+                                         market_value=1100.0),
+                    },
+                )
+
+            def get_open_orders(self):
+                return [OpenOrder(order_id="o1", symbol="AAPL", side=OrderSide.SELL,
+                                  order_type=OrderType.STOP, qty=10, stop_price=90.0)]
+
+        a = market.account(FakeBroker())
+        assert a["equity"] == 11000.0
+        assert a["position_count"] == 1
+        assert a["invested"] == 1100.0
+        assert a["positions"][0]["symbol"] == "AAPL"
+        assert a["positions"][0]["unrealized_pct"] == 10.0
+        assert a["open_orders"][0]["side"] == "sell"
+        assert a["open_orders"][0]["stop"] == 90.0
+
+    def test_account_open_orders_error_is_soft(self):
+        from src.core.models import PortfolioState
+
+        class FlakyBroker:
+            def get_portfolio_state(self):
+                return PortfolioState(cash=1.0, equity=1.0, positions={})
+
+            def get_open_orders(self):
+                raise RuntimeError("alpaca down")
+
+        a = market.account(FlakyBroker())
+        assert a["open_orders"] == []
+        assert "alpaca down" in a["open_orders_error"]
+
     def test_outputs_json_serializable(self):
         import json
 
@@ -210,6 +252,31 @@ class TestToolsCLI:
         assert rc == 0
         data = json.loads(capsys.readouterr().out)
         assert {row["symbol"] for row in data} == {"AAPL", "MSFT"}
+
+    def test_cli_account_dispatch(self, monkeypatch, capsys):
+        import json
+
+        from src.agent.tools import __main__ as cli
+        from src.core.models import PortfolioState, Position
+
+        class FakeBroker:
+            def get_portfolio_state(self):
+                return PortfolioState(
+                    cash=1.0, equity=2.0,
+                    positions={"AAPL": Position(symbol="AAPL", qty=1, avg_entry_price=1.0,
+                                                current_price=2.0, unrealized_pnl=1.0,
+                                                market_value=2.0)},
+                )
+
+            def get_open_orders(self):
+                return []
+
+        monkeypatch.setattr(cli, "_broker", lambda: FakeBroker())
+        rc = cli.main(["account"])
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["position_count"] == 1
+        assert data["positions"][0]["symbol"] == "AAPL"
 
 
 # --------------------------------------------------------------------------- #
@@ -375,6 +442,15 @@ class TestPrompts:
         assert "NVDA" in p
         assert "scoreboard" in p  # pure-LLM discovery via the scoreboard tool
         assert "advisory only" in p
+
+    def test_morning_forces_account_and_per_symbol_research(self):
+        # The turn must ground in broker truth and re-pull per-name data, not
+        # lean on recalled journal numbers.
+        p = prompts.morning_research_prompt(["AAPL"], held=["NVDA"])
+        assert "account" in p
+        assert "indicators <SYMBOL>" in p
+        assert "news <SYMBOL>" in p
+        assert "mandatory" in p.lower()
 
     def test_intraday_includes_quotes(self):
         p = prompts.intraday_prompt(quotes={"AAPL": 300.0}, held=["AAPL"])

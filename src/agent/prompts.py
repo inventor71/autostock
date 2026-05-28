@@ -37,18 +37,33 @@ Tradeable universe — you may ONLY act on these symbols (this is the menu;
 choose what is worth deep work yourself, there is no pre-filtered shortlist):
 {universe_str}
 
-Do the following:
-1. Refresh regime.md — SPY/QQQ/VIX, sector posture, macro — using the tools and
-   web research.
-2. Discover candidates: scan with `python -m src.agent.tools scoreboard`, then
-   dig into the most promising names with quote / indicators / fundamentals /
-   news and web search.
-3. For each held position and each strong candidate, write or update
-   positions/<SYMBOL>.md with a thesis + a plan (entry / stop / target) and a
-   Call-vs-Outcome line.
-4. Update watchlist.md with the names you are tracking and why.
-5. Append actionable decisions to decisions.jsonl (BUY / SELL / HOLD /
-   ADJUST_STOP), always with a stop for BUYs and a target where you have one.
+Ground every call in fresh data pulled THIS turn — do not reuse an RSI, level,
+or price you only remember from the journal; re-pull it with the tools. Do the
+following:
+
+1. Account truth: run `python -m src.agent.tools account` to see real equity,
+   cash, each holding's live price/P&L, and the orders actually resting at the
+   broker (protective stop/target legs and pending entries). Reconcile it with
+   your thesis files before deciding anything — a fill or a triggered stop may
+   have changed the book since you last wrote it down.
+2. Regime: refresh regime.md — SPY/QQQ/VIX, sector posture, macro — using the
+   tools and web research.
+3. Held positions — for EACH name in [{held_str}], this turn, mandatory:
+   - `python -m src.agent.tools indicators <SYMBOL>` — fresh RSI/MACD/Bollinger/
+     ATR; any stop or target you set must be grounded in the CURRENT ATR, not a
+     recalled number.
+   - `python -m src.agent.tools news <SYMBOL>` — scan for a thesis-breaking
+     catalyst; a HOLD is only justified once you have checked the name's news.
+   Then update positions/<SYMBOL>.md (thesis + plan + Call-vs-Outcome) and
+   append the decision (HOLD carrying the stop/target you want enforced, or
+   SELL / ADJUST_STOP if the thesis shifted).
+4. Discovery: scan `python -m src.agent.tools scoreboard`, then for each
+   promising candidate dig in with indicators / fundamentals / news (and web
+   search) before writing a thesis. Add a BUY — always with a stop, and a target
+   where you have one — only on genuine conviction.
+5. Update watchlist.md with the names you are tracking and why.
+
+Keep decisions.jsonl consistent with what your thesis files say.
 
 {_ADVISOR_REMINDER}"""
 
