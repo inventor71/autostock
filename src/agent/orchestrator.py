@@ -36,16 +36,14 @@ class AgentTradingLoop:
     def __init__(
         self,
         session: AgentSession | None = None,
-        universe: list[str] | None = None,
+        *,
+        universe: list[str],
         portfolio_provider: Callable[[], object] | None = None,
         research_model: str | None = None,
         research_timeout: float | None = None,
     ):
         self.session = session or AgentSession()
         self.journal: Journal = self.session.journal
-        if universe is None:
-            from config.config import get_settings
-            universe = list(get_settings().trading.symbols)
         self.universe = universe
         # Deeper model + longer timeout for the daily research turn; None = session default.
         self.research_model = research_model

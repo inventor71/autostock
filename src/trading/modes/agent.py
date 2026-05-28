@@ -30,12 +30,18 @@ class AgentTradingMode:
         intraday_minutes: int = 15,
         research_hour: int = 9,
         research_minute: int = 0,
+        experiment_start: str | None = None,
+        min_trade_notional: float = 0.0,
     ):
         self.orchestrator = orchestrator
         self.executor = executor
         self.intraday_minutes = intraday_minutes
         self.research_hour = research_hour
         self.research_minute = research_minute
+        # Trade-ledger hygiene (injected from config by the composition root):
+        # drop fills before the experiment began and tiny test/penny fills.
+        self.experiment_start = experiment_start
+        self.min_trade_notional = min_trade_notional
         self.scheduler = TradingScheduler()
 
     # ------------------------------------------------------------------ #
@@ -81,11 +87,9 @@ class AgentTradingMode:
         )
         client = getattr(self.executor.broker, "_client", None)
         if client is not None:  # Alpaca: reconstruct closed round-trips
-            from config.config import get_settings
-            cfg = get_settings().agent
             record_trades(
                 client, root / "trades.jsonl",
-                since=cfg.experiment_start, min_notional=cfg.min_trade_notional,
+                since=self.experiment_start, min_notional=self.min_trade_notional,
             )
 
     # ------------------------------------------------------------------ #

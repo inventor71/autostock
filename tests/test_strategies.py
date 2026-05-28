@@ -120,3 +120,82 @@ class TestRegistry:
     def test_unknown_strategy_raises(self):
         with pytest.raises(KeyError):
             get_strategy_class("nonexistent")
+
+
+class TestLLMStrategyConfigInjection:
+    """LLMStrategy reads provider config + api_key from params (injected by the
+    composition root) — it must not reach into global settings (S-3)."""
+
+    def _make(self, **params):
+        import src.strategy.llm.llm_strategy  # noqa: F401 (trigger registration)
+        return create_strategy("llm", params)
+
+    def test_defaults_when_no_params(self):
+        s = self._make()
+        assert s.provider == "claude"
+        assert s.model is None
+        assert s.temperature == 0.3
+        assert s.prompt_version == "latest"
+        assert s.lookback_days == 30
+        assert s.include_news is True
+
+    def test_injected_params_are_used(self):
+        s = self._make(
+            provider="openai", model="gpt-4o", temperature=0.7,
+            prompt_version="v2", lookback_days=60, include_news=False,
+            api_key="sk-test-123",
+        )
+        assert s.provider == "openai"
+        assert s.model == "gpt-4o"
+        assert s.temperature == 0.7
+        assert s.prompt_version == "v2"
+        assert s.lookback_days == 60
+        assert s.include_news is False
+        assert s._get_api_key() == "sk-test-123"
+
+    def test_claude_code_provider_uses_no_key(self):
+        s = self._make(provider="claude_code", api_key="ignored")
+        assert s._get_api_key() == ""
+
+    def test_unknown_provider_fails_closed(self):
+        s = self._make(provider="bogus", api_key="x")
+        with pytest.raises(ValueError):
+            s._get_api_key()
+
+
+class TestMainLLMInjectionHelpers:
+    """The composition root resolves config + key and injects them (S-3)."""
+
+    @staticmethod
+    def _settings(provider):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            llm=SimpleNamespace(
+                provider=provider, model="m", temperature=0.4,
+                prompt_version="v1", lookback_days=10, include_news=True,
+            ),
+            anthropic_api_key="anthropic-key",
+            openai_api_key="openai-key",
+        )
+
+    def test_resolve_api_key_by_provider(self):
+        import main
+        assert main._resolve_api_key(self._settings("claude"), "claude") == "anthropic-key"
+        assert main._resolve_api_key(self._settings("openai"), "openai") == "openai-key"
+        assert main._resolve_api_key(self._settings("claude_code"), "claude_code") == ""
+
+    def test_llm_params_carry_config_and_key(self):
+        import main
+        p = main._llm_params(self._settings("claude"))
+        assert p["provider"] == "claude"
+        assert p["api_key"] == "anthropic-key"
+        assert p["lookback_days"] == 10
+
+    def test_strategies_yaml_params_override_injected(self):
+        import main
+        injected = main._llm_params(self._settings("claude"))
+        yaml_params = {"provider": "openai", "temperature": 0.9}
+        merged = {**injected, **yaml_params}  # mirrors create_strategies
+        assert merged["provider"] == "openai"  # yaml wins
+        assert merged["temperature"] == 0.9
+        assert merged["lookback_days"] == 10  # injected default kept

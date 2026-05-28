@@ -27,8 +27,14 @@ class PromptAutoImprover:
         llm_client: BaseLLMClient | None = None,
         prompt_manager: PromptManager | None = None,
         improvement_prompt_path: Path | str | None = None,
+        provider: str = "claude",
+        api_key: str = "",
     ):
         self._client = llm_client
+        # Provider/key are injected by the composition root; used only to build
+        # the client lazily when one wasn't supplied directly.
+        self._provider = provider
+        self._api_key = api_key
         self._prompt_manager = prompt_manager or PromptManager()
 
         if improvement_prompt_path is None:
@@ -42,19 +48,11 @@ class PromptAutoImprover:
 
     @property
     def client(self) -> BaseLLMClient:
-        """Get or initialize LLM client."""
+        """Get or initialize LLM client (provider/api_key injected by caller)."""
         if self._client is None:
-            from config.config import get_settings
-
-            settings = get_settings()
-            api_key = (
-                settings.anthropic_api_key
-                if settings.llm.provider == "claude"
-                else settings.openai_api_key
-            )
             self._client = create_llm_client(
-                provider=settings.llm.provider,
-                api_key=api_key,
+                provider=self._provider,
+                api_key=self._api_key,
                 temperature=0.7,  # Slightly higher for creative improvements
             )
         return self._client

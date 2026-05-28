@@ -9,7 +9,6 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
-from config.config import get_settings
 from src.core.models import PortfolioState, TradeSignal
 from src.core.types import Signal
 from src.strategy.base import BaseStrategy
@@ -40,15 +39,18 @@ class LLMStrategy(BaseStrategy):
 
     def __init__(self, params: dict | None = None):
         super().__init__(params)
-        self._settings = get_settings()
 
-        # Get provider-specific settings
-        self.provider = self.params.get("provider", self._settings.llm.provider)
-        self.model = self.params.get("model", self._settings.llm.model)
-        self.temperature = self.params.get("temperature", self._settings.llm.temperature)
-        self.prompt_version = self.params.get("prompt_version", self._settings.llm.prompt_version)
-        self.lookback_days = self.params.get("lookback_days", self._settings.llm.lookback_days)
-        self.include_news = self.params.get("include_news", self._settings.llm.include_news)
+        # Provider settings come from params: the composition root (main.py)
+        # injects the configured llm.* values + api_key, and strategies.yaml
+        # params override them. Literal defaults mirror LLMConfig so the strategy
+        # is still usable when constructed directly with a bare params dict.
+        self.provider = self.params.get("provider", "claude")
+        self.model = self.params.get("model")
+        self.temperature = self.params.get("temperature", 0.3)
+        self.prompt_version = self.params.get("prompt_version", "latest")
+        self.lookback_days = self.params.get("lookback_days", 30)
+        self.include_news = self.params.get("include_news", True)
+        self._api_key = self.params.get("api_key", "")
 
         # Initialize components lazily
         self._client: BaseLLMClient | None = None
@@ -89,15 +91,12 @@ class LLMStrategy(BaseStrategy):
         return self._system_prompt
 
     def _get_api_key(self) -> str:
-        """Get API key based on provider."""
-        if self.provider == "claude":
-            return self._settings.anthropic_api_key
-        elif self.provider == "openai":
-            return self._settings.openai_api_key
-        elif self.provider == "claude_code":
+        """Get API key (injected via params by the composition root)."""
+        if self.provider == "claude_code":
             return ""  # auth comes from the logged-in Claude Code CLI session
-        else:
-            raise ValueError(f"Unknown provider: {self.provider}")
+        if self.provider in ("claude", "openai"):
+            return self._api_key
+        raise ValueError(f"Unknown provider: {self.provider}")
 
     def _load_prompt(self) -> str:
         """Load trading prompt from prompt manager or file."""

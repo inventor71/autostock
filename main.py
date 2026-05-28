@@ -33,7 +33,31 @@ def create_broker(settings):
     )
 
 
-def create_strategies(strategies_config: dict):
+def _resolve_api_key(settings, provider: str) -> str:
+    """Resolve the API key for an LLM provider from settings (composition root)."""
+    if provider == "claude":
+        return settings.anthropic_api_key
+    if provider == "openai":
+        return settings.openai_api_key
+    return ""  # e.g. claude_code uses the logged-in CLI session, no key
+
+
+def _llm_params(settings) -> dict:
+    """The llm.* config + resolved api key, injected into the LLM strategy's params
+    so the strategy never reaches into the global settings itself."""
+    provider = settings.llm.provider
+    return {
+        "provider": provider,
+        "model": settings.llm.model,
+        "temperature": settings.llm.temperature,
+        "prompt_version": settings.llm.prompt_version,
+        "lookback_days": settings.llm.lookback_days,
+        "include_news": settings.llm.include_news,
+        "api_key": _resolve_api_key(settings, provider),
+    }
+
+
+def create_strategies(strategies_config: dict, settings):
     """Create strategy instances from config."""
     # Import strategies to trigger registration
     import src.strategy.technical.ma_crossover
@@ -55,6 +79,9 @@ def create_strategies(strategies_config: dict):
     for name in active:
         if name in strategy_defs:
             params = strategy_defs[name].get("params", {})
+            if name == "llm":
+                # Inject configured llm.* + api_key; strategies.yaml params override.
+                params = {**_llm_params(settings), **params}
             try:
                 strategy = create_strategy(name, params)
                 strategies.append(strategy)
@@ -85,7 +112,7 @@ def run_backtest(
     from src.backtest.engine import BacktestEngine
     from src.core.models import BacktestResult
 
-    strategies = create_strategies(strategies_config)
+    strategies = create_strategies(strategies_config, settings)
     if not strategies:
         logger.error("No strategies configured")
         return
@@ -168,7 +195,11 @@ def _run_prompt_improvement(
     logger.info(f"Starting prompt auto-improvement ({iterations} iteration(s))...")
 
     prompt_manager = PromptManager()
-    improver = PromptAutoImprover(prompt_manager=prompt_manager)
+    improver = PromptAutoImprover(
+        prompt_manager=prompt_manager,
+        provider=settings.llm.provider,
+        api_key=_resolve_api_key(settings, settings.llm.provider),
+    )
 
     # Record current results
     current_version = settings.llm.prompt_version
@@ -216,7 +247,7 @@ def run_paper(settings, strategies_config: dict) -> None:
     from src.trading.engine import TradingEngine
     from src.trading.modes.batch import BatchTradingMode
 
-    strategies = create_strategies(strategies_config)
+    strategies = create_strategies(strategies_config, settings)
     if not strategies:
         logger.error("No strategies configured")
         return
@@ -323,7 +354,10 @@ def run_agent(settings, fresh: bool = False) -> None:
     )
     logger.info(f"Agent mode: {len(universe)} symbols, broker paper={settings.broker.paper}")
     AgentTradingMode(
-        orchestrator, executor, intraday_minutes=settings.trading.batch_interval_minutes
+        orchestrator, executor,
+        intraday_minutes=settings.trading.batch_interval_minutes,
+        experiment_start=settings.agent.experiment_start,
+        min_trade_notional=settings.agent.min_trade_notional,
     ).start(fresh=fresh)
 
 

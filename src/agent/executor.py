@@ -47,7 +47,8 @@ class DecisionExecutor:
         risk_manager,
         data_provider,
         journal: Journal | None = None,
-        universe: list[str] | None = None,
+        *,
+        universe: list[str],
     ):
         self.broker = broker
         self.risk_manager = risk_manager
@@ -55,9 +56,6 @@ class DecisionExecutor:
         self.risk_manager.use_bracket_orders = True
         self.data_provider = data_provider
         self.journal = journal or Journal()
-        if universe is None:
-            from config.config import get_settings
-            universe = list(get_settings().trading.symbols)
         self.universe = {s.upper() for s in universe}
         self._state_file = self.journal.root / ".executor_state.json"
 
