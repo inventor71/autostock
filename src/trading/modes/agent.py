@@ -89,19 +89,29 @@ class AgentTradingMode:
             )
 
     # ------------------------------------------------------------------ #
-    def start(self) -> None:
+    def _launch(self, fresh: bool = False) -> None:
+        """Initial turns on launch.
+
+        Research runs only if today's session doesn't exist yet (first launch of
+        the trading day) — a same-day restart **resumes** the existing session and
+        skips the (expensive) research turn, staying connected to the research it
+        already did. ``fresh`` forces a clean session. Pending decisions and
+        protection are always reconciled (cheap; gated to RTH internally).
+        """
+        if fresh:
+            self.orchestrator.session.reset_session()
+        if self.orchestrator.session.is_started():
+            logger.info("Resuming today's session — skipping the launch research turn")
+        else:
+            self._premarket_research()
+        self._open_execute()
+
+    def start(self, fresh: bool = False) -> None:
         logger.info(
             f"Starting agent trading mode (research {self.research_hour:02d}:"
             f"{self.research_minute:02d} ET, intraday every {self.intraday_minutes} min)"
         )
-        # A deliberate launch starts a clean session (don't resume a stale/bloated
-        # one); the journal carries state across the reset.
-        self.orchestrator.session.reset_session()
-        # Research now so a manual launch is productive immediately; if the
-        # market is already open, place the decisions too.
-        self._premarket_research()
-        if self.executor.broker.is_market_open():
-            self._open_execute()
+        self._launch(fresh=fresh)
 
         self.scheduler.add_daily_job(
             self._premarket_research, hour=self.research_hour,

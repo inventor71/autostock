@@ -282,9 +282,12 @@ def run_paper(settings, strategies_config: dict) -> None:
     mode.start()
 
 
-def run_agent(settings) -> None:
+def run_agent(settings, fresh: bool = False) -> None:
     """Run the agentic PM trading loop: the LLM agent writes the journal, the
-    executor trades its decisions through RiskManager (bracket orders) -> Broker."""
+    executor trades its decisions through RiskManager (bracket orders) -> Broker.
+
+    ``fresh`` forces a clean session on launch (otherwise a same-day restart
+    resumes today's session)."""
     from src.agent.executor import DecisionExecutor
     from src.agent.orchestrator import AgentTradingLoop
     from src.agent.session import AgentSession
@@ -320,7 +323,7 @@ def run_agent(settings) -> None:
     logger.info(f"Agent mode: {len(universe)} symbols, broker paper={settings.broker.paper}")
     AgentTradingMode(
         orchestrator, executor, intraday_minutes=settings.trading.batch_interval_minutes
-    ).start()
+    ).start(fresh=fresh)
 
 
 def main():
@@ -353,6 +356,11 @@ def main():
         default=1,
         help="Number of prompt improvement iterations (default: 1)",
     )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Agent mode: start a clean session instead of resuming today's",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -377,7 +385,7 @@ def main():
     elif mode in ("paper", "live"):
         run_paper(settings, strategies_config)
     elif mode == "agent":
-        run_agent(settings)
+        run_agent(settings, fresh=args.fresh)
     else:
         logger.error(f"Unknown mode: {mode}")
         sys.exit(1)

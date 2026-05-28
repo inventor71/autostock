@@ -525,3 +525,62 @@ class TestEquityLog:
     def test_read_missing_is_empty(self, tmp_path):
         from src.agent.equity_log import read_equity
         assert read_equity(tmp_path / "nope.jsonl") == []
+
+
+# --------------------------------------------------------------------------- #
+# AgentTradingMode launch: research only on first-of-day, resume on restart
+# --------------------------------------------------------------------------- #
+class _FakeMarkerSession:
+    def __init__(self, started):
+        self.started = started
+        self.reset_calls = 0
+
+    def is_started(self):
+        return self.started
+
+    def reset_session(self):
+        self.started = False
+        self.reset_calls += 1
+
+
+class _LaunchOrch:
+    def __init__(self, started):
+        self.session = _FakeMarkerSession(started)
+        self.research_calls = 0
+
+    def run_morning_research(self):
+        self.research_calls += 1
+
+
+class _LaunchExec:
+    def __init__(self):
+        self.broker = SimpleNamespace(is_market_open=lambda: False)
+
+    def execute_pending(self):
+        return []
+
+    def run_risk_exits(self):
+        return []
+
+
+class TestAgentLaunch:
+    def _mode(self, orch):
+        from src.trading.modes.agent import AgentTradingMode
+        return AgentTradingMode(orch, _LaunchExec())
+
+    def test_resumes_without_research_when_session_exists(self):
+        orch = _LaunchOrch(started=True)
+        self._mode(orch)._launch()
+        assert orch.research_calls == 0          # same-day restart -> resume, no research
+        assert orch.session.reset_calls == 0
+
+    def test_researches_when_no_session_yet(self):
+        orch = _LaunchOrch(started=False)
+        self._mode(orch)._launch()
+        assert orch.research_calls == 1          # first launch of the day -> research
+
+    def test_fresh_forces_reset_then_research(self):
+        orch = _LaunchOrch(started=True)
+        self._mode(orch)._launch(fresh=True)
+        assert orch.session.reset_calls == 1     # --fresh cleared the session
+        assert orch.research_calls == 1          # then researched fresh
