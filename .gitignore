@@ -51,3 +51,6 @@ reports/
 
 # Agent journal (runtime state; CLAUDE.md template lives in src/agent/templates/)
 workspace/
+
+# AI-DLC raw audit log (local scratch; append-only, may contain verbatim prompts)
+aidlc-docs/audit.md
