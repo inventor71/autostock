@@ -66,5 +66,30 @@ Sequential refactoring units, in user-specified order. Remaining findings (Q-*, 
     - Added 7 tests (LLMStrategy config injection + main injection helpers) — llm/ had no coverage.
     - Tests 165 green; behavior preserved (note: U4 will further fix the `getattr(_client)` leak in modes/agent).
   - 7db787c (user's concurrent commit, "research timeout") reconciled — no conflict with U1/U2.
-  - [ ] U3 (S-1+S-2) — unify risk-exit + RiskManager mode; pending
-  - [ ] U4 (S-4) — broker port; pending
+  - [x] **U3 (S-1+S-2)** — unify risk-exit + RiskManager mode. Completed 2026-05-28 (commit 360bb4c).
+    - Added `src/risk/exits.py::run_polled_exits()` as the single implementation; three sites
+      (`TradingEngine._check_risk_exits`, `_check_symbol_risk_exit`, `DecisionExecutor.run_risk_exits`)
+      delegate to it.
+    - Removed `DecisionExecutor.__init__` runtime mutation of `risk_manager.use_bracket_orders`;
+      now validates the contract (raises ValueError if not bracket-mode — fail-closed, SECURITY-15).
+    - Test helper + 2 run_risk_exits tests updated to construct `RiskManager(use_bracket_orders=True)`.
+    - Added Hypothesis to dev deps (PBT-09); new `tests/test_exits.py`: 6 example tests + 1
+      Hypothesis property (PBT-03 invariant: protected symbols never yield exit orders) + 2
+      fail-closed contract tests. Tests 174 green.
+    - Note: `src/backtest/engine.py` has a similar 4th call site (different price-refresh path);
+      left as-is for this unit, could fold in later.
+  - [x] **U4 (S-4)** — broker port for the trade ledger + honest portfolio_provider type.
+    Completed 2026-05-28 (commit 7aa7d6e).
+    - Added `BaseBroker.record_trade_ledger(path, *, since, min_notional)` with no-op default.
+      `AlpacaBroker` overrides it (delegates to `record_trades(self._client, ...)`).
+      `modes/agent.py:_eod` now calls it unconditionally — leak `getattr(broker, "_client", None)` gone.
+    - `AgentTradingLoop.portfolio_provider` typed `Callable[[], PortfolioState] | None`;
+      `held_symbols()` drops the `getattr(portfolio, "positions", None)` duck-typing.
+    - 2 new tests in `test_execution.py::TestTradeLedgerPort`: default no-op on simulated;
+      AlpacaBroker delegation (monkeypatch `record_trades`, assert forwarded args). 176 tests green.
+
+## Completed Sequence Summary
+S-5 → S-3 → S-1+S-2 → S-4 all complete. Working tree clean. Remaining Q-* / H-* findings
+(test coverage gaps, backtest's 4th exit site, sell sizing truncation, get_status mode,
+hygiene items, dev-env standardization) are deferred per user direction; see
+`code-quality-assessment.md` for the prioritized list.

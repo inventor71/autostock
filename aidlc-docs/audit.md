@@ -49,3 +49,29 @@ PBT compliance (partial: PBT-02/03/07/08/09): N/A — only finite-domain config-
 **Context**: CONSTRUCTION → U2 complete, presenting 2-option gate
 
 ---
+
+## Per-Unit Commits + Construction U3 (S-1+S-2)
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: "단위별 커밋을 하고, U3로 가보자"
+**AI Response**: Split the U1+U2 working tree into per-unit commits:
+- 484eabc: "Refresh stale docs and remove 'Phase N' scaffolding" (S-5)
+- beae769: "Inject config in library code; keep get_settings to composition roots" (S-3)
+- e8a49ae: "Add AI-DLC reverse-engineering artifacts and workflow state"
+The orchestrator.py overlap was split by resetting to HEAD, re-applying only the U1 changes for the U1 commit, then restoring the U1+U2 state for the U2 commit.
+Implemented U3 (S-1 + S-2): new `src/risk/exits.py::run_polled_exits()` unifies the three polled-exit implementations; `DecisionExecutor.__init__` no longer mutates the injected `RiskManager` (validates use_bracket_orders=True instead, fail-closed). Added Hypothesis to dev deps for PBT-09. Added `tests/test_exits.py`: 6 example + 1 Hypothesis property (PBT-03 invariant) + 2 fail-closed contract tests. 174 tests passed. Committed as 360bb4c.
+Security compliance: SECURITY-03 N/A (no new logging of secrets); SECURITY-11 compliant (risk-exit logic now centralized in one module — isolation improved); SECURITY-15 compliant (executor fails closed on non-bracket RM; price-fetch failures are caught per-symbol so the whole check isn't lost). No blocking findings.
+PBT compliance (partial: PBT-02/03/07/08/09): PBT-03 compliant (invariant property test for the load-bearing protected-symbols invariant, 100 examples, no counterexamples); PBT-07 compliant (domain-aware generators — Position with realistic price/qty ranges, sampled-from real-looking symbols); PBT-08 compliant (Hypothesis shrinking enabled by default, deterministic via default seed); PBT-09 compliant (Hypothesis added to dev deps). PBT-02 N/A (no round-trip operation introduced). No blocking findings.
+Observation: `src/backtest/engine.py` has a 4th similar call site (different price-refresh flow); flagged in the commit body and state, but kept out of scope for U3 to honor the per-unit boundary.
+**Context**: CONSTRUCTION → U3 complete, presenting 2-option gate
+
+---
+
+## Construction U4 (S-4) — Broker Port + Honest Type
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: "(A) 방식으로 가서 백테스트를 다루면서 U4를 계속하자 ... 계속 해줘" — proceed with U4, defer backtest unification to a separate task (option A).
+**AI Response**: Implemented S-4: added `BaseBroker.record_trade_ledger()` (default no-op) with `AlpacaBroker` override delegating to `record_trades`; removed `getattr(broker, "_client")` from `modes/agent.py:_eod`. Tightened `portfolio_provider` type to `Callable[[], PortfolioState]` in `AgentTradingLoop` and simplified `held_symbols` (no more `getattr(portfolio, "positions")`). Added 2 tests covering the new port (no-op for simulated, AlpacaBroker delegation via monkeypatched `record_trades`). Tests 176 passed. Committed as 7aa7d6e.
+Security compliance: SECURITY-03 N/A; SECURITY-11 compliant (broker capability now explicit on the ABC — encapsulation strengthened); SECURITY-15 compliant (no-op default keeps callers from failing on a missing private attribute — gracefully degraded rather than crashing). No blocking findings.
+PBT compliance (partial: PBT-02/03/07/08/09): all N/A for this unit — the change is type/interface refactoring with no new business logic, pure functions, or generative properties of interest. Example-based tests pin the delegation contract.
+**Context**: CONSTRUCTION → U4 complete. Approved sequence (S-5 → S-3 → S-1+S-2 → S-4) finished.
+
+---
