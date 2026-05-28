@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from pathlib import Path
 
 from loguru import logger
 
+from src.agent.trades_log import record_trades
 from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
 from src.core.types import OrderClass, OrderSide, OrderType
@@ -342,3 +344,14 @@ class AlpacaBroker(BaseBroker):
             filled_price=float(o.filled_avg_price or 0),
             filled_at=o.filled_at or datetime.now(),
         )
+
+    def record_trade_ledger(
+        self,
+        path: str | Path,
+        *,
+        since: str | None = None,
+        min_notional: float = 0.0,
+    ) -> None:
+        """Reconstruct closed round-trips from the Alpaca activities/fills history
+        and append them to the trades ledger at ``path``."""
+        record_trades(self._client, path, since=since, min_notional=min_notional)

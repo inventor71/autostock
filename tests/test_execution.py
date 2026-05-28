@@ -227,3 +227,38 @@ class TestAlpacaClockRetry:
 
         broker._client = _DeadClient()
         assert broker.is_market_open(retries=2, delay=0.0) is False
+
+
+# Trade-ledger reconstruction is on BaseBroker (default no-op) and overridden
+# only by AlpacaBroker -- so callers stay broker-agnostic instead of doing
+# ``getattr(broker, "_client", None)`` to detect Alpaca (AI-DLC S-4).
+class TestTradeLedgerPort:
+    def test_default_is_noop_for_simulated(self, tmp_path):
+        broker = SimulatedBroker(initial_capital=10000.0)
+        target = tmp_path / "trades.jsonl"
+        # No-op: doesn't raise, doesn't create the file.
+        broker.record_trade_ledger(target, since="2024-01-01", min_notional=10.0)
+        assert not target.exists()
+
+    @pytest.mark.skipif(TradingClient is None, reason="alpaca-py not installed")
+    def test_alpaca_delegates_to_record_trades(self, monkeypatch, tmp_path):
+        from src.execution.brokers import alpaca_broker
+
+        captured = {}
+        def _fake_record_trades(client, path, since=None, min_notional=0.0):
+            captured.update(
+                client=client, path=path, since=since, min_notional=min_notional,
+            )
+        monkeypatch.setattr(alpaca_broker, "record_trades", _fake_record_trades)
+
+        broker = AlpacaBroker(api_key="x", secret_key="y", paper=True)
+        sentinel = object()
+        broker._client = sentinel  # avoid any real API client identity in the assert
+
+        target = tmp_path / "trades.jsonl"
+        broker.record_trade_ledger(target, since="2026-01-01", min_notional=1.5)
+
+        assert captured["client"] is sentinel
+        assert captured["path"] == target
+        assert captured["since"] == "2026-01-01"
+        assert captured["min_notional"] == 1.5

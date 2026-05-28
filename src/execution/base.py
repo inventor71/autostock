@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
 
@@ -22,6 +23,23 @@ class BaseBroker(ABC):
         gated on this for the live agent path. Default True (simulated/backtest
         brokers are always 'open')."""
         return True
+
+    def record_trade_ledger(
+        self,
+        path: str | Path,
+        *,
+        since: str | None = None,
+        min_notional: float = 0.0,
+    ) -> None:
+        """Reconstruct closed round-trips from broker history and append them
+        to the trades ledger at ``path`` (one JSON line per round-trip).
+
+        Live brokers (e.g. Alpaca) override this to query their activities/fills
+        history. Simulated/backtest brokers track trades in their own way and
+        this is a no-op for them. Callers should invoke unconditionally — the
+        no-op default means callers no longer need to type-check the broker.
+        """
+        return None
 
     @abstractmethod
     def submit_order(self, order: Order) -> FilledOrder:

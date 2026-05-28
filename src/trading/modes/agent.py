@@ -71,26 +71,26 @@ class AgentTradingMode:
         logger.info("Agent end-of-day cycle")
         from src.agent.equity_log import fetch_benchmark, record_equity
         from src.agent.review import outcome_lines
-        from src.agent.trades_log import record_trades
 
         decisions = self.executor.journal.read_decisions()
         outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
         self.orchestrator.run_eod_review(outcomes=outcomes)
         self.executor.execute_pending()
 
-        # Daily marks for the track record.
+        # Daily marks for the track record. record_trade_ledger() is a no-op on
+        # brokers that don't reconstruct closed round-trips (e.g. simulated);
+        # AlpacaBroker overrides it -- callers stay broker-agnostic.
         root = self.executor.journal.root
         record_equity(
             self.executor.broker.get_portfolio_state(),
             root / "equity.jsonl",
             benchmark=fetch_benchmark(self.executor.data_provider),
         )
-        client = getattr(self.executor.broker, "_client", None)
-        if client is not None:  # Alpaca: reconstruct closed round-trips
-            record_trades(
-                client, root / "trades.jsonl",
-                since=self.experiment_start, min_notional=self.min_trade_notional,
-            )
+        self.executor.broker.record_trade_ledger(
+            root / "trades.jsonl",
+            since=self.experiment_start,
+            min_notional=self.min_trade_notional,
+        )
 
     # ------------------------------------------------------------------ #
     def _launch(self, fresh: bool = False) -> None:

@@ -18,6 +18,7 @@ from loguru import logger
 from src.agent import prompts
 from src.agent.journal import Decision, Journal
 from src.agent.session import AgentSession, AgentTurnResult
+from src.core.models import PortfolioState
 
 
 def filter_in_universe(
@@ -38,7 +39,7 @@ class AgentTradingLoop:
         session: AgentSession | None = None,
         *,
         universe: list[str],
-        portfolio_provider: Callable[[], object] | None = None,
+        portfolio_provider: Callable[[], PortfolioState] | None = None,
         research_model: str | None = None,
         research_timeout: float | None = None,
     ):
@@ -59,12 +60,11 @@ class AgentTradingLoop:
 
     # ------------------------------------------------------------------ #
     def held_symbols(self) -> list[str]:
+        """Symbols currently held, from the live broker if wired, else the
+        journal's tracked theses (the offline fallback)."""
         if self.portfolio_provider is not None:
             try:
-                portfolio = self.portfolio_provider()
-                positions = getattr(portfolio, "positions", None)
-                if positions is not None:
-                    return sorted(positions.keys())
+                return sorted(self.portfolio_provider().positions.keys())
             except Exception as exc:
                 logger.warning(f"portfolio_provider failed, using journal: {exc}")
         return self.journal.list_positions()
