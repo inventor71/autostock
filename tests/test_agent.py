@@ -275,6 +275,14 @@ class TestAgentSession:
         cmd2 = runner.calls[1]["cmd"]
         assert cmd2[cmd2.index("--model") + 1] == "sonnet"
 
+    def test_timeout_override_per_turn(self, tmp_path):
+        runner = _FakeRunner(_ok_payload())
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner, timeout=600.0)
+        sess.run_turn("x", timeout=1800.0)
+        assert runner.calls[0]["timeout"] == 1800.0  # research-style override
+        sess.run_turn("y")
+        assert runner.calls[1]["timeout"] == 600.0   # session default
+
     def test_session_date_uses_et_when_unpinned(self, tmp_path):
         from datetime import datetime
         from zoneinfo import ZoneInfo
@@ -388,11 +396,13 @@ class _FakeSession:
         self.model = "fake"
         self.prompts: list[str] = []
         self.models: list[str | None] = []
+        self.timeouts: list[float | None] = []
         self._to_write = to_write or []
 
-    def run_turn(self, prompt, system_prompt=None, model=None):
+    def run_turn(self, prompt, system_prompt=None, model=None, timeout=None):
         self.prompts.append(prompt)
         self.models.append(model)
+        self.timeouts.append(timeout)
         for d in self._to_write:
             self.journal.append_decision(d)
         return AgentTurnResult(result="ok", session_id="sid", resumed=False, raw={})
@@ -422,6 +432,14 @@ class TestOrchestrator:
         assert sess.models[-1] == "opus"   # deep research turn -> opus
         loop.run_intraday()
         assert sess.models[-1] is None     # intraday -> session default (sonnet)
+
+    def test_research_uses_research_timeout(self, tmp_path):
+        sess = _FakeSession(Journal(root=tmp_path / "ws"))
+        loop = AgentTradingLoop(session=sess, universe=["AAPL"], research_timeout=1800.0)
+        loop.run_morning_research()
+        assert sess.timeouts[-1] == 1800.0  # long timeout for research
+        loop.run_intraday()
+        assert sess.timeouts[-1] is None    # intraday -> session default
 
     def test_out_of_universe_decision_is_flagged(self, tmp_path):
         sess = _FakeSession(
@@ -544,12 +562,15 @@ class _FakeMarkerSession:
 
 
 class _LaunchOrch:
-    def __init__(self, started):
+    def __init__(self, started, raise_on_research=False):
         self.session = _FakeMarkerSession(started)
         self.research_calls = 0
+        self._raise = raise_on_research
 
     def run_morning_research(self):
         self.research_calls += 1
+        if self._raise:
+            raise RuntimeError("research timeout")
 
 
 class _LaunchExec:
@@ -584,3 +605,9 @@ class TestAgentLaunch:
         self._mode(orch)._launch(fresh=True)
         assert orch.session.reset_calls == 1     # --fresh cleared the session
         assert orch.research_calls == 1          # then researched fresh
+
+    def test_launch_survives_turn_failure(self):
+        # A research timeout/error on launch must not crash the daemon.
+        orch = _LaunchOrch(started=False, raise_on_research=True)
+        self._mode(orch)._launch()  # must not raise
+        assert orch.research_calls == 1

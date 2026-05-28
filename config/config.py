@@ -77,6 +77,8 @@ class AgentConfig(BaseModel):
 
     model: str = "sonnet"  # base model for intraday / EOD turns
     research_model: str = "opus"  # deeper model for the daily research turn
+    turn_timeout: float = 600.0  # seconds per intraday / EOD turn
+    research_timeout: float = 1800.0  # seconds for the deep research turn (opus + web + scan)
     # Trade-ledger hygiene: ignore broker fills before the experiment began and
     # tiny test fills, so the track record reflects only the agent's trades.
     experiment_start: str | None = None  # ISO date; fills before it are dropped

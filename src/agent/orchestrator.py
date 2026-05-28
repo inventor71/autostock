@@ -38,6 +38,7 @@ class AgentTradingLoop:
         universe: list[str] | None = None,
         portfolio_provider: Callable[[], object] | None = None,
         research_model: str | None = None,
+        research_timeout: float | None = None,
     ):
         self.session = session or AgentSession()
         self.journal: Journal = self.session.journal
@@ -45,8 +46,9 @@ class AgentTradingLoop:
             from config.config import get_settings
             universe = list(get_settings().trading.symbols)
         self.universe = universe
-        # Deeper model for the daily research turn (e.g. opus); None = session default.
+        # Deeper model + longer timeout for the daily research turn; None = session default.
         self.research_model = research_model
+        self.research_timeout = research_timeout
         # Optional source of real holdings (a broker); falls back to the journal's
         # tracked theses so the loop is usable before execution is wired (Phase 3).
         self.portfolio_provider = portfolio_provider
@@ -68,9 +70,11 @@ class AgentTradingLoop:
                 logger.warning(f"portfolio_provider failed, using journal: {exc}")
         return self.journal.list_positions()
 
-    def _run(self, prompt: str, turn_type: str, model: str | None = None) -> AgentTurnResult:
+    def _run(
+        self, prompt: str, turn_type: str, model: str | None = None, timeout: float | None = None
+    ) -> AgentTurnResult:
         before = len(self.journal.read_decisions())
-        result = self.session.run_turn(prompt, model=model)
+        result = self.session.run_turn(prompt, model=model, timeout=timeout)
         self.last_new_decisions = self.journal.read_decisions()[before:]
         self.last_kept, self.last_rejected = filter_in_universe(
             self.last_new_decisions, self.universe
@@ -103,6 +107,7 @@ class AgentTradingLoop:
             prompts.morning_research_prompt(self.universe, self.held_symbols()),
             "research",
             model=self.research_model,
+            timeout=self.research_timeout,
         )
 
     def run_intraday(self, quotes: dict[str, float] | None = None) -> AgentTurnResult:

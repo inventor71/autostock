@@ -168,5 +168,7 @@ llm:
 agent:
   model: sonnet            # intraday / EOD turns (frequent, lighter)
   research_model: opus     # daily research turn (deep fundamental + discovery)
+  turn_timeout: 600        # seconds per intraday / EOD turn
+  research_timeout: 1800   # seconds for the deep research turn (opus + web + 100-symbol scan)
   experiment_start: "2026-05-27"  # ignore broker fills before this (pre-experiment test trades)
   min_trade_notional: 50.0        # drop penny/test fills below this $ notional

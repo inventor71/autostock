@@ -100,11 +100,16 @@ class AgentTradingMode:
         """
         if fresh:
             self.orchestrator.session.reset_session()
-        if self.orchestrator.session.is_started():
-            logger.info("Resuming today's session — skipping the launch research turn")
-        else:
-            self._premarket_research()
-        self._open_execute()
+        # A launch-turn failure (e.g. a research timeout) must NOT kill the
+        # daemon — log it and let the scheduler take over (next cron retries).
+        try:
+            if self.orchestrator.session.is_started():
+                logger.info("Resuming today's session — skipping the launch research turn")
+            else:
+                self._premarket_research()
+            self._open_execute()
+        except Exception as e:
+            logger.error("Launch turn failed ({}); scheduler continues, next cron will retry", e)
 
     def start(self, fresh: bool = False) -> None:
         logger.info(

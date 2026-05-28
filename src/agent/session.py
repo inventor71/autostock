@@ -182,7 +182,8 @@ class AgentSession:
         return cmd
 
     def _invoke(
-        self, session_id: str, prompt: str, system_prompt: str | None, resume: bool, model: str | None = None
+        self, session_id: str, prompt: str, system_prompt: str | None, resume: bool,
+        model: str | None = None, timeout: float | None = None,
     ) -> dict:
         cmd = self._build_command(session_id, system_prompt, resume, model)
         env = dict(os.environ)
@@ -190,7 +191,7 @@ class AgentSession:
         env["PYTHONPATH"] = str(_REPO_ROOT) + (os.pathsep + existing_pp if existing_pp else "")
 
         proc = self._runner(
-            cmd, input=prompt, cwd=str(self.workspace), timeout=self.timeout, env=env
+            cmd, input=prompt, cwd=str(self.workspace), timeout=timeout or self.timeout, env=env
         )
         if proc.returncode != 0:
             raise RuntimeError(
@@ -205,7 +206,8 @@ class AgentSession:
         return payload
 
     def run_turn(
-        self, prompt: str, system_prompt: str | None = None, model: str | None = None
+        self, prompt: str, system_prompt: str | None = None, model: str | None = None,
+        timeout: float | None = None,
     ) -> AgentTurnResult:
         """Run one agent turn. Creates the day's session on the first call and
         resumes it thereafter (id stored in the per-day marker). If the stored id
@@ -224,13 +226,13 @@ class AgentSession:
             "resume" if resume else "new", session_id, model or self.model,
         )
         try:
-            payload = self._invoke(session_id, prompt, system_prompt, resume, model)
+            payload = self._invoke(session_id, prompt, system_prompt, resume, model, timeout)
         except RuntimeError as exc:
             if any(frag in str(exc).lower() for frag in _SESSION_ERROR_FRAGMENTS):
                 logger.warning("Session id unusable ({}); retrying with a fresh session", exc)
                 session_id = str(uuid.uuid4())
                 resume = False
-                payload = self._invoke(session_id, prompt, system_prompt, resume, model)
+                payload = self._invoke(session_id, prompt, system_prompt, resume, model, timeout)
             else:
                 raise
 
