@@ -105,7 +105,7 @@ Steering a *running* daemon (whether via in-process REPL or files) requires a **
 - **SECURITY-11 (secure design):** steering logic is isolated in a dedicated console module; order placement stays in `DecisionExecutor`/`RiskManager` (separation of concerns). Defense in depth = human intent + RiskManager gate + confirmation. Misuse case addressed: a fat-finger `flatten all`/`kill` requires explicit confirmation.
 - **SECURITY-13 (integrity):** human-directive records are parsed with pydantic (safe deserialization, typed allowlist — same as `Decision`); human-initiated trades are auditable (actor=`human`, action, timestamp, outcome). The log is append-only.
 - **SECURITY-15 (fail-closed):** unparseable/unconfirmed/timed-out commands are no-ops; reconcile-turn and command errors are caught and logged; the daemon never dies from a console error; locks released in `finally`.
-- Other SECURITY rules (encryption at rest/transit, network, web headers, authN/Z, supply chain) **N/A** — local single-operator CLI, no new network/web surface, no new runtime dependency intended.
+- Other SECURITY rules (encryption at rest/transit, network, web headers, authN/Z) **N/A** — local single-operator CLI, no new network/web surface. **Update (2026-05-29):** the console UI adopts one new runtime dep — `prompt_toolkit` (UX decision CQ-NFR1=B; `rich` is already a dependency) — so **SECURITY-10 (pin its version in `pyproject.toml`)** applies.
 
 ### NFR-4 — Testing & PBT (partial, Q10=B)
 - Framework: **Hypothesis** (already a dev dependency since U3) — PBT-09 satisfied.
@@ -136,7 +136,8 @@ Steering a *running* daemon (whether via in-process REPL or files) requires a **
 A symbol the human trades on (`/buy`, `/sell`, `/flatten`) becomes **human-locked**. While locked, the
 agent's **discretionary** decisions (BUY/SELL) on that symbol are not auto-executed — they are parked as
 `PendingApproval` and surfaced on the console (`/pending`, `/approve|/reject <id>`). Approval executes and
-**unlocks**; rejection keeps the lock and increments a counter; **two rejections → denied for the day**.
+**unlocks**; rejection keeps the lock and increments a counter; **two rejections → denied for the day** (unless the
+human re-trades the symbol, which resets the lock — the human is authoritative; see business-rules BR-4.11).
 The approve/reject/denied outcome is fed back to the agent (journal/prompt) so it understands and does not
 blindly retry. **Exception:** protective orders (placing OCO/stop on an unprotected position, modifying an
 existing OCO, `ADJUST_STOP`, `HOLD`+stop) are never gated — the "all positions protected" invariant must

@@ -2,7 +2,9 @@
 
 _AI-DLC 트랙 F2 · CONSTRUCTION · Functional Design · 2026-05-29._
 
-콘솔이 이 기능의 UI다. 화면/상호작용/출력 형식을 정의한다. (요구사항: 신규 런타임 의존성 0 — Python stdlib만.)
+콘솔이 이 기능의 UI다. 화면/상호작용/출력 형식을 정의한다.
+**UI 스택(2026-05-29 결정, CQ-NFR1=B): `prompt_toolkit` + `rich`.** 라인 기반 REPL을 monitor.sh 패널에 유지하되
+자동완성·히스토리·하단 툴바·`patch_stdout`·rich 테이블로 seamless하게. (textual 풀 TUI는 v1 비채택 — north star로만.)
 
 ---
 
@@ -12,6 +14,9 @@ _AI-DLC 트랙 F2 · CONSTRUCTION · Functional Design · 2026-05-29._
 - `scripts/monitor.sh`에 패널을 하나 추가/지정하여 거기서 `main.py --mode agent`(REPL 포함)를 실행한다.
   나머지 패널은 지금처럼 파일 tail(decisions/turns+trades/status/log). 입력 패널 = 콘솔.
 - tmux 패널이므로 항상 TTY + detach/attach 가능(분리 실행 시 TTY 없음 → 콘솔 자동 비활성화, BR-8.3).
+- **REPL 구현:** `prompt_toolkit` 세션을 데몬 전용 스레드에서 실행(자체 이벤트 루프). 스케줄러/reconcile의 비동기
+  출력은 `patch_stdout` 영역으로 보내 입력 줄을 보존. 자동완성(`Completer`: 슬래시 명령 + 보유/유니버스 심볼),
+  명령 히스토리, **하단 툴바**(run-state·보유·승인대기 라이브) 제공.
 - 제안 레이아웃(기존 4패널 + 콘솔):
 ```
 +------------------+---------------------------+
@@ -40,6 +45,7 @@ autostock[running]>
 ## C4. 명령 실행 후 피드백 (Q4=A — 해석 + 한 줄 결과)
 - 거래 성공: `✓ SELL 100% AAPL — 12sh @ $190.20 체결 (order abc123)`
 - 거래 무주문: `· SELL AAPL — 주문 없음 (RiskManager: <사유>)`
+- 실행 시점 무포지션(검토 #5, 확인 후 FIFO 지연 사이 청산됨): `· SELL AAPL — 이미 청산됨 (실행 시점 무포지션)` (generic no_order와 구분)
 - 거래 실패: `✗ BUY AAPL — 실패: <사유>`
 - lifecycle: `✓ 일시정지됨 (신규 리서치/진입 중단; 보호·청산은 계속)`
 - 보호: `✓ STOP AAPL → $185.00 설정`
@@ -61,9 +67,12 @@ autostock[running]> /flatten all
 ✓ 5개 포지션 청산 요청 · 8개 주문 취소
 ```
 - 거부/타임아웃 → `· 취소됨` (no-op).
+- **확인 수치는 확인 시점 추정치(검토 #6 TOCTOU):** 실행은 FIFO로 지연될 수 있어 그 사이 체결/청산으로 장부가 바뀔 수 있음.
+  `/flatten all`·`/kill`의 의미는 "**실행 시점에 존재하는 것**을 청산"이며 executor가 실행 직전 라이브 재조회 → **결과 줄에 실제
+  청산/취소 수치**를 표시("확인=실행"을 결과로 확정). 비동기 알림이 동기 확인 입력 중 끼어들 때 입력 버퍼 보존은 구현 시 검증(검토 #11).
 
 ## C6. 승인 대기 (CQ2=A — 알림 줄 + 명령형)
-- 대기 발생 시 비블로킹 한 줄:
+- 대기 발생 시 비블로킹 한 줄 (`patch_stdout`로 출력 — 사용자가 입력 중이어도 입력 줄 보존):
 ```
 ⚠ 승인 대기 #3: 에이전트 BUY AAPL ~$5,000 (stop 182 / tgt 205) — /approve 3 | /reject 3
 ```
@@ -94,7 +103,7 @@ autostock[running]> /directive clear 1
 ✓ 지시 #1 해제
 ```
 
-## C8. 읽기 명령 출력 예
+## C8. 읽기 명령 출력 예 (`/status`·`/positions`·`/orders`는 `rich` 테이블로 렌더)
 - `/status`:
 ```
 상태: running · paused=False · halt_entries=False

@@ -191,7 +191,64 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
         approve/reject outcome fed back to agent. RunState(pause/halt) not persisted (restart→running, Q9=A).
         **Test env (CQ6=A):** separate Alpaca paper account (already created) + isolated workspace for manual smoke.
         **Worktree deferred to Code Generation entry** (design = docs only).
-  - [→] NFR Requirements — NEXT (minimal).
+  - [x] Functional Design committed 2026-05-29 (`bfbb8a9`, with inception docs + Korean question-file prompt rule).
+  - [x] NFR Requirements — **COMPLETE (minimal)** 2026-05-29 (awaiting approval). Artifacts in
+        `aidlc-docs/construction/human-steering-console/nfr-requirements/`: nfr-requirements.md, tech-stack-decisions.md.
+        **Conclusion: zero new runtime dependencies** (stdlib threading/input-loop + hand-rolled slash parser; pydantic/
+        loguru/APScheduler/claude CLI/Hypothesis(dev) reused). No new question round (decisions already settled by
+        Q9/Q10 + "no new runtime deps" + NFR-1). Deferred to NFR Design: serialization primitive (Lock vs queue worker)
+        + scheduler single-worker config.
+  - [x] NFR Requirements — **COMPLETE** 2026-05-29 (awaiting approval). Console UI stack reconsidered (CQ-NFR1=B,
+        CQ-NFR2=A): **adopt `prompt_toolkit` + `rich`** (2 new runtime deps, pinned → SECURITY-10) for a seamless line
+        REPL in the monitor.sh pane (autocomplete/history/bottom-toolbar/`patch_stdout`/rich tables). textual full TUI
+        NOT in v1 (north-star only). Driver beyond aesthetics: bare `input()` corrupts the in-progress line when the
+        async approval notice (CQ2=A) prints — `patch_stdout` fixes exactly this. Updated tech-stack-decisions.md,
+        nfr-requirements.md, frontend-components.md, requirements §NFR-3. Deferred to NFR Design: serialization
+        primitive (Lock vs queue), scheduler single-worker, prompt_toolkit event-loop-in-thread × patch_stdout × the
+        serialized path.
+  - [x] NFR Design — **COMPLETE** 2026-05-29 (awaiting approval). Artifacts in
+        `aidlc-docs/construction/human-steering-console/nfr-design/`: nfr-design-patterns.md, logical-components.md.
+        **Core concurrency decision:** two independent serialization axes — (1) a single **CommandWorker** thread is
+        the ONLY thing that touches broker/executor/cursor (console mutations + approvals + `/cancel`/`/stop` +
+        scheduler executor-phase + reads all enqueued → broker/cursor races structurally impossible), and (2) a
+        **turn_lock** serializes `AgentSession` (scheduled turns + reconcile). Split so a long LLM turn (holds turn_lock,
+        not broker) never blocks an emergency `/kill`/`/flatten`. SteeringState(state_lock) holds RunState(in-mem)+
+        HumanLock/Pending/Directive(persisted, ET-date)+InterventionLog(append-only)+broker snapshot cache. Human trades
+        run via a direct `execute_decision` path (NOT in decisions.jsonl → cursor idempotency preserved); agent learns
+        via reconcile+live state. Notifier → patch_stdout for async approval notices. prompt_toolkit loop on the main
+        thread (TTY) else sleep-wait; quit→console-only, Ctrl-C→daemon. Security P4 (SECURITY-03/10/11/13/15) mapped.
+  - [~] NFR Design — **REVISED after cross-review 2026-05-29** (11 findings vs actual code; all valid). Engineering
+        fixes applied to docs: #1 emergency priority lane + honest worst-case bound (~6s in-flight op, not "instant");
+        #2 lazy ET-date expiry + midnight sweep (daemon never restarts, session.py:119 live-ET); #3 id rehydrate
+        (counter=max+1 on load); #4 idempotent PendingApproval parking + incremental cursor; #5 reconcile
+        turn_lock.acquire(blocking=False) + explicit skip logging (BackgroundScheduler max_instances=1 coalesce);
+        #6 confirm shows estimate, executor re-queries live + result shows actual (TOCTOU); #7 precise invariant
+        (broker *mutations*+cursor single-thread; read-only is_market_open via cached snapshot) + rewire list;
+        #8 torn-line guard (skip incomplete trailing line; cursor=complete lines), decisions.jsonl is cross-axis;
+        #11 prompt_toolkit buffer-preservation = code-gen verification item. Policy forks resolved: **CQ-D1=A**
+        (RunState ET-date persisted → same-day crash/manual restart restores pause/halt; next trading day auto-running;
+        `run_state.json`), **CQ-D2=A** (lock on success only, BR-4.1 unchanged). Docs updated accordingly.
+  - [x] NFR Design — **COMPLETE & APPROVED** 2026-05-29 ("답했어. 승인.").
+  - [x] Infrastructure Design — **SKIP** (local CLI, no infra).
+  - [~] Code Generation **Part 1 (plan)** — created 2026-05-29; only **1 new runtime dep** (`prompt_toolkit`).
+        `aidlc-docs/construction/plans/human-steering-console-code-generation-plan.md`. Worktree NOT yet created (Part 2 first action).
+  - **`/critic` adversarial review (isolated subagent) 2026-05-29 — 8 findings, all verified valid vs code.** Engineering
+        fixes applied to design+plan docs: #1 invariant leak (agent `claude` subprocess holds an independent read-only
+        `AlpacaBroker` via `tools account`, __main__.py:21-30 → restated invariant as daemon-internal mutation+cursor,
+        not global single-broker-thread); #2 torn-line guard is NOT in current code (splitlines, journal.py:110) → marked
+        "code-gen adds it" + cursor = complete physical lines (fix existing skip drift); #3 worst-case emergency bound
+        ~6s→**~11s** (submit_order fill-poll ~5s + cancel_and_wait 6s, alpaca_broker.py:77-100); #4 scheduler has no
+        explicit max_instances/coalesce (scheduler.py:13, relies on defaults) → set explicitly; #6 `/unlock`+sweep must
+        resolve outstanding PendingApprovals + re-trade resets denied (BR-4.10/4.11, FR-8 qualified); #7 load-time
+        ET-date check + cross-midnight restart test; #8 plan Step6 integration test for emergency-yield re-entry
+        idempotency. Validated-as-sound: discretionary-vs-protective SELL gating (protective never uses Decision SELL).
+        **Policy forks resolved:** **CQ-R1=A** (reconcile = bounded-blocking + priority over next scheduled turn;
+        max-staleness = in-flight turn remainder) + **CQ-R2=A** (off-hours human trades → `pending_human_trades.jsonl`
+        queue, drained by the market-open job; HumanLock still created off-hours). Docs updated (patterns P2, LC4,
+        BR-6.2, BR-2.7, data-store table, plan Step5/9).
+  - [x] **NFR Design — FINAL** 2026-05-29 (all critic findings + CQ-D1/D2 + CQ-R1/R2 incorporated).
+  - [~] Code Generation **Part 1 (plan) — REVISED & ready, awaiting approval to enter Part 2.** On approval, Part 2's
+        first action = create git worktree+branch (Q8=A), then implement Steps 1–11 there. No code/worktree yet.
   - [ ] NFR Requirements — **EXECUTE (minimal)** (tech stack: no new runtime deps, stdlib threading/cmd, Hypothesis).
   - [ ] NFR Design — **EXECUTE** (single serialized command path + turn-lock; security placement; fault isolation).
   - [ ] Infrastructure Design — **SKIP** (local CLI, no infra change).

@@ -20,12 +20,19 @@ _AI-DLC 트랙 F2 · CONSTRUCTION · Functional Design · 2026-05-29._
 - BR-2.3 크기 의미: `$`=노셔널, `sh`=주식 수, `%`=보유 비율(매도 전용). RiskManager가 한도/리스크로 추가 제약 가능.
 - BR-2.4 시장 폐장 등으로 즉시 체결 불가 시 기존 executor 정책을 따른다(보류/연기). 결과는 `InterventionRecord`에 반영.
 - BR-2.5 `/buy`,`/sell`,`/flatten`은 대상 종목에 **HumanLock 생성**(BR-4). `/stop`은 락 생성 안 함.
+- BR-2.6 (검토 #5) **실행 시점 무포지션 처리:** `/sell`·`/flatten`이 FIFO 지연 사이 보호 체결/리스크 청산으로 포지션이
+  사라지면(`RiskManager._handle_sell`가 `None` 반환, manager.py:262-265) generic `no_order`가 아니라 **"이미 청산됨"**을
+  결과 줄에 명시. `%` 크기는 **실행 시점 보유 qty** 기준(확인 에코는 추정치, P6 TOCTOU 계약을 `/sell`에도 적용).
+- BR-2.7 (검토 #5, 확정 CQ-R2=A) **장 마감 시 사람 거래(`execute_decision`):** 폐장 중 사람 `/buy`·`/sell`·`/flatten`은 즉시
+  실행하지 않고 **`pending_human_trades` 보류 큐(ET-date 영속)에 적재**, 콘솔에 "장 마감 — 개장 시 실행 예정" 통지.
+  **market-open 잡이 이 큐를 동일 게이트로 드레인**(에이전트 경로의 폐장-연기와 일관). 폐장 중에도 HumanLock은 생성(사람 의도 반영).
 
 ## BR-3 게이팅 규칙 (RunState)
 - BR-3.1 `paused=True`: 예약 리서치/intraday/진입 턴은 no-op. **보호·resting 체결·`run_risk_exits` 청산은 계속**(Q9=A, 안전).
   사람 명령은 paused 중에도 동작.
 - BR-3.2 `entries_halted=True`: 에이전트 신규 BUY 실행 차단. 기존 포지션 관리/청산/보호 유지. 사람 `/buy`는 경고 후 실행(오버라이드).
-- BR-3.3 `RunState`는 영속하지 않는다 — 데몬 재시작 시 `running`, 진입 허용으로 시작(Q9=A).
+- BR-3.3 `RunState`는 **ET-date 영속**(CQ-D1=A): 같은 거래일 내 재시작(크래시/수동)이면 pause/halt 복원,
+  다음 거래일엔 자동 `running`/진입 허용. (보호적 정지가 크래시 재시작으로 조용히 풀리지 않도록.)
 
 ## BR-4 사람-락 상태머신 (E4) — 핵심 일관성 규칙
 - BR-4.1 사람의 `/buy|/sell|/flatten <SYM>` 성공 시 그 종목은 `locked(reject_count=0)`.
@@ -39,6 +46,10 @@ _AI-DLC 트랙 F2 · CONSTRUCTION · Functional Design · 2026-05-29._
 - BR-4.7 `/unlock <SYM>`은 `locked`/`denied`를 즉시 해제(reject_count 리셋).
 - BR-4.8 모든 락/카운트/denied/pending은 **ET 날짜 스코프** — 다음 거래일 자동 해제. 같은 날 재시작은 영속 파일에서 복원.
 - BR-4.9 **불변식(PBT-03):** `reject_count`는 0→1→2 단조 증가; `status=="denied" ⇔ reject_count>=2`; `/approve`/`/unlock` 후 종목은 락 집합에서 제거.
+- BR-4.10 (검토 #6) **락 해제 시 outstanding PendingApproval 해소:** `/unlock <SYM>`와 자정 sweep으로 락이 풀리면 그 종목의
+  `status="pending"` 승인건을 **`rejected`/`expired`로 해소**(에이전트 피드백) — `/pending`에 유령 항목·해제된 종목의 `/approve` 방지.
+- BR-4.11 (검토 #6) **재거래는 denied 리셋(의도된 escape hatch):** `denied` 종목을 사람이 다시 `/buy|/sell|/flatten`하면
+  `locked(reject_count=0)`로 리셋된다(BR-4.1). 따라서 FR-8의 "당일 영구 거부"는 **사람 재개입이 없는 한**으로 한정됨(사람이 권위).
 
 ## BR-5 승인 대기 노출/처리 (CQ2=A)
 - BR-5.1 `PendingApproval` 생성 시 콘솔에 **한 줄 알림**(non-blocking) 출력 + `/status` 카운트 반영.
@@ -47,7 +58,8 @@ _AI-DLC 트랙 F2 · CONSTRUCTION · Functional Design · 2026-05-29._
 
 ## BR-6 reconcile(재정렬) 규칙
 - BR-6.1 트리거: 사람 거래, `/directive` 등록, approve/reject로 장부 변경 직후. `/note`·읽기 명령은 트리거 안 함(Q7=A).
-- BR-6.2 비동기 실행, 예약 턴과 **turn-lock 공유**(동시 LLM 세션 금지). 다수 개입은 디바운스로 1회 합침.
+- BR-6.2 비동기 실행, 예약 턴과 **turn-lock 공유**(동시 LLM 세션 금지). reconcile는 **bounded blocking + 다음 예약 턴보다
+  우선권**으로 turn-lock 획득(CQ-R1=A; 무한 양보 기아 방지, FR-6 "즉시" 근접). 다수 개입은 디바운스로 1회 합침.
 - BR-6.3 **best-effort**: reconcile 실패(타임아웃 등)는 로그만 남기고 데몬을 중단시키지 않는다(SECURITY-15, 기존 `_launch` 정책).
 
 ## BR-7 동시성/직렬화 (요지 — 상세 NFR Design)
