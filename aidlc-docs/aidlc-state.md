@@ -88,8 +88,23 @@ Sequential refactoring units, in user-specified order. Remaining findings (Q-*, 
     - 2 new tests in `test_execution.py::TestTradeLedgerPort`: default no-op on simulated;
       AlpacaBroker delegation (monkeypatch `record_trades`, assert forwarded args). 176 tests green.
 
+  - [x] **U5 (B-1+B-2)** — backtest fidelity. Completed 2026-05-28 (commit 9384b3c).
+    - B-1: metrics now from `match_round_trips` (moved to `src/core/trades.py`, shared with the
+      live ledger) — `total_trades`/`win_rate` count closed round-trips, not every fill (was ~2x / half).
+    - B-2: backtest feeds bar high/low and arms resting OCO protection on entry, so stops/takes
+      trigger intra-bar at the trigger price (mirrors live), not close-only. Also resolves the
+      backtest's inline polled-exit block (the 4th risk-exit duplication site).
+    - `SimulatedBroker.set_current_price` now returns triggered fills; `BacktestResult.trades` populated.
+    - 2 new fidelity tests. 178 green.
+  - [x] **U6 (B-3)** — sell sizing. Completed 2026-05-28 (commit 816f298).
+    - `RiskManager._handle_sell`: dropped `int()` truncation + min-1-share floor; full exit sells exact
+      `position.qty` (fractional-safe), sell_pct→0 returns no order. Corrected 2 bug-encoding tests + 1 new. 179 green.
+
 ## Completed Sequence Summary
-S-5 → S-3 → S-1+S-2 → S-4 all complete. Working tree clean. Remaining Q-* / H-* findings
-(test coverage gaps, backtest's 4th exit site, sell sizing truncation, get_status mode,
-hygiene items, dev-env standardization) are deferred per user direction; see
-`code-quality-assessment.md` for the prioritized list.
+**Approved structural sequence** S-5 → S-3 → S-1+S-2 → S-4: all complete.
+**Closer-inspection bugs** (found on re-review) B-1, B-2, B-3: all fixed.
+Tests 155 → 179. Working tree clean (7 unit commits + 2 AI-DLC-docs commits + this).
+**Remaining (deferred)**: Q-1 (WorkspaceStore), Q-3 (`get_status` mode), Q-4 (test coverage:
+TradingEngine/LLM/providers/AgentSession), Q-5 (lazy imports), M-1 (`PortfolioState.total_value`
+dead duplicate), H-1 (short positions), H-2 (dev-env: single venv + ruff), H-3 (repo hygiene).
+See `code-quality-assessment.md`.

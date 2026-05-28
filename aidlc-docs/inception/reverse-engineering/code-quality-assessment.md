@@ -196,3 +196,39 @@ declared tooling actually runs; then wire `ruff` into the workflow/CI.
 > bugs — the system works and tests pass — but they are load-bearing seams that
 > are currently duplicated, mutated, or leaking, and every future feature pays
 > interest on them.
+
+---
+
+## Addendum: Closer-Inspection Bugs (B-series)
+
+Found on a second, deeper pass through logic the first sweep didn't fully read
+(position sizing, backtest engine/metrics, SimulatedBroker, portfolio-value
+sources). These are genuine correctness bugs, not just structure.
+
+### B-1 · Backtest metrics counted every fill as a trade — **FIXED (commit 9384b3c)**
+`BacktestEngine` recorded each buy and sell as a row in `trades`, and BUY rows
+got `pnl=0.0`. So `total_trades = len(trades)` was ~2× the real round-trip count
+and `win_rate = wins/len(trades)` was ~halved (a 100%-winning strategy showed
+~50%). **Fix**: reuse `match_round_trips` (moved to `src/core/trades.py`, shared
+with the live ledger) — metrics are computed from closed round-trips.
+
+### B-2 · Backtest evaluated stops/take-profits on the close only — **FIXED (commit 9384b3c)**
+`set_current_price` was fed only the close and the polled check compared against
+it, so a bar whose **low** pierced the stop but **closed** above it never stopped
+out — optimistic vs live, where the resting bracket triggers intra-bar. The
+SimulatedBroker's intra-bar resting-leg machinery existed but the backtest didn't
+use it. **Fix**: feed bar high/low and arm resting OCO protection on entry so
+exits trigger intra-bar at the trigger price (mirrors live); also removed the
+backtest's inline polled-exit block (the S-1 "4th site").
+
+### B-3 · Sell sizing truncated to int and forced a 1-share minimum — **FIXED (commit 816f298)**
+`RiskManager._handle_sell` did `int(position.qty * sell_pct)` then `if qty<=0: qty=1`.
+A full exit of a 0.5-share position computed `int(0.5)=0` → forced 1 → tried to
+oversell; inconsistent with the float-qty stop/take exits. **Fix**: fractional-safe
+sizing — full exit sells exact `position.qty`, `sell_pct→0` returns no order.
+
+### M-1 · `PortfolioState.total_value` is a dead duplicate of `equity` — **OPEN (deferred)**
+Nothing reads `total_value`; every caller uses the `equity` field (set by the
+broker). The property recomputes `cash + Σ market_value`, which can diverge from
+`equity` if position prices are stale — a latent trap for a future caller.
+**Suggested fix**: remove the property or make one derive from the other.

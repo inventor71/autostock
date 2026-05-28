@@ -75,3 +75,18 @@ PBT compliance (partial: PBT-02/03/07/08/09): all N/A for this unit — the chan
 **Context**: CONSTRUCTION → U4 complete. Approved sequence (S-5 → S-3 → S-1+S-2 → S-4) finished.
 
 ---
+
+## Closer-Inspection Review + U5/U6 (B-1, B-2, B-3)
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: "남은것 중에서 다시 봤을때 중요한거 있어? ... mismatch/bug ..." then "A, B를 고치자" (A = B-1+B-2 backtest fidelity; B = B-3 sell sizing).
+**AI Response**: Re-reviewed un-inspected logic (position_sizer, backtest engine/metrics, SimulatedBroker, portfolio value sources). Surfaced 3 real bugs + 1 maintainability trap beyond the Q/H list:
+- B-1: backtest counted every fill as a trade → total_trades ~2x, win_rate ~half.
+- B-2: backtest evaluated stops/takes on close only → optimistic vs live (intra-bar resting brackets).
+- B-3: `_handle_sell` int-truncation + min-1 floor → oversells fractional positions.
+- M-1: `PortfolioState.total_value` is a dead duplicate of `equity` (noted, not fixed).
+Fixed A (U5, commit 9384b3c): moved `match_round_trips` to `src/core/trades.py`; backtest reuses it for metrics; feeds bar high/low + arms resting OCO so exits trigger intra-bar; `set_current_price` returns fills; `BacktestResult.trades` populated; removed the inline polled block (4th duplication). 2 new tests. Fixed B (U6, commit 816f298): fractional-safe sell sizing; corrected 2 bug-encoding tests + 1 new. Tests 155→179.
+Security compliance: SECURITY-15 compliant (sell returns no order rather than overselling — fail-safe; backtest exit errors caught). SECURITY-03/11 N/A. No blocking findings.
+PBT compliance (partial: PBT-02/03/07/08/09): N/A for U5/U6 — `match_round_trips` is example-tested (test_logs); the fixes are behavioral with deterministic example tests pinning them. No new generative property of interest beyond the existing PBT-03 exit-invariant test. No blocking findings.
+**Context**: CONSTRUCTION → U5, U6 complete (closer-inspection bug fixes)
+
+---
