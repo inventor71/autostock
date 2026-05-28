@@ -149,6 +149,19 @@ class AgentSession:
             encoding="utf-8",
         )
 
+    def reset_session(self) -> None:
+        """Discard today's stored session so the next turn starts fresh.
+
+        Used on a deliberate launch: the journal carries durable state, while the
+        CLI session is just within-run continuity — so a manual restart should
+        begin a clean session rather than resume a stale/bloated one. Scheduled
+        turns within the run still resume; the ET-date rollover still applies.
+        """
+        sf = self._state_file()
+        if sf.exists():
+            sf.unlink()
+            logger.info("Cleared session marker {}; next turn starts fresh", sf.name)
+
     # ------------------------------------------------------------------ #
     # Running a turn
     # ------------------------------------------------------------------ #

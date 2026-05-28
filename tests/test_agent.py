@@ -284,6 +284,16 @@ class TestAgentSession:
         assert sess.session_date.isoformat() == et_today
         assert sess._state_file().name == f"{et_today}.json"
 
+    def test_reset_session_starts_fresh(self, tmp_path):
+        runner = _FakeRunner(_ok_payload())
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner)
+        sess.run_turn("t1")
+        assert sess.is_started()
+        sess.reset_session()
+        assert not sess.is_started()
+        res = sess.run_turn("t2")
+        assert res.resumed is False  # fresh session after reset, not a resume
+
     def test_started_marker_persists_across_instances(self, tmp_path):
         ws = tmp_path / "ws"
         day = date(2026, 5, 27)

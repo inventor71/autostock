@@ -94,6 +94,9 @@ class AgentTradingMode:
             f"Starting agent trading mode (research {self.research_hour:02d}:"
             f"{self.research_minute:02d} ET, intraday every {self.intraday_minutes} min)"
         )
+        # A deliberate launch starts a clean session (don't resume a stale/bloated
+        # one); the journal carries state across the reset.
+        self.orchestrator.session.reset_session()
         # Research now so a manual launch is productive immediately; if the
         # market is already open, place the decisions too.
         self._premarket_research()
