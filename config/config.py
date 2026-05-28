@@ -77,6 +77,10 @@ class AgentConfig(BaseModel):
 
     model: str = "sonnet"  # base model for intraday / EOD turns
     research_model: str = "opus"  # deeper model for the daily research turn
+    # Trade-ledger hygiene: ignore broker fills before the experiment began and
+    # tiny test fills, so the track record reflects only the agent's trades.
+    experiment_start: str | None = None  # ISO date; fills before it are dropped
+    min_trade_notional: float = 0.0  # drop fills below this $ notional (penny/test)
 
 
 class Settings(BaseSettings):

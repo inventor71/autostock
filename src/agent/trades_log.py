@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -55,12 +56,26 @@ def _trade_key(t: dict) -> str:
     return f"{t['symbol']}|{t['opened_at']}|{t['closed_at']}|{t['qty']}"
 
 
-def _alpaca_fills(client) -> list[dict]:
-    """Pull filled orders from Alpaca as fills for matching."""
+def _alpaca_fills(client, since: str | None = None, min_notional: float = 0.0) -> list[dict]:
+    """Pull filled orders from Alpaca as fills for matching.
+
+    ``since`` (ISO date) drops fills before the experiment began — and is passed
+    to the API as ``after`` so fewer orders are fetched. ``min_notional`` drops
+    tiny penny/test fills. Together they keep pre-experiment test trades out of
+    the ledger entirely (the agent never sees them).
+    """
+    since_dt = None
+    if since:
+        since_dt = datetime.fromisoformat(since) if isinstance(since, str) else since
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=timezone.utc)
     try:
         from alpaca.trading.requests import GetOrdersRequest
         from alpaca.trading.enums import QueryOrderStatus
-        orders = client.get_orders(filter=GetOrdersRequest(status=QueryOrderStatus.CLOSED, limit=500))
+        kwargs = {"status": QueryOrderStatus.CLOSED, "limit": 500}
+        if since_dt is not None:
+            kwargs["after"] = since_dt  # fetch fewer orders (exclude pre-experiment)
+        orders = client.get_orders(filter=GetOrdersRequest(**kwargs))
     except Exception as e:
         logger.warning(f"Could not fetch fills for trade ledger: {e}")
         return []
@@ -68,22 +83,29 @@ def _alpaca_fills(client) -> list[dict]:
     for o in orders:
         if not o.filled_at or float(o.filled_qty or 0) <= 0:
             continue
+        if since_dt is not None and o.filled_at < since_dt:
+            continue  # pre-experiment test trade
+        qty = float(o.filled_qty)
+        price = float(o.filled_avg_price or 0)
+        if qty * price < min_notional:
+            continue  # penny / test fill
         fills.append({
             "symbol": o.symbol,
             "side": str(o.side).split(".")[-1].lower(),
-            "qty": float(o.filled_qty),
-            "price": float(o.filled_avg_price or 0),
+            "qty": qty,
+            "price": price,
             "ts": o.filled_at.isoformat() if hasattr(o.filled_at, "isoformat") else str(o.filled_at),
         })
     return fills
 
 
-def record_trades(client, path: str | Path) -> list[dict]:
+def record_trades(client, path: str | Path, since: str | None = None, min_notional: float = 0.0) -> list[dict]:
     """Reconstruct closed round-trips from the broker's fills and append any new
     ones to ``trades.jsonl`` (idempotent — recomputes all, writes only new)."""
     path = Path(path)
     existing = {_trade_key(t) for t in read_trades(path)}
-    new = [t for t in match_round_trips(_alpaca_fills(client)) if _trade_key(t) not in existing]
+    fills = _alpaca_fills(client, since=since, min_notional=min_notional)
+    new = [t for t in match_round_trips(fills) if _trade_key(t) not in existing]
     if not new:
         return []
     path.parent.mkdir(parents=True, exist_ok=True)

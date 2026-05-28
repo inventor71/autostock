@@ -168,3 +168,5 @@ llm:
 agent:
   model: sonnet            # intraday / EOD turns (frequent, lighter)
   research_model: opus     # daily research turn (deep fundamental + discovery)
+  experiment_start: "2026-05-27"  # ignore broker fills before this (pre-experiment test trades)
+  min_trade_notional: 50.0        # drop penny/test fills below this $ notional

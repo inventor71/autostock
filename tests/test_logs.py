@@ -89,3 +89,32 @@ class TestEquitySnapshotEnrich:
     def test_benchmark_recorded(self):
         snap = snapshot(self._pf(), benchmark={"SPY": 750.6, "VIX": 16.6, "QQQ": None})
         assert snap["benchmark"] == {"SPY": 750.6, "VIX": 16.6}  # None dropped
+
+
+# --------------------------------------------------------------------------- #
+# Fill parsing filters (drop pre-experiment + penny/test fills)
+# --------------------------------------------------------------------------- #
+class TestFillFiltering:
+    def _order(self, sym, side, qty, price, dt):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            symbol=sym, side=side, qty=qty, filled_qty=qty,
+            filled_avg_price=price, filled_at=dt, id="x",
+        )
+
+    def test_drops_pre_experiment_and_penny_fills(self):
+        from datetime import datetime, timezone
+        from src.agent.trades_log import _alpaca_fills
+
+        orders = [
+            self._order("PFE", "sell", 1, 25.79, datetime(2026, 5, 26, 14, 42, tzinfo=timezone.utc)),  # pre-start
+            self._order("XYZ", "buy", 1, 10.0, datetime(2026, 5, 28, 15, 0, tzinfo=timezone.utc)),     # penny
+            self._order("AAPL", "buy", 10, 309.0, datetime(2026, 5, 27, 13, 3, tzinfo=timezone.utc)),  # legit
+        ]
+
+        class FakeClient:
+            def get_orders(self, filter=None):
+                return orders
+
+        fills = _alpaca_fills(FakeClient(), since="2026-05-27", min_notional=50.0)
+        assert {f["symbol"] for f in fills} == {"AAPL"}

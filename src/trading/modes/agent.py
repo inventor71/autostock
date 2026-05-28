@@ -81,7 +81,12 @@ class AgentTradingMode:
         )
         client = getattr(self.executor.broker, "_client", None)
         if client is not None:  # Alpaca: reconstruct closed round-trips
-            record_trades(client, root / "trades.jsonl")
+            from config.config import get_settings
+            cfg = get_settings().agent
+            record_trades(
+                client, root / "trades.jsonl",
+                since=cfg.experiment_start, min_notional=cfg.min_trade_notional,
+            )
 
     # ------------------------------------------------------------------ #
     def start(self) -> None:
