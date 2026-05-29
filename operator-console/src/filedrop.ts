@@ -4,7 +4,7 @@
 // (token from env, never logged) and appended. The LLM never reaches this code.
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { type SteeringCommand, type SteeringEvent, TOKEN_ENV, type SteeringVerb } from "./schema";
 
@@ -64,13 +64,24 @@ export class FileDrop {
     } catch {
       return { events: [], offset: 0 };
     }
-    if (offset > size) offset = 0; // truncated/rotated
-    if (offset === size) return { events: [], offset };
-    const buf = readFileSync(this.eventsFile);
-    const slice = buf.subarray(offset);
-    const lastNl = slice.lastIndexOf(0x0a);
+    // review #4: truncation/rotation resets to 0 (cold-start fallback). events.jsonl is
+    // append-only (Unit A never rotates it), so this is rare; the consumer dedups by event id.
+    if (offset > size) offset = 0;
+    if (offset >= size) return { events: [], offset };
+    // review #6: read ONLY [offset, size) via a positioned read, not the whole file each poll.
+    const len = size - offset;
+    const buf = Buffer.allocUnsafe(len);
+    const fd = openSync(this.eventsFile, "r");
+    let n = 0;
+    try {
+      n = readSync(fd, buf, 0, len, offset);
+    } finally {
+      closeSync(fd);
+    }
+    const chunk = buf.subarray(0, n);
+    const lastNl = chunk.lastIndexOf(0x0a);
     if (lastNl === -1) return { events: [], offset }; // no complete line yet
-    const complete = slice.subarray(0, lastNl + 1).toString("utf8");
+    const complete = chunk.subarray(0, lastNl + 1).toString("utf8");
     const events: SteeringEvent[] = [];
     for (const line of complete.split("\n")) {
       const t = line.trim();

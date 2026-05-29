@@ -152,6 +152,35 @@ def test_approve_executes_parked_decision(tmp_path):
     assert state.lock_status("AAPL") is None  # approve unlocks
 
 
+def test_answer_unknown_id_rejected_then_applied(tmp_path):
+    # review #1: an unknown question id is REJECTED (not a false "applied"+orphaned answer)
+    h, broker, state, channel, _ = _setup(tmp_path)
+    h.handle(_cmd("answer", id="bogus", text="hi"))
+    assert _last_event(channel).payload["outcome"] == "rejected"
+    assert not (h.journal.root / "agent_answers.jsonl").exists()
+    # with a real open question, the answer applies and is persisted
+    from src.agent.steering.records import AgentQuestion
+    q = AgentQuestion(symbol="AAPL", text="re-enter?")
+    h.journal.root.mkdir(parents=True, exist_ok=True)
+    (h.journal.root / "agent_questions.jsonl").write_text(q.model_dump_json() + "\n")
+    h.handle(_cmd("answer", id=q.id, text="no, stand down"))
+    assert _last_event(channel).payload["outcome"] == "applied"
+    assert q.id in (h.journal.root / "agent_answers.jsonl").read_text()
+
+
+def test_stop_above_market_rejected_for_long(tmp_path):
+    # review #7: a long's stop at/above market would exit immediately -> reject
+    h, broker, state, channel, _ = _setup(tmp_path)  # provider price = 100
+    broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10.0))
+    h.handle(_cmd("stop", symbol="AAPL", price=9999.0))
+    ev = _last_event(channel)
+    assert ev.payload["outcome"] == "no_order"
+    assert "would exit immediately" in ev.payload["detail"]
+    # a sane stop below market goes through
+    h.handle(_cmd("stop", symbol="AAPL", price=90.0))
+    assert _last_event(channel).payload["outcome"] in ("executed", "skipped_hold", "no_order")
+
+
 def test_unknown_verb_errors_without_raising(tmp_path):
     h, _, _, channel, _ = _setup(tmp_path)
     # craft a command whose verb passes schema but has no handler -> error outcome

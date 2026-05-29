@@ -208,13 +208,26 @@ class CommandHandler:
     def _v_stop(self, cmd: SteeringCommand) -> None:
         # protective management -> NOT a lock trigger (BLM 1.1)
         sym = str(cmd.args["symbol"]).upper()
+        price = float(cmd.args["price"])
         if not self._market_open():
             self.channel.queue_offhours(cmd)
             self._emit(cmd, "deferred", "market closed; queued for next open")
             return
+        # review #7: a long's protective stop must be BELOW the market, else it triggers
+        # an immediate exit. Reject a fat-fingered stop at/above market instead of placing it.
+        pos = self.broker.get_position(sym)
+        if pos is not None and pos.qty > 0:
+            try:
+                mkt = self.data_provider.get_latest_price(sym)
+            except Exception:
+                mkt = None
+            if mkt and price >= mkt:
+                self._emit(cmd, "no_order",
+                           f"stop {price} >= market {mkt:.2f} for long {sym}; would exit immediately")
+                return
         outcome = self.executor.execute_decision(
-            Decision(symbol=sym, action="ADJUST_STOP", source="human", stop=float(cmd.args["price"])))
-        self._emit(cmd, outcome.status, outcome.detail or f"stop {sym} -> {cmd.args['price']}")
+            Decision(symbol=sym, action="ADJUST_STOP", source="human", stop=price))
+        self._emit(cmd, outcome.status, outcome.detail or f"stop {sym} -> {price}")
         self._reconcile()
 
     # ---- lifecycle verbs -------------------------------------------------- #
@@ -300,11 +313,27 @@ class CommandHandler:
     def _v_answer(self, cmd: SteeringCommand) -> None:
         # FR-7: persist the answer to a SEPARATE append-only file (never rewrite the
         # agent-written questions file -- critic #7); the reconcile turn surfaces it.
-        from src.agent.steering.records import AgentAnswer
-        ans = AgentAnswer(question_id=str(cmd.args.get("id", "")), text=str(cmd.args.get("text", "")))
+        from src.agent.steering.jsonl import read_complete_lines
+        from src.agent.steering.records import AgentAnswer, AgentQuestion
+
+        qid = str(cmd.args.get("id", ""))
+        # review #1: validate the id against the agent's open questions. Without this,
+        # a mistyped/abbreviated id was accepted, the answer orphaned (never joins a
+        # real uuid-hex question), and a false "applied" success was reported.
+        known: set[str] = set()
+        lines, _ = read_complete_lines(self.journal.root / "agent_questions.jsonl", 0)
+        for line in lines:
+            try:
+                known.add(AgentQuestion.model_validate_json(line).id)
+            except Exception:
+                continue
+        if qid not in known:
+            self._emit(cmd, "rejected", f"unknown question id {qid!r} (no matching open question)")
+            return
+        ans = AgentAnswer(question_id=qid, text=str(cmd.args.get("text", "")))
         path = self.journal.root / "agent_answers.jsonl"
         self.journal.root.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(ans.model_dump_json() + "\n")
-        self._emit(cmd, "applied", f"answered question {ans.question_id}")
+        self._emit(cmd, "applied", f"answered question {qid}")
         self._reconcile()

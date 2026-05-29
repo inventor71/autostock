@@ -26,6 +26,9 @@ export const READ_VERBS = new Set([
 const VERB_ALIASES: Record<string, SteeringVerb> = {
   "halt-entries": "halt_entries",
   "allow-entries": "allow_entries",
+  // a distinct verb (NOT "directive clear") so a directive whose text starts
+  // with "clear" is never hijacked into a clear-directives command (review #2).
+  "directive-clear": "directive_clear",
 };
 
 interface Size { size: number; unit: "$" | "sh" | "%"; }
@@ -43,7 +46,9 @@ function parseSize(tok: string | undefined, allowed: Array<Size["unit"]>): Size 
 
 function sym(tok: string | undefined): string {
   if (!tok) throw new ParseError("symbol required");
-  if (!/^[A-Za-z.\-]{1,10}$/.test(tok)) throw new ParseError(`bad symbol '${tok}'`);
+  // must start with a letter (review #8): rejects bare "." / "-" / "A.-" that the
+  // old [A-Za-z.\-]{1,10} accepted and passed through to the broker.
+  if (!/^[A-Za-z][A-Za-z.\-]{0,9}$/.test(tok)) throw new ParseError(`bad symbol '${tok}'`);
   return tok.toUpperCase();
 }
 
@@ -55,12 +60,11 @@ export function parseCommand(input: string): CommandDraft {
   let head = parts[0].toLowerCase();
   let rest = parts.slice(1);
 
-  // two-word verbs
-  if (head === "flatten" && rest[0]?.toLowerCase() === "all") {
+  // two-word verb: only `flatten all` (unambiguous — "all" is not a tradeable symbol).
+  // `directive clear` was REMOVED (review #2): use the `/directive-clear` alias so a
+  // directive whose text begins with "clear" is recorded as a directive, not a clear.
+  if (head === "flatten" && rest[0]?.toLowerCase() === "all" && rest.length === 1) {
     return mk("flatten_all", {}, "FLATTEN ALL positions + cancel all resting orders");
-  }
-  if (head === "directive" && rest[0]?.toLowerCase() === "clear") {
-    return mk("directive_clear", { which: rest[1] ?? "all" }, `clear directive(s): ${rest[1] ?? "all"}`);
   }
   head = VERB_ALIASES[head] ?? head;
 
@@ -119,6 +123,10 @@ export function parseCommand(input: string): CommandDraft {
       if (!text) throw new ParseError("directive text required");
       return mk("directive", { text }, `directive: ${text}`);
     }
+    case "directive_clear": {
+      const which = rest[0] ?? "all";
+      return mk("directive_clear", { which }, `clear directive(s): ${which}`);
+    }
     case "answer": {
       const id = rest[0];
       const text = rest.slice(1).join(" ");
@@ -131,9 +139,10 @@ export function parseCommand(input: string): CommandDraft {
 }
 
 function intArg(tok: string | undefined, usage: string): number {
-  const n = parseInt(tok ?? "", 10);
-  if (!Number.isInteger(n)) throw new ParseError(usage);
-  return n;
+  // strict digits only (review #3): parseInt accepted "3abc"→3 and "3.9"→3,
+  // letting a malformed id approve/reject the wrong pending item.
+  if (!tok || !/^\d+$/.test(tok)) throw new ParseError(usage);
+  return parseInt(tok, 10);
 }
 
 function mk(verb: SteeringVerb, args: Record<string, unknown>, echo: string): CommandDraft {
