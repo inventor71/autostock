@@ -105,6 +105,33 @@ class SteeringChannel:
             return False, "bad token"
         return True, ""
 
+    # ---- off-hours human-trade queue (BR-2.7) ---------------------------- #
+    @property
+    def _offhours_file(self):
+        return self.dir / "pending_human_trades.jsonl"
+
+    def queue_offhours(self, cmd: SteeringCommand) -> None:
+        """Park a human trade issued while the market is closed; the market-open
+        job drains it (BR-2.7). Stored token-redacted (it was already validated)."""
+        with self._offhours_file.open("a", encoding="utf-8") as fh:
+            fh.write(SteeringCommand.model_validate(cmd.redacted()).model_dump_json() + "\n")
+
+    def drain_offhours(self) -> list[SteeringCommand]:
+        """Return all queued off-hours trades and clear the queue (atomic clear)."""
+        if not self._offhours_file.exists():
+            return []
+        out: list[SteeringCommand] = []
+        for line in self._offhours_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(SteeringCommand.model_validate_json(line))
+            except Exception as exc:
+                logger.warning("steering: bad off-hours line skipped: {}", exc)
+        self._offhours_file.unlink(missing_ok=True)
+        return out
+
     # ---- events / snapshot out ------------------------------------------- #
     def append_event(self, event: SteeringEvent) -> None:
         self.events_file.parent.mkdir(parents=True, exist_ok=True)
