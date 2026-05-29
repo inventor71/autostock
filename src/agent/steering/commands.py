@@ -298,7 +298,13 @@ class CommandHandler:
         self._emit(cmd, "applied", f"cleared {n} directive(s)")
 
     def _v_answer(self, cmd: SteeringCommand) -> None:
-        # FR-7: the AgentQuestion answer store + agent feedback is wired in step 9;
-        # here we record the answer and reconcile so the agent picks it up.
-        self._emit(cmd, "applied", f"answered question {cmd.args.get('id', '')}")
+        # FR-7: persist the answer to a SEPARATE append-only file (never rewrite the
+        # agent-written questions file -- critic #7); the reconcile turn surfaces it.
+        from src.agent.steering.records import AgentAnswer
+        ans = AgentAnswer(question_id=str(cmd.args.get("id", "")), text=str(cmd.args.get("text", "")))
+        path = self.journal.root / "agent_answers.jsonl"
+        self.journal.root.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(ans.model_dump_json() + "\n")
+        self._emit(cmd, "applied", f"answered question {ans.question_id}")
         self._reconcile()

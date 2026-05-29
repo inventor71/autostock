@@ -119,6 +119,24 @@ class AgentTradingLoop:
             outcomes = [f"{d.symbol} {d.action}" for d in self.journal.read_decisions()[-20:]]
         return self._run(prompts.eod_review_prompt(outcomes), "eod")
 
+    def run_reconcile(self, context: str = "") -> AgentTurnResult:
+        """Out-of-band turn after a human intervention (F4 FR-6): the agent
+        re-reads live broker state + the human context and updates its journal /
+        per-symbol theses / watchlist / resting protection so they don't drift.
+        It must NOT open new discretionary positions -- only reconcile records and
+        protective stops. Serialized with scheduled turns via the TurnCoordinator."""
+        held = ", ".join(self.held_symbols()) or "none"
+        prompt = (
+            "A human operator just intervened in the LIVE account. Reconcile your "
+            "journal, per-symbol theses, watchlist, and resting protection with the "
+            "ACTUAL current broker state (use your tools to check positions/orders). "
+            "Do NOT open new discretionary positions; only update your records and "
+            "protective stops so they match reality, and acknowledge the human's intent.\n\n"
+            f"Currently held (broker): {held}\n"
+            f"Human intervention context:\n{context or '(see human_directives.jsonl)'}\n"
+        )
+        return self._run(prompt, "reconcile")
+
     # ------------------------------------------------------------------ #
     def schedule(self, scheduler, intraday_minutes: int = 30) -> None:
         """Register the daily turns on a TradingScheduler (market-hours cron)."""

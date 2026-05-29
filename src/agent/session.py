@@ -186,7 +186,11 @@ class AgentSession:
         model: str | None = None, timeout: float | None = None,
     ) -> dict:
         cmd = self._build_command(session_id, system_prompt, resume, model)
-        env = dict(os.environ)
+        # Scrub the operator steering token before it reaches the agent (BR-10.2):
+        # dict(os.environ) would otherwise copy the daemon's token to the agent.
+        from src.agent.steering.security import scrub_agent_env
+
+        env = scrub_agent_env(dict(os.environ))
         existing_pp = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(_REPO_ROOT) + (os.pathsep + existing_pp if existing_pp else "")
 
