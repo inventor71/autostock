@@ -7,7 +7,7 @@
 //   "mcp": { "autostock": { "type": "local",
 //            "command": ["bun","run","<abs>/operator-console/src/mcp-server.ts"],
 //            "environment": { "STEERING_DIR": "...", "STEERING_OPERATOR_TOKEN": "..." } } },
-//   "permission": { "autostock:steer": "ask", "autostock:steer_read": "allow" }
+//   "permission": { "autostock_steer": "ask", "autostock_steer_read": "allow" }
 // The deterministic parse + token + file-drop write live in src/steer-handler (tested);
 // the daemon RiskManager gate is the final safety regardless.
 

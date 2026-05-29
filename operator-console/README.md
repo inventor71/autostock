@@ -9,7 +9,7 @@ and the daemon's `RiskManager→Broker` gate is the real boundary.
 ## How the steering command path works (MCP, auto-gated)
 `steer` is delivered as a small **MCP server** (`src/mcp-server.ts`). opencode connects
 to it and **auto-gates every MCP tool call** via its permission system
-(`session/tools.ts:135` calls `ctx.ask({permission:"autostock:steer"})` before the tool
+(`session/tools.ts:135` calls `ctx.ask({permission:"autostock_steer"})` before the tool
 runs). So the **human confirm is enforced by opencode CORE**, not by our code — we can't
 mis-key or accidentally remove it (the failure mode we hit with the earlier plugin self-ask).
 The model only proposes `steer({command})`; on deny nothing is written.
@@ -45,14 +45,15 @@ In the opencode fork's `opencode.json`:
       }
     }
   },
-  "permission": { "autostock:steer": "ask", "autostock:steer_read": "allow" }
+  "permission": { "autostock_steer": "ask", "autostock_steer_read": "allow" }
 }
 ```
 Then `bun dev` → type e.g. `sell AAPL 50%` → the model calls the `steer` MCP tool →
 **opencode shows a permission prompt** (auto-gate) → approve → only then is the
 confirmed+token command written to `steering/commands.jsonl`. `status` → `steer_read`
 (no prompt). If a mutating command writes with NO prompt, the `permission` rule is
-missing/mismatched (key is `<server>:<tool>` = `autostock:steer`).
+missing/mismatched — the key is **`<server>_<tool>`** (underscore), i.e. `autostock_steer`
+(MCP.tools() keys by `sanitize(client)+"_"+sanitize(name)`, mcp/index.ts:696). NOT a colon.
 
 ## Automated TUI verification
 The PTY harness (`test/e2e/`) drives a real TUI headlessly; point `drive()` at `bun dev`,

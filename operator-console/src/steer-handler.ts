@@ -1,6 +1,6 @@
 // F4 Unit B — steer command handlers (deterministic), reused by the MCP server.
 //
-// CONFIRM is opencode's MCP auto-gate (permission:{"autostock:steer":"ask"}), enforced by
+// CONFIRM is opencode's MCP auto-gate (permission:{"autostock_steer":"ask"}), enforced by
 // opencode CORE before the tool runs — NOT by this code (session/tools.ts:135). That removes
 // the failure mode where our own ctx.ask gate could be mis-keyed or removed. So reaching
 // handleSteer means the human already approved. These are pure parse+(read|write) fns.
