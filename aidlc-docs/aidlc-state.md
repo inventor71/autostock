@@ -483,10 +483,121 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
       (98b1f31, 0985b0e, 48e71ca, a0fc86c, cf1d3ee, 4914fd2, 57038d6) on `feat/steering-core`; ~78 new steering tests; full suite
       271 green; 0 new runtime deps; privilege separation (BR-10.1) **live-verified** in headless `claude -p`. NOT merged.
   - **CONSTRUCTION — Unit B (`operator-tool`, opencode rebrand):**
-    - [~] Functional Design — questions posed 2026-05-30 (`construction/operator-tool/functional-design/functional-design-questions.md`,
-      7 forks: fork depth, confirm-critical write mechanism, read surface, event surfacing, token delivery, command set, extensions).
-      **Research-grounded:** opencode custom commands = LLM prompt templates (not deterministic) → confirm-critical writes must use a
-      **custom tool (plugin Zod+execute)** that owns confirm+token+append (LLM can't forge); reads can stay LLM-mediated; a
-      `.opencode/` config+plugin distribution may avoid a heavy source fork. Known opencode bugs to design around: #5894 (task/subagent
-      bypass → deny task), #7006/#19927 (permission.ask not triggered → don't rely on it), #6396 (SDK deny ignored → verify).
-      Awaiting answers. Pre-finding doc: `construction/operator-tool/nfr-requirements/opencode-feasibility.md`.
+    - [x] Functional Design — **COMPLETE** 2026-05-30 (awaiting approval). FD questions answered: **Q1=B′ (opencode HARD FORK)**,
+      Q2=A (deterministic action layer owns confirm+token+append), Q3=A (deterministic read commands/panels), Q4=A (background
+      events.jsonl tail → push notifications), Q5=A (token via env inheritance), Q6=A–E (full command set), Q7=A (defaults + version
+      pin + license + compile-time tool-removal verification). Q1 was reframed mid-stage (user insight): "opencode no-fork" is
+      dominated by Claude Code (no-fork) — the real choice is Claude Code(A′) vs opencode hard fork(B′); user chose **B′** for a
+      dedicated trading TUI + an LLM-bypass deterministic command path + **compile-time removal of side-effect tools** (turns the
+      opencode permission bugs #5894/#6396 from "mitigate" into structurally impossible) + push UI + a branded binary.
+      Artifacts: `construction/operator-tool/functional-design/{domain-entities,business-logic-model,business-rules,frontend-components}.md`.
+      **Key locked decisions:** consumes/produces Unit A's file-drop contract unchanged (E7/E8/snapshot, repo-root steering/, token via
+      env); LLM has NO order-path authority (NL→CommandDraft only; promotion to confirmed+token+append is owned by a deterministic
+      layer / TUI confirm modal the LLM can't forge or bypass — BR-B1/B3); fork strategy = add trading panels + deterministic command
+      path + events tail + `steer` action, REMOVE task/file-write/bash/web tools at compile time (BR-B4), rebrand binary, pin baseline
+      (no upstream tracking); daemon-side Unit A remains the real safety boundary (defense-in-depth). **Note:** B′ is a TS/Go new-language
+      deliverable + a 2nd LLM runtime — Code Gen will need a fork/vendoring spike (larger lift than Unit A).
+    - [x] NFR Requirements — **COMPLETE** 2026-05-30 (awaiting approval). Artifacts:
+      `construction/operator-tool/nfr-requirements/{nfr-requirements,tech-stack-decisions,opencode-feasibility}.md`. **Base verified:**
+      opencode = `github.com/sst/opencode`, **MIT** (fork/rebrand allowed w/ notice), **TS core (Bun) + Go TUI (Bubble Tea)**.
+      Tech stack (NEW vs Unit A's 0 deps): own the fork (Bun+Go toolchain), pin a baseline commit/tag (SECURITY-10, no upstream
+      tracking). file-drop interop: TS reads/writes repo-root steering/; **TS types hand-maintained + a cross-language contract test**
+      (Unit A pydantic is authoritative). Compile-time tool removal (BR-B4) = SECURITY-11. Token via `process.env`. Tests: bun/vitest
+      (parser/token/confirm) + contract test; Python suite unaffected (separate process/lang). **Mandates a fork-feasibility SPIKE as
+      Code-Gen Part-1 item #1** (confirm repo/tag, custom-tool deterministic execute, compile-time tool-removal point, a custom TUI
+      pane PoC, build/run) to retire the largest unknowns before full build. No new question round (decisions follow from B′ + MIT +
+      defaults; remaining unknowns are spike-resolved engineering, not user forks). Deferred to NFR Design: process/threading model
+      (events-tail × TUI loop), schema-sync mechanism, compile-time-removal pattern.
+    - [x] NFR Design — **COMPLETE** 2026-05-30 (awaiting approval). Artifacts:
+      `construction/operator-tool/nfr-design/{nfr-design-patterns,logical-components}.md`. **Patterns:** P-B1 Bubble Tea single
+      update loop + background goroutines (events-tail/snapshot-poll) injecting tea.Msg (no model race); **P-B2 single deterministic
+      write path owned by the Go TUI** — parser→ConfirmModal→token+append; the TS LLM only *proposes* a CommandDraft (never writes/
+      forges confirmed/token); **⚠ spike-contingent** (client↔server "propose-only" flow; fallback = TS `steer` tool execute owns
+      confirm); P-B3 compile-time tool removal (task/bash/edit/write/webfetch unregistered → #5894/#6396 structurally impossible) +
+      a registered-tools==allowlist assertion test; P-B4 schema mirror + `steering/contract-samples/` golden + cross-language contract
+      test (Unit A pydantic authoritative); P-B5 O_APPEND atomic write (Unit A torn-line/id-dedup absorbs); P-B6 token via env (write
+      UI gated); P-B7 resilience (tail/poll/write failure → warning, never kills TUI). logical-components: Go panels/parser/confirm/
+      filedrop-writer/tail + TS schema/steer-fallback + base mods (registry removal, rebrand, client↔server) + thread/process model +
+      test strategy. **Code-Gen entry = the fork-feasibility spike first** (resolves P-B2/P-B3 form + file paths).
+    - [x] Infrastructure Design — **SKIP** (local TUI, no infra).
+    - [~] Code Generation **Part 1 (plan) — created 2026-05-30, awaiting approval to run the spike.** Plan:
+      `construction/plans/operator-tool-code-generation-plan.md`. Spike-first: **Phase 0 fork-feasibility spike** (S0.1 repo/MIT/tag
+      pin, S0.2 Bun+Go build/run, S0.3 custom-tool deterministic execute, S0.4 tool-registry removal point, S0.5 custom TUI pane PoC,
+      **S0.6 client↔server propose-only flow → decides P-B2 (Go-owned write vs TS steer fallback)**, S0.7 file-drop I/O + 1-line
+      round-trip with Unit A) → go/no-go gate → **Phase 1 vertical slice** (`/pause` end-to-end: parser→confirm→token+append→outcome
+      + statusbar/positions + token gate) → **Phase 2** full command set + panels + NL path → **Phase 3** compile-time tool removal +
+      allowlist test + rebrand → **Phase 4** Go/TS unit + cross-language contract test (golden samples) + integration. Fork lives in a
+      separate codebase (side repo `autostock-console` or `operator-console/` subtree — spike decides); Python suite unaffected.
+      Risk High–Medium (new TS/Go base ownership, spike-dependent). On approval, Part 2 = run the spike first.
+    - **Console LLM auth decision (2026-05-30, user):** keep B′ + plan unchanged, but the console connects to a **non-Anthropic model
+      (OpenAI GPT-5.5 via its own OAuth)**, NOT the Claude subscription. **🚫 hard constraint: never use the Claude Pro/Max subscription
+      in opencode** — Anthropic blocked third-party-harness subscription use (ToS violation → account ban; opencode removed Anthropic
+      refs after a legal request), and a ban would kill the trading agent (same account). agent=Claude subscription, console=OpenAI
+      OAuth (auth separated). NL→verb is light/optional; the deterministic path uses no LLM. Added spike item **S0.8** (verify OpenAI
+      OAuth auth in opencode) + the no-subscription constraint to the plan/tech-stack. **Code Generation Part 1 (plan) APPROVED**
+      ("이대로 유지, 플랜은 그대로").
+    - [~] Code Generation **Part 2 — Phase 0 spike: static-analysis half DONE (2026-05-30), live half in progress.**
+      Env: git/network/node OK; **bun 1.3.14 now installed (user)**, go NOT installed (not needed). Shallow-cloned sst/opencode
+      (HEAD `16cae9a`). **MAJOR CORRECTION: current opencode is pure TS/Bun + OpenTUI (Go = 0 files); the earlier Go/Bubble Tea
+      NFR-Design assumption is wrong → only Bun needed.** Static findings: S0.1 ✅ MIT/sst/TS-Bun-OpenTUI; S0.3 ✅ plugin Plugin +
+      tool.execute.before + ToolDefinition (custom tools); S0.4 ✅ `tool/registry.ts` = single compile-time tool-removal point;
+      S0.5 ✅(static) `TuiPluginApi` (tui.ts:581) render(JSX pane)/replace(modal)/toast(notify) → panels via plugin ('thin fork');
+      S0.6 ✅ in-process TS → **P-B2 base case confirmed** (TuiPlugin owns input→confirm→write; LLM proposes only; no fallback);
+      S0.8 generic `Oauth` schema present. Updated plan/tech-stack/nfr-design (Go→TS/Bun/OpenTUI/TuiPlugin/registry.ts). Live half:
+      **Phase 0 SPIKE COMPLETE & GREEN (2026-05-30): user confirmed all 3** — `bun install` OK (after build-essential), `bun dev` launches the opencode TUI from source (S0.2/S0.5), and **OpenAI OAuth connects** (S0.8). Toolchain = **Bun + build-essential (make/gcc/python3)**; no Go. Net spike verdict: **thin TS fork** — panels/modal/toast via TuiPlugin, side-effect tools removed in registry.ts, P-B2 base case (deterministic write owned by the console, LLM proposes only). → entering Phase 1 vertical slice.
+    - [~] **Phase 1 vertical slice — core DONE & verified (committed `4f68c64`).** `operator-console/` (TS, in the steering-core
+      worktree): `schema.ts` (E7/E8 mirror), `parser.ts` (deterministic command parser, BR-B5, fail-closed), `filedrop.ts`
+      (token-from-env attach + atomic append + torn-safe event tail + snapshot read, BR-B2/B5/B6), `console-stub.ts` (interactive
+      readline console wiring parser→confirm BR-B1→filedrop; stand-in for the TuiPlugin, reused by the harness). **13 bun unit tests
+      pass.** **TUI injection verification (user-requested):** `test/e2e/{pty_harness,run_inject_e2e}.py` — a stdlib-`pty` keystroke-
+      injection harness drives the console in a real pseudo-terminal and asserts parse→confirm→token+append (incl. destructive
+      requires CONFIRM, malformed rejected, read no-write). **PASS (8/8 checks).** The SAME harness drives the real `bun dev` opencode
+      TUI on the user's machine (full-TUI e2e = automated, not manual). **Remaining:** real opencode TuiPlugin wiring (reuses
+      parser/filedrop verbatim) + panels/modal/toast via TuiPlugin + the steer custom tool; Phase 2 full command set; Phase 3
+      compile-time tool removal (registry.ts) + rebrand; Phase 4 cross-language contract test + run the injection e2e against `bun dev`.
+    - **`/code-review` (high effort, 3 finder agents + verify) 2026-05-30 — 9 findings, fixed & committed (`a685781`, `61ea2ff`):**
+      #1 `/answer` now validates the question id vs open agent_questions (unknown→rejected, not a false "applied"+orphaned answer);
+      #2 parser drops the `directive clear` two-word case (hijacked a directive whose text starts with "clear") → `/directive-clear`
+      alias; #3 `intArg` strict `/^\d+$/` (parseInt accepted "3abc"/"3.9"); #5 extracted the confirm/dispatch state machine to a
+      SHARED `src/dispatch.ts` (stub + real TuiPlugin reuse it; PTY-verified logic can't drift) + 7 unit tests; #6 `readEvents`
+      positioned read of only [offset,size) (was whole-file each poll); #7 `/stop` rejects a long stop at/above market (immediate-exit
+      fat-finger); #8 symbol must start with a letter; #4 documented (events.jsonl append-only, consumer dedups). Also fixed a
+      `.gitignore` footgun: `steering/`→`/steering/` so it doesn't shadow `src/agent/steering/`. **TS 20 bun tests + PTY e2e PASS;
+      Python full suite 273 pass.** Unit B commits on `feat/steering-core`: 4f68c64, a685781, 61ea2ff.
+    - [x] **Phase 1 FINISH — `steer` opencode plugin (NL path) committed (`b02bf4d`).** Read the opencode plugin SDK from the clone:
+      a plugin contributes a custom tool via `Hooks.tool: {steer: tool({description, args: zod, execute(args, ctx)})}` and
+      **`ctx.ask(...)` is opencode's core-enforced human-permission prompt** → confirm integrity for the NL path (model proposes
+      `steer({command})`; tool parses deterministically via src/parser; mutating cmd → `ctx.ask` human confirm (model can't bypass);
+      on approval → token-attached write via src/filedrop; reads return snapshot). `src/plugin.ts` written against the real SDK
+      (tool()/ToolContext.ask) + `README.md` (load/run/verify + OpenAI-auth/never-Claude-sub constraint + roadmap). **Cannot build
+      opencode here (no make) → plugin verified LIVE by the user** (bun dev + PTY injection harness); reused parser/filedrop are
+      unit-tested (20 bun tests). **Reframed remaining work:** dedicated TUI panels (positions/orders/pending/event-feed via TuiPlugin)
+      + pure-keystroke LLM-bypass path = **Phase 2**; compile-time tool removal (registry.ts) + rebrand = **Phase 3**; cross-language
+      contract test + injection e2e vs `bun dev` = **Phase 4**. 4 Unit B commits (4f68c64, a685781, 61ea2ff, b02bf4d).
+    - **Live debugging + MCP redesign (2026-05-30):** Plugin loaded only after fixing (a) default-export must be `{server}`
+      (e0cdd0a), then steer (b) **auto-confirmed** — opencode `Permission.ask` only prompts on a matching config rule; my inner
+      `ctx.ask` key didn't match (a4480d6), and (c) plugin tools are NOT auto-gated (only MCP tools are, tools.ts:135) so the tool
+      must self-ask — restored with key "steer" matching `permission:{steer:"ask"}` (105aabe). **User asked: would MCP simplify? →
+      YES, redesigned (a5ba10f):** `steer`/`steer_read` now an **MCP stdio server** (`src/mcp-server.ts` + tested `steer-handler.ts`,
+      @modelcontextprotocol/sdk@1.29+zod@4 pinned). opencode **auto-gates MCP tools** (`ctx.ask({permission:"autostock_steer"})`
+      before execute) → **confirm enforced by opencode CORE, not our code** — removes the self-ask failure mode + the 3 plugin
+      gotchas (export shape / SDK resolution / self-ask). config: `mcp:{autostock:{type:local,command:[bun,run,mcp-server.ts],
+      environment:{STEERING_DIR,STEERING_OPERATOR_TOKEN}}}` + `permission:{"autostock_steer":"ask","autostock_steer_read":"allow"}`.
+      Removed the steer plugin (plugin.ts); plugin reserved for Phase-2 TUI panels. 26 bun tests pass; live auto-gate verified by user.
+    - **Fork vendored + Phase 3a lockdown (2026-05-30):** opencode fork = submodule `operator-console/cli` →
+      `github.com/inventor71/autostock-cli` (user's rename of oc_spike), pinned (autostock 2e42789 → re-pinned to fork 5e76156).
+      Shipped `opencode.json` IN the fork (force-added — opencode gitignores it): mcp `autostock`→`../src/mcp-server.ts` +
+      **Phase 3a tool lockdown via config default-deny**: `permission:{"*":"deny", read/glob/grep/list/lsp:"allow",
+      autostock_steer:"ask", autostock_steer_read:"allow"}`. Realizes BR-B4 (operator LLM = reads + steer only; edit/write/bash/
+      task/webfetch denied by opencode CORE gate; denying `task` moots #5894 subagent bypass) WITHOUT risky unverifiable
+      registry.ts surgery. **Deferred (need fork build = user's machine):** true compile-time removal in registry.ts (belt-and-
+      suspenders) + binary rebrand. **per-verb confirm:** per-verb MCP tools in our mcp-server.ts (verifiable, no fork edit) give
+      per-command "always" separation (destructive-always still needs a gate source edit). User verifies lockdown live.
+    - **Phase 2 STARTED (2026-05-30):** opencode UI = solid-js TuiPlugins registering `sidebar_content` slots (template
+      feature-plugins/sidebar/todo.tsx, registered in plugin/internal.ts); TuiPluginApi gives slots / ui.toast / ui.DialogConfirm /
+      keymap.registerLayer. **Slice 1 done (fork a4bb4b7, re-pinned):** feature-plugins/sidebar/autostock.tsx — reads
+      STEERING_DIR/snapshot.json (Unit A's published read-view) every 1.5s, shows run-state/market/positions(+locked)/pending count;
+      read-only, registered in internal.ts. Typecheck clean (tsgo, 0 errors). **Remaining Phase 2 slices:** (2) event-feed — tail
+      events.jsonl → ui.toast on fill/pending/agent_question; (3) keystroke LLM-bypass path — keymap.registerLayer → deterministic
+      parse (reuse parser) → ui.DialogConfirm (per-verb, can force destructive re-confirm) → file-drop write (reuse filedrop). Slice 3
+      ALSO solves the deferred per-verb/destructive-always confirm (our code owns the modal, not opencode's MCP auto-gate).
