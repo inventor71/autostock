@@ -39,35 +39,45 @@ test("default export is the V1 module shape opencode requires", () => {
   expect(plugin.id).toBe("autostock-steer");
 });
 
-// NOTE: the human confirm is opencode's TOOL-LEVEL permission (`permission:{steer:"ask"}`),
-// enforced BEFORE execute runs — so reaching execute means the human already approved.
-// These tests cover execute's own logic (write/read/reject/token); the live approval
-// prompt is verified via `bun dev` (it auto-confirmed before because the config rule was missing).
-test("mutating command writes confirmed+token (execute runs only post-approval)", async () => {
+// The tool calls ctx.ask itself (plugin tools are NOT auto-gated by opencode). ctx.ask
+// resolves when the human approves (config permission:{steer:"ask"}), throws on deny.
+const approve = { ask: async () => {} } as never;
+const deny = { ask: async () => { throw new Error("denied"); } } as never;
+
+test("mutating command: ctx.ask approves -> confirmed+token write", async () => {
   const steer = await steerTool();
-  const res = await steer.execute({ command: "/pause" }, {} as never);
+  const res = await steer.execute({ command: "/pause" }, approve);
   expect(String(res)).toContain("OK pause");
   expect(writtenVerbs()).toEqual(["pause"]);
 });
 
-test("read command returns snapshot, never writes", async () => {
+test("ctx.ask denied -> cancelled, no write (fail-closed)", async () => {
   const steer = await steerTool();
-  const res = await steer.execute({ command: "/status" }, {} as never);
+  const res = await steer.execute({ command: "/sell AAPL 50%" }, deny);
+  expect(String(res)).toContain("cancelled");
+  expect(writtenVerbs()).toEqual([]);
+});
+
+test("read command returns snapshot, never writes (no ask)", async () => {
+  const steer = await steerTool();
+  let asked = false;
+  const res = await steer.execute({ command: "/status" }, { ask: async () => { asked = true; } } as never);
+  expect(asked).toBe(false);
   expect(writtenVerbs()).toEqual([]);
   expect(String(res)).toMatch(/snapshot|no snapshot/);
 });
 
-test("malformed command rejected without write", async () => {
+test("malformed command rejected without ask/write", async () => {
   const steer = await steerTool();
-  const res = await steer.execute({ command: "/buy AAPL 1000" }, {} as never);
+  const res = await steer.execute({ command: "/buy AAPL 1000" }, approve);
   expect(String(res)).toContain("rejected");
   expect(writtenVerbs()).toEqual([]);
 });
 
-test("no token -> write disabled", async () => {
+test("no token -> write disabled (before any ask)", async () => {
   delete process.env.STEERING_OPERATOR_TOKEN;
   const steer = await steerTool();
-  const res = await steer.execute({ command: "/pause" }, {} as never);
+  const res = await steer.execute({ command: "/pause" }, approve);
   expect(String(res)).toContain("token missing");
   expect(writtenVerbs()).toEqual([]);
 });

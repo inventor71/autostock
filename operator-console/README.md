@@ -27,10 +27,10 @@ boundary.
 ## Run + verify (needs Bun + build-essential; this dev sandbox lacks `make`, so run on your machine)
 1. Get the fork: `git clone --depth 1 https://github.com/sst/opencode` (baseline pin TBD in Phase 3).
 2. Make this an opencode plugin (project `opencode.json`). **The `permission` rule is
-   REQUIRED** — without it opencode auto-allows the `steer` tool and writes with NO human
-   prompt (opencode's `Permission.ask` only prompts when a config rule with action `"ask"`
-   matches; no rule ⇒ allow). With it, opencode prompts (showing `command=…`) BEFORE the
-   tool runs; deny ⇒ no write. This is the LLM-unbypassable human confirm.
+   REQUIRED.** The `steer` tool calls `ctx.ask({permission:"steer"})` itself (plugin tools
+   are NOT auto-gated — only MCP tools are); opencode prompts only when a config rule with
+   action `"ask"` matches that key. With no rule (or a non-matching key) it auto-allows and
+   writes with no prompt. So the rule below is what turns on the LLM-unbypassable confirm.
    ```json
    {
      "plugin": ["<abs path>/operator-console/src/plugin.ts"],
@@ -44,10 +44,10 @@ boundary.
    export STEERING_DIR=<autostock-repo>/steering
    export STEERING_OPERATOR_TOKEN=<the daemon's token>   # daemon sets it in its env
    ```
-4. `bun dev` → opencode TUI. Type e.g. `sell AAPL 50%` → the model calls `steer` →
-   **opencode shows a tool-permission prompt** (`steer command=/sell AAPL 50%`) → approve →
+4. `bun dev` → opencode TUI. Type e.g. `sell AAPL 50%` → the model calls `steer` → the tool
+   calls `ctx.ask({permission:"steer"})` → opencode shows a **permission prompt** → approve →
    only then is the confirmed+token command written to `steering/commands.jsonl`.
-   (If it writes with NO prompt, the `permission:{steer:"ask"}` rule is missing — see step 2.)
+   (If it writes with NO prompt: the `permission:{steer:"ask"}` rule is missing/mismatched — step 2.)
 
 ## Automated TUI verification (injection harness)
 The PTY harness drives a real TUI headlessly. Point it at `bun dev`:

@@ -40,17 +40,18 @@ export const SteerPlugin: Plugin = async () => {
             .string()
             .describe("the operator command line, verbatim, e.g. /sell AAPL 50%"),
         },
-        // HUMAN CONFIRM: enforced by opencode's TOOL-LEVEL permission, NOT inside execute.
-        // The earlier inner `ctx.ask({permission:"steer.mutate"})` auto-allowed because
-        // opencode's Permission.ask only prompts when a CONFIG RULE with action "ask"
-        // matches; with no rule it falls through to allow (permission/index.ts:184-188) —
-        // that's why it auto-confirmed. The reliable, LLM-unbypassable gate is the standard
-        // mechanism `edit`/`bash`/`write` use: configure `permission: { "steer": "ask" }`
-        // in opencode.json. opencode then prompts the human (showing command=...) BEFORE
-        // execute runs; deny => execute never runs => no write. So execute here only runs
-        // AFTER a human approval. (Always-on, config-independent confirm = the Phase-2
-        // keystroke/TuiPlugin path; the daemon RiskManager gate is the final safety either way.)
-        async execute({ command }, _ctx) {
+        // HUMAN CONFIRM: a plugin tool is NOT auto-gated by opencode (only MCP tools are,
+        // session/tools.ts:135) — the registry loop that runs plugin tools does not call
+        // ctx.ask, so this tool MUST call ctx.ask itself (exactly like the built-in
+        // edit/write tools, edit.ts:98). The permission KEY must be `"steer"` so it matches
+        // the REQUIRED config rule `permission: { "steer": "ask" }` in opencode.json;
+        // opencode's Permission.ask only prompts when a rule with action "ask" matches
+        // (permission/index.ts:184-188) — a non-matching key (the earlier "steer.mutate")
+        // or a missing inner ask both auto-allow, which is why it auto-confirmed before.
+        // On approve, ctx.ask resolves and we write; on deny it throws → no write
+        // (fail-closed). Reads skip the ask (no prompt). The model can't bypass this; the
+        // daemon RiskManager gate is the final safety regardless.
+        async execute({ command }, ctx) {
           let draft;
           try {
             draft = parseCommand(command);
@@ -63,6 +64,18 @@ export const SteerPlugin: Plugin = async () => {
           }
           if (!fd.hasToken()) {
             return "rejected: operator token missing (STEERING_OPERATOR_TOKEN); write disabled";
+          }
+          if (draft.confirmRequired) {
+            try {
+              await ctx.ask({
+                permission: "steer", // matches opencode.json permission:{ "steer": "ask" }
+                patterns: [draft.verb],
+                always: [], // re-confirm every command (no "always allow" for trades)
+                metadata: { echo: draft.echo, verb: draft.verb, args: draft.args },
+              });
+            } catch {
+              return "cancelled (no-op)"; // human denied
+            }
           }
           const id = fd.send(draft.verb, draft.args);
           return `OK ${draft.verb} ${id} — ${draft.echo}`;
