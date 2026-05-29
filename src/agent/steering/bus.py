@@ -74,16 +74,24 @@ class CommandBus:
         self._thread = threading.Thread(target=self._run, name="CommandWorker", daemon=True)
         self._thread.start()
 
-    def stop(self, timeout: float = 2.0) -> None:
+    def stop(self, timeout: float = 5.0) -> None:
+        """Stop accepting new work and DRAIN what's queued before exiting, so a
+        confirmed command already in the queue is never silently dropped (critic #2)."""
         self._stop.set()
-        self.submit(lambda: None)  # wake the worker out of its blocking get()
+        self.submit(lambda: None, _internal=True)  # wake the worker out of get()
         if self._thread is not None:
             self._thread.join(timeout)
 
     # ---- submission ------------------------------------------------------- #
-    def submit(self, fn: Callable[[], Any], *, emergency: bool = False) -> WorkResult:
-        """Enqueue ``fn`` to run on the worker; returns a WorkResult to wait on."""
+    def submit(self, fn: Callable[[], Any], *, emergency: bool = False,
+               _internal: bool = False) -> WorkResult:
+        """Enqueue ``fn`` to run on the worker; returns a WorkResult to wait on.
+        After ``stop()``, new external submits are rejected (result set to error)
+        so a caller's ``submit_and_wait`` never hangs to its timeout."""
         res = WorkResult()
+        if self._stop.is_set() and not _internal:
+            res._set(error=RuntimeError("CommandBus is stopping; command not accepted"))
+            return res
         if emergency:
             with self._lock:
                 self._emergency_waiting += 1

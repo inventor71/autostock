@@ -61,6 +61,30 @@ def test_emergency_jumps_queued_normal(bus):
     assert bus.emergency_pending() is False
 
 
+def test_stop_drains_queued_items(bus):
+    # queue several behind a blocker, then stop(): all queued items must still run
+    order: list[int] = []
+    gate = threading.Event()
+    bus.submit(lambda: gate.wait(2))
+    time.sleep(0.05)
+    results = [bus.submit(lambda i=i: order.append(i)) for i in range(5)]
+    gate.set()
+    bus.stop()  # must drain, not drop
+    for r in results:
+        assert r.done()
+    assert sorted(order) == [0, 1, 2, 3, 4]
+
+
+def test_submit_after_stop_is_rejected_not_hung():
+    b = CommandBus()
+    b.start()
+    b.stop()
+    res = b.submit(lambda: "late")
+    # no hang: result is set to an error immediately
+    with pytest.raises(RuntimeError):
+        res.wait(1)
+
+
 def test_fifo_within_normal_lane(bus):
     order: list[int] = []
     gate = threading.Event()

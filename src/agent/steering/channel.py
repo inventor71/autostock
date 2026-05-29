@@ -59,6 +59,21 @@ class SteeringChannel:
         self._processed.add(command_id)
         self._persist_processed()
 
+    def daily_reset(self) -> None:
+        """Re-scope the processed-id set to today and archive the day's command
+        file, so neither grows unbounded across a multi-day daemon (critic #4).
+        Called by the ET-midnight sweep job. Idempotent."""
+        self._processed = set()
+        self._persist_processed()
+        if self.commands_file.exists() and self.commands_file.stat().st_size > 0:
+            archive = self.commands_file.with_suffix(
+                f".jsonl.{today_et().isoformat()}.archived"
+            )
+            try:
+                self.commands_file.replace(archive)  # atomic rename; operator appends create a fresh file
+            except OSError as exc:
+                logger.warning("steering: could not archive commands file: {}", exc)
+
     # ---- commands in ------------------------------------------------------ #
     def read_new_commands(self) -> list[SteeringCommand]:
         """Return validated, not-yet-processed commands. Rejects unconfirmed /

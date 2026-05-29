@@ -54,25 +54,29 @@ class TurnCoordinator:
                        ) -> tuple[str, Any]:
         """Acquire the turn lock with priority over scheduled turns, then run
         ``run_fn`` best-effort. Returns ('ran', value) / ('timeout', None) /
-        ('error', exc)."""
+        ('error', exc).
+
+        The waiting indicator is held for the WHOLE call (waiting + executing),
+        not just the acquire, so a scheduled turn that arrives while a reconcile
+        is *running* still yields with reason 'reconcile_waiting' rather than the
+        weaker 'busy' -- preserving reconcile priority for a second reconcile
+        queued behind it (critic #5)."""
         with self._waiters_lock:
             self._reconcile_waiting += 1
-        acquired = False
         try:
-            acquired = self._turn_lock.acquire(timeout=timeout)
+            if not self._turn_lock.acquire(timeout=timeout):
+                logger.warning("reconcile turn timed out acquiring turn_lock ({}s)", timeout)
+                return ("timeout", None)
+            try:
+                return ("ran", run_fn())
+            except Exception as e:  # best-effort: never kill the daemon (BR-6.3)
+                logger.error("reconcile turn failed (best-effort): {}", e)
+                return ("error", e)
+            finally:
+                self._turn_lock.release()
         finally:
             with self._waiters_lock:
                 self._reconcile_waiting -= 1
-        if not acquired:
-            logger.warning("reconcile turn timed out acquiring turn_lock ({}s)", timeout)
-            return ("timeout", None)
-        try:
-            return ("ran", run_fn())
-        except Exception as e:  # best-effort: never kill the daemon (BR-6.3)
-            logger.error("reconcile turn failed (best-effort): {}", e)
-            return ("error", e)
-        finally:
-            self._turn_lock.release()
 
 
 class ReconcileWorker:

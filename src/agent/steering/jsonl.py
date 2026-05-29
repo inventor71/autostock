@@ -11,16 +11,27 @@ restart is the byte cursor; higher layers additionally dedup by record ``id``.
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 
 def atomic_write_text(path: str | Path, text: str) -> None:
-    """Write ``text`` to ``path`` atomically (temp in same dir + ``os.replace``)."""
+    """Write ``text`` to ``path`` atomically (temp in same dir + ``os.replace``).
+
+    The temp name is unique per call (pid + uuid) so two writers targeting the
+    same file -- or the same writer re-entered -- never share a temp and corrupt
+    each other before the rename (critic #4/#6). Temp lives in the target's dir
+    so ``os.replace`` stays on one filesystem.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)  # atomic on POSIX; readers never see a torn file
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)  # atomic on POSIX; readers never see a torn file
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # no .tmp litter on failure
+        raise
 
 
 def read_complete_lines(path: str | Path, start_offset: int) -> tuple[list[str], int]:

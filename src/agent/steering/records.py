@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from src.agent.journal import Decision
+
 # ---- command grammar (deterministic verbs; NL->verb reduction is Unit B) ---- #
 SteeringVerb = Literal[
     "buy", "sell", "flatten", "flatten_all", "stop",
@@ -137,34 +139,15 @@ class LockState(BaseModel):
 
 
 class PendingApproval(BaseModel):
-    """E5 -- an agent discretionary decision parked for human approval."""
+    """E5 -- an agent discretionary decision parked for human approval.
+
+    Stores the FULL journal ``Decision`` (not a lossy mirror) so an approved
+    pending executes with the agent's real confidence (sizing!) and valid_until
+    (expiry) intact (critic #7)."""
 
     id: int  # day-monotonic; /approve <id>
-    decision: "DecisionLike"
+    decision: Decision
     created_ts: datetime = Field(default_factory=datetime.now)
     status: Literal["pending", "approved", "rejected"] = "pending"
     reason: str = ""
     et_date: str = ""
-
-
-# `decision` is the journal Decision; keep records.py import-light by storing it
-# as a plain dict-compatible model alias. The daemon constructs PendingApproval
-# from a real Decision (journal.Decision is a superset that validates here).
-class DecisionLike(BaseModel):
-    """Minimal mirror of journal.Decision for safe (de)serialization in the queue.
-
-    Accepts the same JSON a ``Decision`` emits (extra fields ignored)."""
-
-    model_config = {"extra": "ignore"}
-
-    symbol: str
-    action: str
-    source: str = "agent"
-    sell_pct: float | None = 1.0
-    limit: float | None = None
-    stop: float | None = None
-    target: float | None = None
-    reason: str = ""
-
-
-PendingApproval.model_rebuild()

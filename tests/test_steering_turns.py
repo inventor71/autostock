@@ -62,6 +62,26 @@ def test_reconcile_has_priority_over_scheduled():
     assert recon_done.wait(2)
 
 
+def test_scheduled_yields_while_reconcile_running(critic5=True):
+    # critic #5: a scheduled turn arriving WHILE a reconcile is executing must
+    # still skip with reason 'reconcile_waiting' (priority held through run_fn).
+    c = TurnCoordinator()
+    in_recon = threading.Event()
+    release = threading.Event()
+
+    def recon():
+        c.reconcile_turn(lambda: (in_recon.set(), release.wait(2)))
+
+    t = threading.Thread(target=recon)
+    t.start()
+    assert in_recon.wait(2)  # reconcile is now executing run_fn
+    assert c.reconcile_waiting == 1  # indicator held through execution
+    assert c.try_scheduled_turn(lambda: "nope") == ("skipped", "reconcile_waiting")
+    release.set()
+    t.join(2)
+    assert c.reconcile_waiting == 0
+
+
 def test_reconcile_best_effort_on_failure():
     c = TurnCoordinator()
     status, payload = c.reconcile_turn(lambda: (_ for _ in ()).throw(RuntimeError("x")))

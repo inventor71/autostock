@@ -128,8 +128,15 @@ class DecisionExecutor:
         """Run ONE decision through the gate (universe/expiry/HOLD/ADJUST_STOP or
         RiskManager->Broker). Cursor-free and reads no journal file, so it is the
         single-decision entry point shared by ``execute_pending`` (agent batch),
-        a human-forced trade, and an approved-pending execution (F4). The caller
-        owns market-hours / off-hours queueing (mirrors ``execute_pending``)."""
+        a human-forced trade, and an approved-pending execution (F4).
+
+        WARNING: this method does NOT check ``is_market_open()`` -- it will submit
+        to the broker unconditionally. ``execute_pending`` gates above before
+        calling it; any OTHER caller (the F4 command worker for human trades /
+        approvals) MUST itself check ``broker.is_market_open()`` and, off-hours,
+        queue the trade for the next open instead of calling this (BR-2.7). A
+        human command is consumed once, so it cannot "defer by leaving the cursor"
+        the way the agent batch does."""
         if d.symbol not in self.universe:
             logger.warning(f"Rejecting out-of-universe decision: {d.symbol} {d.action}")
             return ExecutionOutcome(d, "skipped_out_of_universe")

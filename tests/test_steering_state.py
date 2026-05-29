@@ -96,6 +96,30 @@ def test_lock_lazy_expiry_next_day(tmp_path, monkeypatch):
     assert s.lock_status("AAPL") is None  # lazy-expired
 
 
+def test_pending_decision_round_trips_faithfully(tmp_path):
+    # critic #7: a parked decision must keep confidence (sizing) + valid_until.
+    s = SteeringState(tmp_path)
+    s.lock_symbol("AAPL")
+    d = _dec("AAPL", "BUY", confidence=0.9, limit=200.0, stop=190.0, target=220.0)
+    pa = s.add_pending(d)
+    s2 = SteeringState(tmp_path)  # reload from disk
+    loaded = {p.id: p for p in s2.list_pending()}[pa.id]
+    assert loaded.decision.confidence == 0.9  # not defaulted to 0.5
+    assert loaded.decision.limit == 200.0 and loaded.decision.stop == 190.0
+    assert loaded.decision.source == "agent"
+
+
+def test_approve_reject_ignore_past_day_pending(tmp_path, monkeypatch):
+    # critic #3: approve/reject must agree with list_pending's date scope.
+    s = SteeringState(tmp_path)
+    s.lock_symbol("AAPL")
+    pa = s.add_pending(_dec("AAPL", "BUY"))
+    monkeypatch.setattr(state_mod, "today_et", lambda: date(2099, 1, 2))
+    assert s.list_pending() == []          # hidden next day
+    assert s.approve(pa.id) is None        # and not approvable
+    assert s.reject(pa.id) == (None, None)  # nor rejectable
+
+
 def test_directives(tmp_path):
     s = SteeringState(tmp_path)
     d = s.add_directive("be defensive")

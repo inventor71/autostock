@@ -224,7 +224,9 @@ class SteeringState:
         """BR-4.3: mark approved + unlock the symbol. Caller executes the decision."""
         with self._lock:
             pa = self._pending.get(pid)
-            if pa is None or pa.status != "pending":
+            # date-scoped consistently with list_pending: a past-day pending is
+            # treated as gone (critic #3) so the queue/lock map never disagree.
+            if pa is None or pa.status != "pending" or pa.et_date != today_et().isoformat():
                 return None
             pa.status = "approved"
             self._locks.pop(pa.decision.symbol.upper(), None)  # unlock on approve
@@ -237,7 +239,7 @@ class SteeringState:
         Returns (pending, new_status) where new_status is 'locked'|'denied'|None."""
         with self._lock:
             pa = self._pending.get(pid)
-            if pa is None or pa.status != "pending":
+            if pa is None or pa.status != "pending" or pa.et_date != today_et().isoformat():
                 return None, None
             pa.status = "rejected"
             pa.reason = reason
