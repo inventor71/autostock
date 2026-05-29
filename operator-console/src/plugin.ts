@@ -18,6 +18,11 @@ import { type Plugin, tool } from "@opencode-ai/plugin";
 import { FileDrop } from "./filedrop";
 import { ParseError, parseCommand } from "./parser";
 
+// opencode (current sst/opencode) requires a plugin module to **default-export an
+// object** `{ server: Plugin, id? }` — readV1Plugin reads `mod.default` and calls
+// `.server(input)` (shared.ts:272 / index.ts:114). A bare function export is NOT
+// recognized ("must default export an object with server()") — that was why it
+// didn't load. So `SteerPlugin` is the Plugin fn, exported via the default object below.
 export const SteerPlugin: Plugin = async () => {
   const fd = new FileDrop(process.env.STEERING_DIR ?? "./steering");
 
@@ -73,4 +78,5 @@ export const SteerPlugin: Plugin = async () => {
   };
 };
 
-export default SteerPlugin;
+// V1 plugin module shape opencode expects: default-export an object with `server`.
+export default { id: "autostock-steer", server: SteerPlugin };
