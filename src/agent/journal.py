@@ -36,6 +36,11 @@ class Decision(BaseModel):
     ts: datetime = Field(default_factory=datetime.now)
     symbol: str
     action: DecisionAction
+    # F4: who originated this decision. Existing lines without the field parse as
+    # "agent" (backward compatible). Human-forced trades from the steering console
+    # are tagged "human" so they're distinguishable in journal/logs and drive the
+    # human-lock state machine.
+    source: Literal["agent", "human"] = "agent"
     # confidence/sell_pct are nullable: LLM output routinely sends null (e.g.
     # sell_pct on a BUY). Range is clamped downstream by the executor, not here,
     # so a stray value never blocks parsing a real decision line.

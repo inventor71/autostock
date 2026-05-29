@@ -22,6 +22,7 @@ from typing import Any
 from loguru import logger
 
 from src.agent.journal import Decision, Journal
+from src.agent.steering.jsonl import atomic_write_text
 from src.agent.tools import market
 from src.core.models import Order, TradeSignal
 from src.core.types import OrderClass, OrderSide, OrderType, Signal
@@ -78,9 +79,12 @@ class DecisionExecutor:
         return 0
 
     def _save_cursor(self, n: int) -> None:
+        # Atomic (temp + os.replace): with the F4 single CommandWorker now the
+        # sole writer, a torn cursor file can never be observed (BR-7.1' / critic #2).
         self._state_file.parent.mkdir(parents=True, exist_ok=True)
-        self._state_file.write_text(
-            json.dumps({"cursor": n, "updated_at": datetime.now().isoformat()})
+        atomic_write_text(
+            self._state_file,
+            json.dumps({"cursor": n, "updated_at": datetime.now().isoformat()}),
         )
 
     # ------------------------------------------------------------------ #
@@ -113,14 +117,19 @@ class DecisionExecutor:
         outcomes: list[ExecutionOutcome] = []
         for d in batch:
             try:
-                outcomes.append(self._execute_one(d))
+                outcomes.append(self.execute_decision(d))
             except Exception as e:
                 logger.error(f"Execution error for {d.symbol} {d.action}: {e}")
                 outcomes.append(ExecutionOutcome(d, "error", str(e)))
         self._save_cursor(len(decisions))
         return outcomes
 
-    def _execute_one(self, d: Decision) -> ExecutionOutcome:
+    def execute_decision(self, d: Decision) -> ExecutionOutcome:
+        """Run ONE decision through the gate (universe/expiry/HOLD/ADJUST_STOP or
+        RiskManager->Broker). Cursor-free and reads no journal file, so it is the
+        single-decision entry point shared by ``execute_pending`` (agent batch),
+        a human-forced trade, and an approved-pending execution (F4). The caller
+        owns market-hours / off-hours queueing (mirrors ``execute_pending``)."""
         if d.symbol not in self.universe:
             logger.warning(f"Rejecting out-of-universe decision: {d.symbol} {d.action}")
             return ExecutionOutcome(d, "skipped_out_of_universe")
