@@ -52,5 +52,8 @@ reports/
 # Agent journal (runtime state; CLAUDE.md template lives in src/agent/templates/)
 workspace/
 
+# F4 steering file-drop channel (runtime: commands/events/snapshot/token/processed)
+steering/
+
 # AI-DLC raw audit log (local scratch; append-only, may contain verbatim prompts)
 aidlc-docs/audit.md

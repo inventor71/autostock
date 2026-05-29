@@ -313,7 +313,7 @@ def run_paper(settings, strategies_config: dict) -> None:
     mode.start()
 
 
-def run_agent(settings, fresh: bool = False) -> None:
+def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
     """Run the agentic PM trading loop: the LLM agent writes the journal, the
     executor trades its decisions through RiskManager (bracket orders) -> Broker.
 
@@ -353,11 +353,23 @@ def run_agent(settings, fresh: bool = False) -> None:
         broker, risk_manager, data_provider, journal=session.journal, universe=universe
     )
     logger.info(f"Agent mode: {len(universe)} symbols, broker paper={settings.broker.paper}")
+
+    steering_runtime = None
+    if steering:
+        from src.agent.steering.runtime import SteeringRuntime
+        steering_runtime = SteeringRuntime(executor, orchestrator)
+        logger.info(
+            "Human steering enabled: operator console talks to the daemon via the "
+            "file-drop channel at {} (agent confined by PreToolUse hook).",
+            steering_runtime.steering_dir,
+        )
+
     AgentTradingMode(
         orchestrator, executor,
         intraday_minutes=settings.trading.batch_interval_minutes,
         experiment_start=settings.agent.experiment_start,
         min_trade_notional=settings.agent.min_trade_notional,
+        steering=steering_runtime,
     ).start(fresh=fresh)
 
 
@@ -396,6 +408,12 @@ def main():
         action="store_true",
         help="Agent mode: start a clean session instead of resuming today's",
     )
+    parser.add_argument(
+        "--steering",
+        action="store_true",
+        help="Agent mode: enable the human steering console (file-drop channel "
+             "at steering/; operator tool sends commands, daemon stays confined)",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -420,7 +438,7 @@ def main():
     elif mode in ("paper", "live"):
         run_paper(settings, strategies_config)
     elif mode == "agent":
-        run_agent(settings, fresh=args.fresh)
+        run_agent(settings, fresh=args.fresh, steering=args.steering)
     else:
         logger.error(f"Unknown mode: {mode}")
         sys.exit(1)
