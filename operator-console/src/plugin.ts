@@ -40,14 +40,23 @@ export const SteerPlugin: Plugin = async () => {
             .string()
             .describe("the operator command line, verbatim, e.g. /sell AAPL 50%"),
         },
-        async execute({ command }, ctx) {
+        // HUMAN CONFIRM: enforced by opencode's TOOL-LEVEL permission, NOT inside execute.
+        // The earlier inner `ctx.ask({permission:"steer.mutate"})` auto-allowed because
+        // opencode's Permission.ask only prompts when a CONFIG RULE with action "ask"
+        // matches; with no rule it falls through to allow (permission/index.ts:184-188) —
+        // that's why it auto-confirmed. The reliable, LLM-unbypassable gate is the standard
+        // mechanism `edit`/`bash`/`write` use: configure `permission: { "steer": "ask" }`
+        // in opencode.json. opencode then prompts the human (showing command=...) BEFORE
+        // execute runs; deny => execute never runs => no write. So execute here only runs
+        // AFTER a human approval. (Always-on, config-independent confirm = the Phase-2
+        // keystroke/TuiPlugin path; the daemon RiskManager gate is the final safety either way.)
+        async execute({ command }, _ctx) {
           let draft;
           try {
             draft = parseCommand(command);
           } catch (e) {
             return `rejected: ${e instanceof ParseError ? e.message : String(e)}`;
           }
-
           if (draft.readOnly) {
             const snap = fd.readSnapshot();
             return snap ? `snapshot: ${JSON.stringify(snap)}` : "(no snapshot yet)";
@@ -55,21 +64,6 @@ export const SteerPlugin: Plugin = async () => {
           if (!fd.hasToken()) {
             return "rejected: operator token missing (STEERING_OPERATOR_TOKEN); write disabled";
           }
-
-          if (draft.confirmRequired) {
-            // Human confirm, enforced by opencode core (NOT the model). Denial throws.
-            try {
-              await ctx.ask({
-                permission: draft.destructive ? "steer.destructive" : "steer.mutate",
-                patterns: [draft.verb],
-                always: [],
-                metadata: { echo: draft.echo, verb: draft.verb, args: draft.args },
-              });
-            } catch {
-              return "cancelled (no-op)";
-            }
-          }
-
           const id = fd.send(draft.verb, draft.args);
           return `OK ${draft.verb} ${id} — ${draft.echo}`;
         },
