@@ -1114,6 +1114,18 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
           **Open follow-ups (post-track, user-scheduled):** submodule `tsgo` typecheck, live R3 (`steer_read` view) + R4
           (`get_fills` paper), push, and F5 merge coordination (both edit `autostock.tsx`/`index.tsx`; share the single
           width signal, F6 omits F5-owned default-on/rebrand).
+    - [x] **F6 MERGED to `main`** 2026-05-30 ("F6 머지 해보자 ... 계속해줘"). Merge `6be1457`, submodule pin `00b4967`.
+          **Was a reconciliation, NOT a mechanical merge:** F3 had already shipped `get_fills→FillEvent` + rewritten
+          `publish_snapshot` (a stale-branch merge would have duplicated `get_fills`), and F5 had edited the SAME
+          `autostock.tsx`/`index.tsx`. **Resolution:** re-applied F6's deltas fresh onto current main in worktree
+          `.claude/worktrees/f6-merge` (branch `feat/f6-merge`): dropped F6's own `get_fills` and **converged on F3's**
+          (refresh_round_trip converts the FillEvent stream → match_round_trips dicts); account/round_trip added to main's
+          F3 `publish_snapshot`; round-trip(45s)+monitor(10s) jobs added beside F3's wake jobs; `operator-console/src` steer_read
+          copied verbatim (F5 untouched it); submodule UI hand-merged onto F5's fork (its rebrand + disconnect banner preserved;
+          `index.tsx` needed NO edit — F5's splash-only change left `contentWidth`/`sidebarWidth` import intact). **Full Python
+          366 green, bun 29 green, working tree clean.** Submodule commit `00b4967` fetched into the main checkout's submodule
+          store (HEAD-ref fetch from the worktree clone) so the pin is reachable locally. **Still NOT pushed** (user: later);
+          live R3/R4 + submodule `tsgo` still pending. Stale branches `feat/console-sidebar-upgrade` + worktrees can be pruned.
     - **`/critic` adversarial review (isolated subagent) 2026-05-30 — 7 findings (2 HIGH, 4 MED, 1 LOW), ALL cross-verified
           valid vs code; reflected into requirements/FD/NFR/plan docs:** #1 [HIGH] FR-3 today round-trip is empty all day —
           `trades.jsonl` only written at `_eod` (`agent.py:133,178`), not `_intraday` → **policy fork resolved by user = B**
