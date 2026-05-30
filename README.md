@@ -101,6 +101,21 @@ wake 턴을 추가합니다. 에이전트는 `watch set <SYM> <price_above|price
 <level>` 도구로 감시 조건을 등록하고, Python이 충족 시 깨워 ADJUST_STOP 여부를 판단하게 합니다
 (자문-실행 분리 불변). 튜닝은 `config/settings.yaml`의 `intraday:` 블록.
 
+### 2-2. 오퍼레이터 콘솔 (사람-개입 스티어링)
+
+돌고 있는 에이전트를 사람이 **자연어로 개입**하기 위한 콘솔입니다(예: "AAPL 절반 팔아", "신규 진입 멈춰", 일시정지). 에이전트는 자문만 하고 **주문 권한이 없으며**, 콘솔도 직접 주문하지 않습니다 — 데몬과는 레포 루트 `steering/` 파일드롭 채널로만 통신하고, **사람 확인 + `RiskManager→Broker` 게이트**가 유일한 경계입니다. 콘솔은 trader용으로 리브랜드한 opencode 포크(`operator-console/`)입니다.
+
+```bash
+# 1) 한 번 설치 — ~/.local/bin/autostock 런처 생성 (+ systemd --user 유닛)
+bun operator-console/launcher/install.ts
+
+# 2) 실행 — preflight(키/포트 등 점검, 문제 시 안전하게 중단) → 데몬이 꺼져 있으면
+#    systemd --user로 자동 기동, 이미 떠 있으면 거기에 attach
+autostock
+```
+
+콘솔의 **사이드바**는 run-state·시장 상태·포지션(+락)·대기 승인과 계좌·라운드트립(승률/실현손익) 요약을 보여주며, 마우스로 폭을 드래그 조절할 수 있습니다. (기능 묶음: F4 파일드롭 콘솔 + F5 `autostock` 런처/데몬 관리·리브랜드 + F6 사이드바.)
+
 ### 3. 전략 변경
 
 `config/strategies.yaml`에서 활성 전략 변경:

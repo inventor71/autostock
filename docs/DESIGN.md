@@ -341,6 +341,25 @@ agent_wake(5s, 캐시만)   WakeDetector ─ WakeEvent[] ─┐ coalesce(버퍼�
   굶기지 않음. 단일 `turn_lock`은 유지 — human reconcile은 진행 중 wake 턴 1회분만 대기(세션 무결성의 본질 비용).
 - 튜닝: `config/settings.yaml`의 `intraday:` 블록(abnormal_move/wake/news/bars/price).
 
+### 5.9 오퍼레이터 콘솔 / 스티어링 (`operator-console/`, `src/agent/steering/`)
+
+돌고 있는 에이전트를 사람이 **자연어로 개입**하기 위한 계층이다. 무엇을 위한 것인지가 핵심이고
+세부는 각 컴포넌트의 README/코드에 있다.
+
+- **무엇을/왜**: 에이전트(및 콘솔의 LLM)는 **주문 권한이 없다**. 운영자가 "AAPL 절반 팔아" 같은
+  의도를 콘솔에 주면, **사람이 확인**한 명령만 레포 루트 `steering/` 파일드롭 채널(commands/events/
+  snapshot)로 데몬에 전달되고, 데몬은 그것도 다른 경로와 **동일한 `RiskManager→Broker` 게이트**로만
+  체결한다. 즉 advisor-only 불변을 유지하면서 사람-개입을 더한다.
+- **데몬 측 엔진**(`src/agent/steering/`, F4): 파일드롭 채널 읽기/스냅샷 발행 + 단일 워커
+  CommandBus(브로커/커서 직렬화) + TurnCoordinator(모든 LLM 턴 직렬화) + RunState(pause/halt).
+  F3 wake 루프(§5.8.1)가 이 엔진 위에 올라간다.
+- **콘솔**(`operator-console/`, F4): trader용으로 리브랜드한 **opencode 하드포크**. LLM은 제안만 하고
+  실제 쓰기는 사람이 확인하는 결정론 계층이 담당(권한 구조적 분리). 데몬과는 파일드롭 채널로만 통신.
+- **런처/데몬 관리**(F5): `~/.local/bin/autostock` 런처(설치 `operator-console/launcher/install.ts`).
+  실행 시 fail-closed preflight → **systemd --user** 데몬을 자동 기동(이미 떠 있으면 attach) → 콘솔 인계.
+- **사이드바**(F6): run-state·시장·포지션·대기승인 + 계좌/라운드트립(승률·실현손익) 요약, 마우스 드래그
+  리사이즈. `scripts/monitor.sh` 모니터링 일부를 흡수.
+
 ---
 
 ## 6. 주요 데이터 흐름
