@@ -357,6 +357,13 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
     steering_runtime = None
     if steering:
         from src.agent.steering.runtime import SteeringRuntime
+        # Settings reads .env via pydantic (extra="ignore"), so a non-field var like
+        # STEERING_OPERATOR_TOKEN never lands in os.environ. Load .env into the process
+        # env here so the daemon and the separately-launched console can share ONE token
+        # (SteeringRuntime honors os.environ[STEERING_OPERATOR_TOKEN]); load_dotenv does
+        # NOT override an already-exported value, so an operator-set token still wins.
+        from dotenv import load_dotenv
+        load_dotenv()
         steering_runtime = SteeringRuntime(executor, orchestrator)
         logger.info(
             "Human steering enabled: operator console talks to the daemon via the "
