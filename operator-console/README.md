@@ -6,13 +6,27 @@ autostock trading daemon. It talks to the daemon ONLY through the repo-root
 The console (incl. its LLM) has **no order authority**: it proposes, a human confirms,
 and the daemon's `RiskManager→Broker` gate is the real boundary.
 
-## How the steering command path works (MCP, auto-gated)
-`steer` is delivered as a small **MCP server** (`src/mcp-server.ts`). opencode connects
-to it and **auto-gates every MCP tool call** via its permission system
-(`session/tools.ts:135` calls `ctx.ask({permission:"autostock_steer"})` before the tool
-runs). So the **human confirm is enforced by opencode CORE**, not by our code — we can't
-mis-key or accidentally remove it (the failure mode we hit with the earlier plugin self-ask).
-The model only proposes `steer({command})`; on deny nothing is written.
+## Command path: natural language → MCP, auto-gated (single path)
+The operator steers in **natural language**. `steer` is delivered as a small **MCP server**
+(`src/mcp-server.ts`); opencode connects to it and **auto-gates every MCP tool call** via its
+permission system (`session/tools.ts:135` calls `ctx.ask({permission:"autostock_steer"})`
+before the tool runs). So the **human confirm is enforced by opencode CORE**, not by our code —
+we can't mis-key or accidentally remove it. The model only **proposes** `steer({command})`
+(e.g. you say "sell half my AAPL" → it proposes `/sell AAPL 50%`); on deny nothing is written.
+
+Determinism still lives in the path: the proposed command is validated by the deterministic
+`parser.ts` (the same parser regardless of how it was phrased) before the confirmed, token-
+stamped line is appended to `steering/commands.jsonl`. `steer_read` (status/positions/…) is
+read-only (`allow`, no prompt).
+
+### Design note — why one command path (NL-only)
+An earlier plan added a SECOND, model-free keystroke command path (a TUI plugin driving the
+parser directly). We **removed it** (2026-05-30) in favour of a single NL path, for simplicity:
+both paths shared the same confirm + `RiskManager→Broker` gate, so they were equivalent on
+safety; the second path only saved typing. Trade-off accepted: steering now depends on the
+console LLM (OpenAI) being available — the break-glass for an LLM/API outage is the broker's
+own UI (Alpaca), after which the daemon reconciles. The deterministic *parser/validator* is
+kept (it's inside the MCP path); only the redundant second UI is gone.
 
 ## Layout
 - `src/schema.ts` — TS mirror of Unit A's E7/E8 contract (Unit A pydantic is authoritative).
@@ -21,9 +35,37 @@ The model only proposes `steer({command})`; on deny nothing is written.
 - `src/steer-handler.ts` — the MCP tool logic (parse + read|write); tested.
 - `src/mcp-server.ts` — **the MCP server**: tools `steer` (mutating, opencode permission `ask`)
   + `steer_read` (read-only, `allow`).
-- `src/dispatch.ts` + `src/console-stub.ts` — shared confirm/dispatch state machine + a
-  readline stand-in, used by the PTY injection e2e (and the Phase-2 keystroke path).
-- `test/` — bun unit tests (parser/filedrop/dispatch/steer-handler) + `e2e/` PTY injection.
+- `test/` — bun unit tests (parser / filedrop / steer-handler).
+
+## Tool lockdown (Phase 3 — defense-in-depth, two layers)
+The console must have NO capability beyond reads + the human-confirmed `steer`. Two
+independent layers enforce this:
+1. **Permission default-deny** (`cli/opencode.json`): `"*": "deny"` + a read-only allowlist
+   (`read`/`glob`/`grep`/`lsp`) + `autostock_steer` (`ask`) / `autostock_steer_read` (`allow`).
+   Verified against opencode's real permission engine: `bun run verify-lockdown.ts`.
+2. **Compile-time removal** (`packages/opencode/src/tool/registry.ts`): under
+   `AUTOSTOCK_LOCKDOWN=on` the side-effecting builtins (bash/edit/write/task/webfetch/
+   websearch/patch/repo_*) are **never registered**, so they are never offered to the model
+   and opencode's tool-permission bugs (#5894/#6396) are structurally moot — not merely
+   denied. Only read-only builtins survive; custom MCP tools (steer) are always exposed.
+   The launch (`bun dev`) sets `AUTOSTOCK_LOCKDOWN=on` by default. Asserted (absence, id-
+   agnostic) in `packages/opencode/test/tool/registry.test.ts`.
+
+## Sidebar
+The autostock panel (run-state / market / positions / open-orders / pending / event-feed)
+reads `steering/snapshot.json` + tails `steering/events.jsonl` every 1.5s (read-only). Events
+render as compact human lines (`HH:MM <glyph> outcome · detail`), not raw JSON, and wrap to
+the panel width. Toggle the whole sidebar with `<leader>b`.
+
+Width is fixed at 42 cols upstream; this fork makes it overridable:
+`AUTOSTOCK_SIDEBAR_WIDTH=<24..120>` (e.g. set it in `cli/.env` for a roomier event feed).
+A proper mouse-drag resize is intentionally deferred to a separate feature.
+
+## Pinned baseline
+Hard fork of `sst/opencode` at **v1.15.12** (initial spike commit `0147908`). Re-pin = rebase
+our small set of autostock commits (lockdown filter in `registry.ts`, sidebar panel, MCP/config,
+verify script) onto a newer upstream tag. Branding is intentionally surface-only (kept minimal)
+to keep that re-pin cheap.
 
 ## Auth (critical)
 - Console LLM connects to a **non-Anthropic model (e.g. OpenAI) via opencode `auth login`**.
@@ -31,39 +73,37 @@ The model only proposes `steer({command})`; on deny nothing is written.
   would take down the trading agent (same account). agent=Claude subscription, console=OpenAI.
 
 ## Run + verify (needs Bun; deps already installed in operator-console/node_modules)
-In the opencode fork's `opencode.json`:
+The machine/MCP wiring lives in `cli/.opencode/opencode.jsonc` (portable via `{env:}`); the
+committed `cli/opencode.json` holds the permission lockdown. MCP server entry:
 ```json
 {
-  "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "autostock": {
       "type": "local",
-      "command": ["bun", "run", "<abs>/operator-console/src/mcp-server.ts"],
+      "command": ["bun", "run", "{env:AUTOSTOCK_ROOT}/operator-console/src/mcp-server.ts"],
       "environment": {
-        "STEERING_DIR": "<autostock-repo>/steering",
-        "STEERING_OPERATOR_TOKEN": "<the daemon's token>"
+        "STEERING_DIR": "{env:STEERING_DIR}",
+        "STEERING_OPERATOR_TOKEN": "{env:STEERING_OPERATOR_TOKEN}"
       }
     }
-  },
-  "permission": { "autostock_steer": "ask", "autostock_steer_read": "allow" }
+  }
 }
 ```
-Then `bun dev` → type e.g. `sell AAPL 50%` → the model calls the `steer` MCP tool →
+Then `bun dev` → say e.g. `sell AAPL 50%` → the model calls the `steer` MCP tool →
 **opencode shows a permission prompt** (auto-gate) → approve → only then is the
 confirmed+token command written to `steering/commands.jsonl`. `status` → `steer_read`
 (no prompt). If a mutating command writes with NO prompt, the `permission` rule is
 missing/mismatched — the key is **`<server>_<tool>`** (underscore), i.e. `autostock_steer`
 (MCP.tools() keys by `sanitize(client)+"_"+sanitize(name)`, mcp/index.ts:696). NOT a colon.
 
-## Automated TUI verification
-The PTY harness (`test/e2e/`) drives a real TUI headlessly; point `drive()` at `bun dev`,
-inject the NL command + the approval keystroke, then assert `steering/commands.jsonl`.
-
 ## Roadmap
-- **Phase 1 (done):** deterministic core (parser/filedrop/dispatch) + PTY injection harness +
-  `steer`/`steer_read` MCP server (confirm = opencode's core auto-gate).
-- **Phase 2:** dedicated TUI panels (positions/orders/pending/event-feed via a TuiPlugin) +
-  the pure-keystroke LLM-bypass path (reuses `dispatch.ts`).
-- **Phase 3:** compile-time removal of opencode's side-effect tools (`registry.ts`:
-  task/bash/edit/write/webfetch) → only steer + reads; rebrand the binary; pin the baseline.
-- **Phase 4:** cross-language contract test (golden samples vs Unit A pydantic) + injection e2e vs `bun dev`.
+- **Phase 1 (done):** deterministic core (`parser`/`filedrop`/`schema`) + `steer`/`steer_read`
+  MCP server (confirm = opencode's core auto-gate).
+- **Phase 2 (done):** dedicated read-only TUI sidebar (run-state/positions/orders/pending/
+  event-feed). NL is the single command path (the once-planned model-free keystroke UI was
+  removed — see the design note above).
+- **Phase 3 (done):** compile-time removal of opencode's side-effect tools (`registry.ts`,
+  `AUTOSTOCK_LOCKDOWN=on`: bash/edit/write/task/webfetch/websearch/patch/repo_*) → only steer +
+  reads; absence-asserted in `test/tool/registry.test.ts`; baseline pinned (opencode v1.15.12);
+  branding surface-only. (Layered atop the Phase-1 permission default-deny.)
+- **Phase 4:** cross-language contract test (golden samples vs Unit A pydantic).
