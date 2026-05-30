@@ -1126,6 +1126,17 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
           366 green, bun 29 green, working tree clean.** Submodule commit `00b4967` fetched into the main checkout's submodule
           store (HEAD-ref fetch from the worktree clone) so the pin is reachable locally. **Still NOT pushed** (user: later);
           live R3/R4 + submodule `tsgo` still pending. Stale branches `feat/console-sidebar-upgrade` + worktrees can be pruned.
+    - [x] **Post-merge live fixes (2026-05-31):** (1) account/round-trip blocks were absent because the daemon was a
+          pre-merge process — user reinstalled/restarted via the launcher → **account block live-confirmed** (eq/cash/pnl,
+          PnL colored; "today · no closed trades"). (2) Home/splash sidebar drag didn't work — `routes/home.tsx` is a separate
+          render path; first fix (transparent handle over `border:["left"]`) failed (absolute `left:0` insets inside the border
+          → handle at col 1, user grabs col 0). Fixed by mirroring the session pattern exactly (opaque 1-col `theme.border` bar,
+          borderless parent). Submodule `7d26d49`, main re-pin `68c95b6`. **Home drag now live-confirmed by user.**
+    - [x] **F6 TRACK CLOSED (2026-05-31)** — user closed the feature ("이 feat 닫으면 되나?" → yes). All FRs delivered & merged;
+          live-verified: R1 drag-resize (session + home), account block (FR-2), readability/PnL color (FR-5). **Still NOT pushed**
+          (local only): pushing requires the submodule fork commits (→ `autostock-cli` remote) BEFORE the parent re-pin push.
+          **Deferred (non-blocking, user-scheduled):** R3 (`steer_read{view}` turns/decisions/log), R4 (`get_fills` paper —
+          round-trip populates intraday), submodule `tsgo` full typecheck, `git push`, prune stale `feat/*` branches.
     - **`/critic` adversarial review (isolated subagent) 2026-05-30 — 7 findings (2 HIGH, 4 MED, 1 LOW), ALL cross-verified
           valid vs code; reflected into requirements/FD/NFR/plan docs:** #1 [HIGH] FR-3 today round-trip is empty all day —
           `trades.jsonl` only written at `_eod` (`agent.py:133,178`), not `_intraday` → **policy fork resolved by user = B**
@@ -1145,9 +1156,25 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
   - **Deferred-to-FD (resolved):** width-persistence = console XDG ui.json; sourcing = publish_snapshot ext (both); FR-4 =
         steer_read{view} MCP + daemon steering/ read files; drag-handle = thin left-edge │.
 
-## New Feature Track: Console Trading-Native Copy & Tips (F7) — PREPARED, NOT STARTED
-> **Resumable via `/ai-dlc-resume`.** Carved out of F5 (user decision 2026-05-30: "남은 브랜딩…F7로 나중에 resume").
-> No code written yet. Stage = INCEPTION → Requirements Analysis (NOT STARTED).
+## New Feature Track: Console Trading-Native Copy & Tips (F7) — IN PROGRESS (Code Gen Part 1, awaiting approval)
+> **Stage Progress (F7):** Requirements **APPROVED** ("승인 & 계속") → User Stories **SKIP** → Workflow Planning **COMPLETE**
+> (`inception/plans/f7-execution-plan.md`: all construction stages SKIP except Code Generation + Build&Test; single small unit,
+> worktree off F5 base; no F5/F6 file overlap) → Functional/NFR/Infra **SKIP** → **Code Generation Part 1 plan written, awaiting approval**
+> (`construction/plans/f7-copy-code-generation-plan.md`: Step1 home.tsx NL placeholders, Step2 NO_MODELS_TIP rebrand, Step3 remove 14
+> clearly-coding tips, Step4 add ~12 steering tips (NL-intent+confirm, real §5 grammar), Step5 tsgo+no-regression). On approval, Part 2
+> first action = create worktree `feat/console-trading-copy`; push/re-pin/merge gated on user (outward).
+> **Resumed via `/ai-dlc-resume F7` 2026-05-30.** Carved out of F5. No code written yet.
+> Stage = INCEPTION → Requirements Analysis **COMPLETE (minimal), awaiting approval**.
+> Requirements doc: `aidlc-docs/inception/requirements/console-trading-native-copy.md`.
+> **Locked decisions (concretizing answers 2026-05-30):** Q1 = **최소·외과적** tips 교체(코딩 전용 팁만 → 트레이딩-스티어링 팁;
+> 일반 TUI 팁 + 실경로 config 팁 유지); Q2 = **자연어 위주** placeholder("sell half my AAPL"/"pause new entries"/
+> "what are my open positions?"); Q3 = **안전/거버넌스 팁 포함**(/pending·/approve·/reject, /kill·/flatten, break-glass=Alpaca UI, lockdown).
+> **Interaction model corrected (user catch 2026-05-30):** the `/buy·/pause·/approve·/status` grammar is the `autostock_steer`(mutating,
+> opencode confirm `"ask"`) / `autostock_steer_read`(read, `"allow"`) **MCP tool `command` argument** — NOT TUI slash commands (verified:
+> no `registerCommand` for steering verbs in the fork). Operator talks NL → agent calls the MCP tool → opencode CORE auto-gates → daemon
+> RiskManager final gate; break-glass=Alpaca UI. Console-exposed grammar (hyphenated) from `operator-console/src/mcp-server.ts`. Requirements
+> doc revised: §1.1 model, FR-3 reframed to NL-intent+confirm (not "type /approve"), §5 rewritten, AC-7 added. Target files verified in fork
+> @ submodule 0fa8fc1. **Next on approve:** User Stories SKIP → Workflow Planning (single small unit, worktree off F5 base).
 - **Goal**: Make the operator console's *copy* trading-native (not just the logo/title brand). The opencode fork's
   home prompt placeholders and rotating tips are all **coding-oriented** and off-brand for a trading-steering console.
 - **Scope (in)**:
