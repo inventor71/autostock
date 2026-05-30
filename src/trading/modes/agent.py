@@ -260,6 +260,13 @@ class AgentTradingMode:
                 lambda: self.steering.refresh_round_trip(since=self.experiment_start),
                 45, "steering_roundtrip")
             self.scheduler.add_seconds_job(self.steering.publish_monitor, 10, "steering_monitor")
+            # F8: sidebar enrichment — current price of resting-order symbols we
+            # don't hold (held symbols reuse position.current_price) + the recent-
+            # fills list; both cached on the worker and folded into the snapshot.
+            self.scheduler.add_seconds_job(
+                self.steering.refresh_order_prices, 12, "steering_order_prices")
+            self.scheduler.add_seconds_job(
+                self.steering.refresh_recent_fills, 45, "steering_recent_fills")
             # F3: event-driven wake detector (reads cached snapshot/bars only) + the
             # daily watch fired-set sweep + the background news poller.
             self.scheduler.add_seconds_job(
