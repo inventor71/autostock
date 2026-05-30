@@ -14,6 +14,7 @@ export class FileDrop {
   readonly commandsFile: string;
   readonly eventsFile: string;
   readonly snapshotFile: string;
+  readonly monitorFile: string;
   private token: string;
 
   constructor(steeringDir: string, token?: string) {
@@ -21,6 +22,7 @@ export class FileDrop {
     this.commandsFile = join(steeringDir, "commands.jsonl");
     this.eventsFile = join(steeringDir, "events.jsonl");
     this.snapshotFile = join(steeringDir, "snapshot.json");
+    this.monitorFile = join(steeringDir, "monitor.json"); // F6: deep-monitoring read view
     this.token = token ?? process.env[TOKEN_ENV] ?? "";
   }
 
@@ -99,6 +101,15 @@ export class FileDrop {
   readSnapshot(): Record<string, unknown> | null {
     try {
       return JSON.parse(readFileSync(this.snapshotFile, "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Read the deep-monitoring view (turns/decisions/log) — null if absent/torn. */
+  readMonitor(): Record<string, unknown> | null {
+    try {
+      return JSON.parse(readFileSync(this.monitorFile, "utf8"));
     } catch {
       return null;
     }

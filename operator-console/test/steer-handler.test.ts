@@ -54,3 +54,28 @@ test("handleSteerRead: mutating command routed to steer (with confirm), no write
   expect(handleSteerRead("/sell AAPL 50%", fd)).toContain("use the steer tool");
   expect(verbs()).toEqual([]);
 });
+
+// F6: deep-monitoring verbs read monitor.json, not the snapshot.
+test("handleSteerRead: /turns returns the turns slice from monitor.json", () => {
+  writeFileSync(fd.monitorFile, JSON.stringify({ turns: { today_count: 3 }, decisions: [], log: [] }));
+  const out = handleSteerRead("/turns", fd);
+  expect(out).toContain("turns:");
+  expect(out).toContain("today_count");
+});
+
+test("handleSteerRead: /decisions and /log dispatch to their slices", () => {
+  writeFileSync(fd.monitorFile, JSON.stringify({ turns: {}, decisions: ["10:00 AAPL BUY"], log: ["boot"] }));
+  expect(handleSteerRead("/decisions", fd)).toContain("AAPL BUY");
+  expect(handleSteerRead("/log", fd)).toContain("boot");
+});
+
+test("handleSteerRead: monitor verb with no monitor.json is graceful", () => {
+  expect(handleSteerRead("/turns", fd)).toContain("no monitor data");
+  expect(verbs()).toEqual([]);
+});
+
+test("handleSteerRead: /status still returns snapshot (not monitor)", () => {
+  writeFileSync(fd.snapshotFile, JSON.stringify({ account: { equity: 1 } }));
+  writeFileSync(fd.monitorFile, JSON.stringify({ turns: { today_count: 9 } }));
+  expect(handleSteerRead("/status", fd)).toContain("snapshot");
+});

@@ -254,6 +254,12 @@ class AgentTradingMode:
             self.scheduler.add_daily_job(
                 self.steering.daily_sweep, hour=0, minute=1, job_id="steering_sweep"
             )
+            # F6: today's round-trip summary (one broker get_fills call, slow cadence —
+            # folded into the snapshot by publish_snapshot) + the deep-monitoring view.
+            self.scheduler.add_seconds_job(
+                lambda: self.steering.refresh_round_trip(since=self.experiment_start),
+                45, "steering_roundtrip")
+            self.scheduler.add_seconds_job(self.steering.publish_monitor, 10, "steering_monitor")
             # F3: event-driven wake detector (reads cached snapshot/bars only) + the
             # daily watch fired-set sweep + the background news poller.
             self.scheduler.add_seconds_job(
