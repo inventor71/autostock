@@ -445,7 +445,25 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
           regressions); integration seams green (wake-through-real-engine, skip-if-busy V3, daemon wiring, steering=None fallback);
           **R1 live PASSED & pinned**; perf/load = N/A (single local daemon) with NF-1..5 concurrency/responsiveness guards documented;
           Security Baseline applicable rules met (SECURITY-03/-15). Invariants held.
-          **REMAINING (user): merge decision** for `feat/intraday-redesign` → `main` (then Operations = placeholder). Branch NOT merged.
+          merge decision = next (after the code review below).
+    - **`/code-review` (high effort, recall-biased) 2026-05-30 — 9 findings fixed (commit f6c7656; 347 → 356 green).**
+          3 parallel finder agents (line/removed/cross-file · concurrency/cursor/state · cleanup/altitude), main-verified vs code.
+          **Correctness:** #1 wake `_fill_events` had no dedup latch → a fill lingering in `last_snapshot['fills']` across detect
+          ticks woke repeatedly → fill_id latch. #2 watch `mark_fired` ran at DETECT → a timed-out/never-run wake silently consumed a
+          watch for the day → deferred to `_fire_wake` + `_pending_watch` guard. #3 `_to_fill_event` naive fallback vs tz-aware broker
+          ts → `max(f.ts)` crash + cursor wedge + naive `after=` cursor → tz-aware fallback (+FillEvent default) + guarded
+          `_collect_new_fills`. #4 abnormal anchor was the rolling-window oldest bar (~4h-stale, drifting) → `util.session_open`. #5
+          watch tool wrote `Journal()` default root while daemon read `executor.journal.root` → tool uses daemon-exported
+          `AGENT_JOURNAL_ROOT`. #6 `avg_volume` self-inflated by the current bar → excluded. #7 `news_diff.diff_for` KeyError race →
+          snapshot `items()`. **Cleanup:** #8 WatchStore full-reparse + unsynchronized fired-set RMW on the 5s hot path → incremental
+          tail-read cache + in-memory locked fired-set; #9 shared `util.held_and_watched`/`session_open`, dead news dict branch removed.
+          Validated-sound: ReconcileWorker per-kind timer lock discipline; run_intraday fallback + call sites. 9 new tests.
+    - [x] **MERGED to `main` 2026-05-30** — merge commit `95f94d1` (`--no-ff` of `feat/intraday-redesign` f6c7656 onto main fab3756;
+          clean, main had only docs commits since the e231015 base). Post-merge: import OK, **full suite 356 green**. F3 track DONE.
+          **Coordination note for F6** (`feat/console-sidebar-upgrade`, NOT merged): it also adds `get_fills` + extends
+          `publish_snapshot`/`modes/agent` on the same 4 files — F6 must now rebase onto this main and unify its round-trip `get_fills`
+          (dict for `match_round_trips`) with F3's activities `get_fills` (`list[FillEvent]`). F5 (`console-native-launcher`) is
+          independent (0 shared files). Not pushed to origin (left to the user).
 
 ## New Feature Track: Claude-Code-native Steering Console (F4 — replaces F2 front-end)
 > **STATUS (2026-05-30): DONE & merged to `main` (merge `1719fcf`).** This is the INCEPTION/design
@@ -953,8 +971,18 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
           stale >30s (naive-local parse, no secrets). **S5 session-first** = launcher `bun run dev -- -c` (cli.ts). Submodule commit
           `ea9a885` (+ `241351a` titles). JSX tag-balance checked (box 3/3, Show 6/6). **Not buildable here (fork TUI needs the build
           toolchain) → logo visual tweak + tsgo + behavior = user-machine live loop.** NOT pushed/re-pinned (re-pin=A deferred to post-verify).
-    - **F5 status:** launcher core (item 3) DONE + 3× critic + live-verified; fork UI (items 1/2: logo/sidebar-first/banner/titles)
-          CODE-COMPLETE, pending user-machine build+visual verify; then Step 7 push to autostock-cli + parent re-pin (re-pin=A).
+    - **User visual verify 2026-05-30** — main logo OK; found the Ctrl+C **exit screen clipped** the 2-line logo to 4 rows
+          (`routes/session/index.tsx` hardcoded `logo[0..3]`) → fixed to spread all `UI.logo()` lines (commit `3e68af9`). tsgo clean.
+    - **Brand pass 2026-05-30** (submodule `05df2ce` + parent `f2616bd`): resume hints → `autostock -s <id>` (session/index + run/splash),
+          notification DEFAULT_TITLE → autostock (attention.ts), non-TTY `wordmark` → "autostock" (ui.ts); **launcher forwards args**
+          (`autostock -s ses_x` resumes, bare → `-c`). Left functional: config paths/theme-id/provider-ids/MCP clientInfo/binary spawns.
+          Remaining coding-oriented copy (home prompt placeholders + tips-view.tsx) **carved out to F7** (user decision).
+    - **Step 7 DONE 2026-05-30:** final tests **51 console-own + 26 launcher green**; fork branch **pushed to autostock-cli origin**
+          (SSH OK, `feat/console-native-launcher`); parent **gitlink re-pinned** to submodule `05df2ce` (commit `da724cf`). re-pin=A complete.
+    - **F5 status: CODE-COMPLETE + verified + pushed/re-pinned on branch `feat/console-native-launcher`.** Parent commits 8e51aba /
+          8cd1c51 / cc99630 / f2616bd / da724cf; submodule fork on `feat/console-native-launcher` (HEAD 05df2ce). **Remaining = merge
+          `feat/console-native-launcher` → main** (needed for `autostock` to run the fork from the main checkout) — outward action,
+          **awaiting user approval**. F7 (trading-native copy) carved out + resumable.
 
 ## New Feature Track: Console Sidebar Upgrade (F6)
 - **Started**: 2026-05-30. **Stage**: INCEPTION → Requirements Analysis (Standard depth) — **COMPLETE, awaiting approval.**
@@ -1085,3 +1113,24 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
           Net F6 scope grew slightly (get_fills port shared w/ F3 + low-cadence round-trip job); 0 new runtime deps still holds.
   - **Deferred-to-FD (resolved):** width-persistence = console XDG ui.json; sourcing = publish_snapshot ext (both); FR-4 =
         steer_read{view} MCP + daemon steering/ read files; drag-handle = thin left-edge │.
+
+## New Feature Track: Console Trading-Native Copy & Tips (F7) — PREPARED, NOT STARTED
+> **Resumable via `/ai-dlc-resume`.** Carved out of F5 (user decision 2026-05-30: "남은 브랜딩…F7로 나중에 resume").
+> No code written yet. Stage = INCEPTION → Requirements Analysis (NOT STARTED).
+- **Goal**: Make the operator console's *copy* trading-native (not just the logo/title brand). The opencode fork's
+  home prompt placeholders and rotating tips are all **coding-oriented** and off-brand for a trading-steering console.
+- **Scope (in)**:
+  - Home prompt placeholders (`packages/opencode/src/cli/cmd/tui/routes/home.tsx` `placeholder.normal/shell`,
+    currently "Fix a TODO in the codebase" / "Fix broken tests" / "What is the tech stack…") → trading/steering examples
+    (e.g. "sell half my AAPL", "/pause", "show positions", "flatten AAPL").
+  - Rotating tips (`feature-plugins/home/tips-view.tsx`, ~line 200+) — replace coding tips ("opencode run -f file.ts",
+    "opencode agent create", "Fix a TODO…") with steering usage tips (NL→MCP `autostock_steer`, `/pause`/`/approve`,
+    sidebar panels, break-glass=Alpaca UI, lockdown). Content rewrite, NOT a string swap.
+  - (optional) `debug` command `opencode version:` line (debug-only, low priority).
+- **Scope (out / leave — functional, not display brand)**: real config paths `~/.config/opencode`/`opencode.json`/
+  `.opencode/`, theme id "opencode", provider ids, MCP clientInfo, `opencode` binary spawns (pr.ts), pkg-manager names.
+  Some tips legitimately reference the real `~/.config/opencode` path — keep those path references.
+- **Built on**: F5's rebranded fork (branch `feat/console-native-launcher` / its merge). Coordinate with F6 (also edits the
+  console) — F7 is copy-only (tips/placeholders), no overlap with F6's sidebar/index.tsx resize logic.
+- **Extensions**: project default (Security Baseline; PBT N/A for copy). **Next action on resume**: Requirements Analysis
+  (likely minimal — propose placeholder/tip copy, get user approval, apply; single small unit, worktree off the F5 base).
