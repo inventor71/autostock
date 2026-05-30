@@ -6,6 +6,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from src.agent.intraday.records import FillEvent
 from src.agent.trades_log import record_trades
 from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
@@ -263,6 +264,56 @@ class AlpacaBroker(BaseBroker):
                 seen.add(str(node.id))
                 out.append(self._to_open_order(node, default_symbol=o.symbol))
         return out
+
+    def get_fills(self, since: str | None = None) -> list[FillEvent]:
+        """Fill events from Alpaca's account-activities feed (Q3=A).
+
+        alpaca-py's *Trading* client exposes no typed wrapper for
+        ``GET /v2/account/activities`` (only the Broker client does), so this
+        uses the inherited raw ``RESTClient.get`` (the SDK version-prefixes the
+        path, so no leading ``/v2``). Keyed by the activity ``id`` so partial
+        fills on one order stay distinct (idempotent cursor). ``since`` is an
+        RFC3339 ``transaction_time`` cursor; dedup-by-id covers the same-timestamp
+        boundary. Best-effort — failure returns [] (NFR-4). R1 verifies shape."""
+        params: dict[str, str] = {"activity_types": "FILL"}
+        if since:
+            params["after"] = since
+        try:
+            raw = self._client.get("/account/activities", params)
+        except Exception as e:  # never kill the publisher (NFR-4)
+            logger.warning(f"get_fills (activities) failed: {e}")
+            return []
+        out: list[FillEvent] = []
+        for a in raw if isinstance(raw, list) else []:
+            ev = self._to_fill_event(a)
+            if ev is not None:
+                out.append(ev)
+        return out
+
+    @staticmethod
+    def _to_fill_event(a: dict) -> FillEvent | None:
+        """Parse one raw FILL activity dict into a FillEvent (tolerant)."""
+        try:
+            side = str(a.get("side", "")).lower()
+            if side not in ("buy", "sell"):
+                return None
+            ts_raw = a.get("transaction_time") or a.get("date")
+            ts = (
+                datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+                if ts_raw else datetime.now()
+            )
+            return FillEvent(
+                fill_id=str(a["id"]),
+                symbol=str(a["symbol"]),
+                qty=abs(float(a.get("qty") or 0)),
+                price=float(a.get("price") or 0),
+                side=side,  # type: ignore[arg-type]
+                kind="unknown",
+                ts=ts,
+            )
+        except Exception as e:
+            logger.warning(f"skipping unparseable activity {a!r}: {e}")
+            return None
 
     def get_all_positions(self) -> list[Position]:
         try:
