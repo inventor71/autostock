@@ -130,9 +130,26 @@ export class DaemonService {
     return (await this.state()) === "active";
   }
 
-  private resolvePython(): string {
-    for (const c of pythonCandidates(this.cfg.autostockRoot)) if (this.fileExists(c)) return c;
-    return "python3"; // last resort; ensureInstalled diagnoses if even this is wrong at runtime
+  /** Pick a Python that can actually run the daemon. Prefer the operator's ACTIVE venv
+   *  (VIRTUAL_ENV at install time), then conventional venv dirs — and VALIDATE each can import the
+   *  daemon's deps, so a broken/empty `.venv` is skipped instead of being baked into the unit
+   *  (which would make the service fail to start). No-silent-failure (BR-1). */
+  private async resolvePython(): Promise<string> {
+    const venv = process.env.VIRTUAL_ENV;
+    const candidates = [
+      ...(venv ? [`${venv}/bin/python`] : []),
+      ...pythonCandidates(this.cfg.autostockRoot),
+    ];
+    let firstPresent: string | null = null;
+    for (const c of candidates) {
+      if (!this.fileExists(c)) continue;
+      if (!firstPresent) firstPresent = c;
+      const r = await this.run([c, "-c", "import apscheduler, loguru, pydantic"]);
+      if (r.code === 0) return c; // imports the daemon deps → good
+    }
+    // none validated: fall back to the first present interpreter (or python3); health-wait
+    // surfaces a real failure loudly rather than silently.
+    return firstPresent ?? "python3";
   }
 
   /** Install/refresh the unit, reload, enable, enable-linger. Idempotent AND self-healing:
@@ -140,7 +157,7 @@ export class DaemonService {
    *  after a path/template change). linger failure warns rather than silently dropping (review #3). */
   async ensureInstalled(): Promise<void> {
     const path = this.unitPath();
-    const desired = renderUnit({ autostockRoot: this.cfg.autostockRoot, python: this.resolvePython() });
+    const desired = renderUnit({ autostockRoot: this.cfg.autostockRoot, python: await this.resolvePython() });
     if (this.readFile(path) !== desired) {
       this.writeFile(path, desired);
       await this.sc(["daemon-reload"]);
