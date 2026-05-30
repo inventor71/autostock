@@ -266,32 +266,33 @@ class MarketDataFormatter:
     def _find_resistance_levels(
         self, bars: pd.DataFrame, current_price: float
     ) -> list[float]:
-        """Find resistance levels above current price."""
-        highs = bars["high"].values
-        levels = []
-
-        for i in range(2, len(highs) - 2):
-            if highs[i] > highs[i-1] and highs[i] > highs[i-2] and \
-               highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-                if highs[i] > current_price:
-                    levels.append(highs[i])
-
-        return sorted(set(levels))
+        """Find resistance levels (local highs) above current price, ascending."""
+        return self._find_pivot_levels(bars["high"].values, current_price, "resistance")
 
     def _find_support_levels(
         self, bars: pd.DataFrame, current_price: float
     ) -> list[float]:
-        """Find support levels below current price."""
-        lows = bars["low"].values
+        """Find support levels (local lows) below current price, descending."""
+        return self._find_pivot_levels(bars["low"].values, current_price, "support")
+
+    @staticmethod
+    def _find_pivot_levels(series, current_price: float, kind: str) -> list[float]:
+        """Local pivots with 2 bars confirmation on each side, filtered to one side
+        of ``current_price``. ``kind='resistance'`` -> local maxima strictly above,
+        ascending; ``kind='support'`` -> local minima strictly below, descending.
+        The two are mirror images, so this is the single scan both call sites share."""
+        above = kind == "resistance"
         levels = []
-
-        for i in range(2, len(lows) - 2):
-            if lows[i] < lows[i-1] and lows[i] < lows[i-2] and \
-               lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-                if lows[i] < current_price:
-                    levels.append(lows[i])
-
-        return sorted(set(levels), reverse=True)
+        for i in range(2, len(series) - 2):
+            v = series[i]
+            is_pivot = (
+                all(v > series[i + d] for d in (-2, -1, 1, 2))
+                if above
+                else all(v < series[i + d] for d in (-2, -1, 1, 2))
+            )
+            if is_pivot and (v > current_price if above else v < current_price):
+                levels.append(v)
+        return sorted(set(levels), reverse=not above)
 
 
 def truncate_context(context: str, max_chars: int = 8000) -> str:

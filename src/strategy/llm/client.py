@@ -79,7 +79,7 @@ class ClaudeClient(BaseLLMClient):
 
     @property
     def default_model(self) -> str:
-        return "claude-sonnet-4-20250514"
+        return "claude-sonnet-4-6"
 
     def _validate_api_key(self) -> None:
         if not self.api_key:
@@ -113,7 +113,7 @@ class OpenAIClient(BaseLLMClient):
 
     @property
     def default_model(self) -> str:
-        return "gpt-4o"
+        return "gpt-4o"  # rolling alias (OpenAI keeps it pointed at the latest gpt-4o)
 
     def _validate_api_key(self) -> None:
         if not self.api_key:
