@@ -371,12 +371,15 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
             steering_runtime.steering_dir,
         )
 
+    from src.agent.intraday.settings import IntradayConfig
+
     AgentTradingMode(
         orchestrator, executor,
         intraday_minutes=settings.trading.batch_interval_minutes,
         experiment_start=settings.agent.experiment_start,
         min_trade_notional=settings.agent.min_trade_notional,
         steering=steering_runtime,
+        intraday_config=IntradayConfig.from_mapping(settings.intraday),
     ).start(fresh=fresh)
 
 

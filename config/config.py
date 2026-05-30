@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     monitoring: MonitoringConfig = MonitoringConfig()
     llm: LLMConfig = LLMConfig()
     agent: AgentConfig = AgentConfig()
+    # F3 intraday redesign tunables (abnormal_move / wake / news / bars / price).
+    # Raw mapping -> IntradayConfig.from_mapping at the composition root.
+    intraday: dict = {}
 
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""

@@ -213,3 +213,20 @@ agent:
   research_timeout: 1800   # seconds for the deep research turn (opus + web + 100-symbol scan)
   experiment_start: "2026-05-27"  # ignore broker fills before this (pre-experiment test trades)
   min_trade_notional: 50.0        # drop penny/test fills below this $ notional
+
+# F3 intraday redesign — event-driven wakes + structured brief (only active with
+# --steering). All keys optional; omitted values fall back to the defaults shown.
+intraday:
+  abnormal_move:
+    atr_k: 1.5          # wake when |intraday move| > atr_k * ATR(atr_period)
+    vol_multiple: 3.0   # OR when last-bar volume > vol_multiple * average
+    atr_period: 14
+  wake:
+    detect_seconds: 5   # cadence of the (cache-only) wake detector
+    timeout: 120.0      # turn-level execution bound for a wake turn (lock-hold cap)
+  news:
+    ttl_minutes: 15.0   # news poll cadence (provider caches ~15min anyway)
+  bars:
+    cache_seconds: 60.0 # ATR/volume bar-input cache TTL
+  price:
+    cache_seconds: 3.0  # latest-price cache TTL (keeps the 5s detector non-blocking)

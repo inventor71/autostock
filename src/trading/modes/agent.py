@@ -33,6 +33,7 @@ class AgentTradingMode:
         experiment_start: str | None = None,
         min_trade_notional: float = 0.0,
         steering=None,
+        intraday_config=None,
     ):
         self.orchestrator = orchestrator
         self.executor = executor
@@ -48,6 +49,72 @@ class AgentTradingMode:
         self.experiment_start = experiment_start
         self.min_trade_notional = min_trade_notional
         self.scheduler = TradingScheduler()
+        # F3 intraday redesign: brief assembly + event-driven wakes + news diff.
+        # Active ONLY with steering (it reads the snapshot/RunState/ReconcileWorker);
+        # without steering, _intraday falls back to the legacy prompt (NFR-8).
+        from src.agent.intraday.settings import IntradayConfig
+        self.intraday_config = intraday_config or IntradayConfig()
+        self._brief_assembler = None
+        self._wake = None
+        self._news = None
+        self._watch = None
+        if self.steering is not None:
+            self._setup_intraday()
+
+    # ------------------------------------------------------------------ #
+    # F3 intraday redesign (only constructed when steering is enabled)
+    # ------------------------------------------------------------------ #
+    def _setup_intraday(self) -> None:
+        from src.agent.intraday.bars import BarCache
+        from src.agent.intraday.brief import BriefAssembler
+        from src.agent.intraday.news_diff import NewsPoller
+        from src.agent.intraday.wake import WakeDetector
+        from src.agent.intraday.watch_store import WatchStore
+
+        cfg = self.intraday_config
+        root = self.executor.journal.root
+        bar_cache = BarCache(self.executor.data_provider,
+                             bars_ttl=cfg.bars_cache_seconds, price_ttl=cfg.price_cache_seconds)
+        self._watch = WatchStore(root)
+        self._brief_assembler = BriefAssembler(
+            bar_cache, state=self.steering.state, watch_store=self._watch)
+        self._news = NewsPoller(self._news_provider(), root,
+                                ttl_minutes=cfg.news_ttl_minutes,
+                                symbols_fn=self._intraday_symbols)
+        self._wake = WakeDetector(
+            snapshot_fn=lambda: self.steering.last_snapshot,
+            state=self.steering.state, watch_store=self._watch, bar_cache=bar_cache,
+            reconcile_worker=self.steering.reconcile_worker, wake_runner=self._wake_runner,
+            config=cfg.abnormal(), wake_timeout=cfg.wake_timeout)
+
+    @staticmethod
+    def _news_provider():
+        from src.data.providers.news_provider import YFinanceNewsProvider
+        return YFinanceNewsProvider()
+
+    def _intraday_symbols(self) -> list[str]:
+        snap = (self.steering.last_snapshot or {}) if self.steering else {}
+        held = list((snap.get("positions") or {}).keys())
+        watched = []
+        try:
+            watched = [t.symbol for t in self._watch.active()] if self._watch else []
+        except Exception:
+            pass
+        return list(dict.fromkeys(held + watched))
+
+    def _brief(self, *, include_news: bool) -> str:
+        snap = self.steering.last_snapshot if self.steering else None
+        news = None
+        if include_news and self._news is not None:
+            news = self._news.diff_for(self._intraday_symbols())
+        return self._brief_assembler.build(snapshot=snap, news=news, include_news=include_news)
+
+    def _wake_runner(self, events):
+        """Fire one coalesced wake turn (runs inside the ReconcileWorker's
+        reconcile_turn, i.e. already under turn_lock). News is excluded from wake
+        briefs (it rides the scheduled turn)."""
+        brief = self._brief(include_news=False)
+        return self.orchestrator.run_wake(brief, events, timeout=self.intraday_config.wake_timeout)
 
     # ------------------------------------------------------------------ #
     # Steering helpers (no-ops when steering is disabled)
@@ -107,7 +174,9 @@ class AgentTradingMode:
             self._funnel(self.executor.run_risk_exits)  # protection still runs (BR-3.1)
             return
         logger.info("Agent intraday cycle")
-        self._scheduled_turn(self.orchestrator.run_intraday)
+        # F3: inject the Python-assembled brief (steering on); else legacy prompt.
+        brief = self._brief(include_news=True) if self.steering is not None else None
+        self._scheduled_turn(lambda: self.orchestrator.run_intraday(brief))
         self._funnel(self._exec_pending_and_exits)
 
     def _eod(self) -> None:
@@ -183,6 +252,13 @@ class AgentTradingMode:
             self.scheduler.add_daily_job(
                 self.steering.daily_sweep, hour=0, minute=1, job_id="steering_sweep"
             )
+            # F3: event-driven wake detector (reads cached snapshot/bars only) + the
+            # daily watch fired-set sweep + the background news poller.
+            self.scheduler.add_seconds_job(
+                self._wake.detect_wakes, self.intraday_config.wake_detect_seconds, "agent_wake")
+            self.scheduler.add_daily_job(
+                self._watch.sweep, hour=0, minute=1, job_id="agent_watch_sweep")
+            self._news.start()
         self.scheduler.start()
 
         # Launch turns (premarket research can take MINUTES) run AFTER the scheduler is
@@ -201,5 +277,7 @@ class AgentTradingMode:
 
     def stop(self) -> None:
         self.scheduler.stop()
+        if self._news is not None:
+            self._news.stop()
         if self.steering is not None:
             self.steering.stop()
