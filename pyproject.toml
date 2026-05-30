@@ -40,7 +40,10 @@ dev = [
 ]
 
 [project.scripts]
-autostock = "main:main"
+# Daemon/CLI entry (backtest/paper/agent modes). Renamed from `autostock` so the name
+# `autostock` belongs to the operator-console launcher (operator-console/launcher/cli.ts,
+# installed to ~/.local/bin by operator-console/launcher/install.ts). F5.
+autostockd = "main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

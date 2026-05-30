@@ -44,7 +44,23 @@ async function main(): Promise<void> {
         `    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc`,
     );
   } else {
-    console.log("PATH ok — run `autostock` from anywhere.");
+    console.log("PATH ok.");
+  }
+
+  // 4. Shadow check — another `autostock` earlier in PATH would run INSTEAD of this launcher
+  // (e.g. the project's own `autostock` console_script in an active venv/bin). Catch it loudly
+  // rather than silently launching the wrong thing (the daemon CLI in paper mode). F5.
+  // @ts-ignore Bun global
+  const resolved: string | null = Bun.which("autostock");
+  if (resolved && resolved !== shimPath) {
+    console.warn(
+      `\n⚠ another \`autostock\` shadows this launcher and will run instead:\n` +
+        `    ${resolved}\n` +
+        `  Remove/rename it (e.g. a stale venv console_script) or put ${localBin} earlier in PATH.\n` +
+        `  Verify with:  command -v autostock   (should be ${shimPath})`,
+    );
+  } else if (resolved === shimPath) {
+    console.log(`\`autostock\` → ${shimPath}. Run \`autostock\` from anywhere.`);
   }
 }
 
