@@ -5,6 +5,12 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 
+# Make the serialization assumptions explicit rather than relying on APScheduler
+# defaults (critic #3): a job never self-overlaps (max_instances=1) and a missed
+# fire coalesces into one (coalesce=True). The F4 turn_lock handles cross-job
+# (scheduled vs reconcile) serialization; this handles a job vs itself.
+_JOB_DEFAULTS = {"max_instances": 1, "coalesce": True}
+
 
 class TradingScheduler:
     """APScheduler-based scheduler for trading operations."""
@@ -25,8 +31,21 @@ class TradingScheduler:
             trigger=IntervalTrigger(minutes=interval_minutes),
             id=job_id,
             replace_existing=True,
+            **_JOB_DEFAULTS,
         )
         logger.info(f"Scheduled batch job '{job_id}' every {interval_minutes} min")
+
+    def add_seconds_job(self, func, seconds: float, job_id: str) -> None:
+        """Add a short-cadence job (e.g. the F4 file-drop poll / snapshot publisher).
+        coalesce collapses a backlog; max_instances=1 prevents self-overlap."""
+        self._scheduler.add_job(
+            func,
+            trigger=IntervalTrigger(seconds=seconds),
+            id=job_id,
+            replace_existing=True,
+            **_JOB_DEFAULTS,
+        )
+        logger.info(f"Scheduled seconds job '{job_id}' every {seconds}s")
 
     def add_daily_job(
         self,
@@ -45,6 +64,7 @@ class TradingScheduler:
             ),
             id=job_id,
             replace_existing=True,
+            **_JOB_DEFAULTS,
         )
         logger.info(f"Scheduled daily job '{job_id}' at {hour:02d}:{minute:02d} {timezone}")
 
@@ -60,6 +80,7 @@ class TradingScheduler:
             ),
             id=job_id,
             replace_existing=True,
+            **_JOB_DEFAULTS,
         )
         logger.info(f"Scheduled market open job '{job_id}'")
 
@@ -75,6 +96,7 @@ class TradingScheduler:
             ),
             id=job_id,
             replace_existing=True,
+            **_JOB_DEFAULTS,
         )
         logger.info(f"Scheduled market close job '{job_id}'")
 

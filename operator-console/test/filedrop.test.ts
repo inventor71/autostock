@@ -1,0 +1,54 @@
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { FileDrop, NoTokenError } from "../src/filedrop";
+import type { SteeringCommand } from "../src/schema";
+
+let dir: string;
+beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "fd-")); });
+afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+test("build attaches token + confirmed + human source + hex id", () => {
+  const fd = new FileDrop(dir, "tok-123");
+  const cmd = fd.build("pause", {});
+  expect(cmd).toMatchObject({ verb: "pause", confirmed: true, token: "tok-123", source: "human" });
+  expect(cmd.id).toMatch(/^[0-9a-f]{32}$/); // uuid4 hex, no dashes (matches Unit A)
+  expect(typeof cmd.ts).toBe("string");
+});
+
+test("no token -> write disabled (NoTokenError)", () => {
+  const fd = new FileDrop(dir, "");
+  expect(fd.hasToken()).toBe(false);
+  expect(() => fd.build("kill", {})).toThrow(NoTokenError);
+});
+
+test("send appends a round-trippable JSON line", () => {
+  const fd = new FileDrop(dir, "tok");
+  const id = fd.send("sell", { symbol: "AAPL", size: 50, unit: "%" });
+  const lines = readFileSync(fd.commandsFile, "utf8").trim().split("\n");
+  expect(lines).toHaveLength(1);
+  const parsed = JSON.parse(lines[0]) as SteeringCommand;
+  expect(parsed.id).toBe(id);
+  expect(parsed).toMatchObject({ verb: "sell", confirmed: true, token: "tok", source: "human", args: { symbol: "AAPL", size: 50, unit: "%" } });
+});
+
+test("readEvents is torn-safe (withholds an incomplete trailing line)", () => {
+  const fd = new FileDrop(dir, "tok");
+  const e1 = JSON.stringify({ id: "1", corr_id: "c1", ts: "t", kind: "outcome", payload: { outcome: "executed" } });
+  const e2 = JSON.stringify({ id: "2", corr_id: null, ts: "t", kind: "fill", payload: {} });
+  writeFileSync(fd.eventsFile, e1 + "\n" + e2.slice(0, 10)); // 2nd line torn
+  const r1 = fd.readEvents(0);
+  expect(r1.events.map((e) => e.id)).toEqual(["1"]); // torn 2nd withheld
+  // complete the 2nd line; next read from the saved offset picks up only it
+  writeFileSync(fd.eventsFile, e1 + "\n" + e2 + "\n");
+  const r2 = fd.readEvents(r1.offset);
+  expect(r2.events.map((e) => e.id)).toEqual(["2"]);
+});
+
+test("readSnapshot parses or returns null", () => {
+  const fd = new FileDrop(dir, "tok");
+  expect(fd.readSnapshot()).toBeNull(); // absent
+  writeFileSync(fd.snapshotFile, JSON.stringify({ run_state: { paused: false }, positions: {} }));
+  expect(fd.readSnapshot()).toMatchObject({ run_state: { paused: false } });
+});

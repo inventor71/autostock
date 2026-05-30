@@ -36,6 +36,11 @@ class Decision(BaseModel):
     ts: datetime = Field(default_factory=datetime.now)
     symbol: str
     action: DecisionAction
+    # F4: who originated this decision. Existing lines without the field parse as
+    # "agent" (backward compatible). Human-forced trades from the steering console
+    # are tagged "human" so they're distinguishable in journal/logs and drive the
+    # human-lock state machine.
+    source: Literal["agent", "human"] = "agent"
     # confidence/sell_pct are nullable: LLM output routinely sends null (e.g.
     # sell_pct on a BUY). Range is clamped downstream by the executor, not here,
     # so a stray value never blocks parsing a real decision line.
@@ -106,11 +111,14 @@ class Journal:
         """Read decisions, optionally filtered by symbol and/or earliest ts."""
         if not self.decisions_file.exists():
             return []
+        # Torn-safe shared reader (C-5/BR-11): the agent subprocess appends to
+        # this file cross-process, so only consume complete (newline-terminated)
+        # lines -- a half-written trailing line is left for the next read.
+        from src.agent.steering.jsonl import read_complete_lines
+
         out: list[Decision] = []
-        for line in self.decisions_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
+        lines, _ = read_complete_lines(self.decisions_file, 0)
+        for line in lines:
             try:
                 decision = Decision.model_validate_json(line)
             except Exception as exc:  # one malformed LLM-written line must not sink the read

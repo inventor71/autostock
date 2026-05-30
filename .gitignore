@@ -52,5 +52,12 @@ reports/
 # Agent journal (runtime state; CLAUDE.md template lives in src/agent/templates/)
 workspace/
 
+# F4 steering file-drop channel (runtime: commands/events/snapshot/token/processed).
+# Anchored to repo root so it does NOT shadow src/agent/steering/ (tracked code).
+/steering/
+
+# F4 Unit B (operator-console, TS): node_modules anywhere; keep bun.lock (pinned).
+node_modules/
+
 # AI-DLC raw audit log (local scratch; append-only, may contain verbatim prompts)
 aidlc-docs/audit.md

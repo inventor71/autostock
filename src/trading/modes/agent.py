@@ -32,12 +32,17 @@ class AgentTradingMode:
         research_minute: int = 0,
         experiment_start: str | None = None,
         min_trade_notional: float = 0.0,
+        steering=None,
     ):
         self.orchestrator = orchestrator
         self.executor = executor
         self.intraday_minutes = intraday_minutes
         self.research_hour = research_hour
         self.research_minute = research_minute
+        # Optional F4 SteeringRuntime. When present, all executor work funnels
+        # through its single CommandBus worker and all LLM turns go through its
+        # TurnCoordinator; when None, the loop behaves exactly as before (NFR-8).
+        self.steering = steering
         # Trade-ledger hygiene (injected from config by the composition root):
         # drop fills before the experiment began and tiny test/penny fills.
         self.experiment_start = experiment_start
@@ -45,37 +50,76 @@ class AgentTradingMode:
         self.scheduler = TradingScheduler()
 
     # ------------------------------------------------------------------ #
+    # Steering helpers (no-ops when steering is disabled)
+    # ------------------------------------------------------------------ #
+    def _paused(self) -> bool:
+        return self.steering is not None and self.steering.state.run_state().paused
+
+    def _funnel(self, fn, timeout: float = 180.0):
+        """Run executor work on the single CommandBus worker when steering is on
+        (so console mutations and scheduled execution never race the broker/cursor,
+        BR-7.1'); otherwise call it directly."""
+        if self.steering is not None:
+            return self.steering.bus.submit_and_wait(fn, timeout=timeout)
+        return fn()
+
+    def _scheduled_turn(self, run_fn) -> bool:
+        """Run a scheduled LLM turn via the TurnCoordinator (skip-if-busy) when
+        steering is on; else run directly. Returns whether it ran."""
+        if self.steering is not None:
+            status, _ = self.steering.coordinator.try_scheduled_turn(run_fn)
+            if status != "ran":
+                logger.info("scheduled turn skipped ({})", _)
+            return status == "ran"
+        run_fn()
+        return True
+
+    def _exec_pending_and_exits(self) -> None:
+        self.executor.execute_pending()
+        self.executor.run_risk_exits()
+
+    # ------------------------------------------------------------------ #
     # Cycles
     # ------------------------------------------------------------------ #
     def _premarket_research(self) -> None:
         """Deep research turn — may run pre-market; writes decisions only."""
+        if self._paused():
+            logger.info("Paused — skipping research turn (BR-3.1)")
+            return
         logger.info("Agent research turn")
-        self.orchestrator.run_morning_research()
+        self._scheduled_turn(self.orchestrator.run_morning_research)
 
     def _open_execute(self) -> None:
         """At the open: place the decisions researched pre-market."""
         logger.info("Agent open execution")
-        self.executor.execute_pending()
-        self.executor.run_risk_exits()
+        if self.steering is not None:
+            self.steering.drain_offhours()  # enqueue overnight human trades (BR-2.7)
+        if self._paused():
+            self._funnel(self.executor.run_risk_exits)  # protection still runs (BR-3.1)
+            return
+        self._funnel(self._exec_pending_and_exits)
 
     def _intraday(self) -> None:
         """Light intraday turn + execution — only while the session is open."""
         if not self.executor.broker.is_market_open():
             return
+        if self._paused():
+            self._funnel(self.executor.run_risk_exits)  # protection still runs (BR-3.1)
+            return
         logger.info("Agent intraday cycle")
-        self.orchestrator.run_intraday()
-        self.executor.execute_pending()
-        self.executor.run_risk_exits()
+        self._scheduled_turn(self.orchestrator.run_intraday)
+        self._funnel(self._exec_pending_and_exits)
 
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
         from src.agent.equity_log import fetch_benchmark, record_equity
         from src.agent.review import outcome_lines
 
-        decisions = self.executor.journal.read_decisions()
-        outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
-        self.orchestrator.run_eod_review(outcomes=outcomes)
-        self.executor.execute_pending()
+        if not self._paused():
+            decisions = self.executor.journal.read_decisions()
+            outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
+            self._scheduled_turn(lambda: self.orchestrator.run_eod_review(outcomes=outcomes))
+            self._funnel(self.executor.execute_pending)
 
         # Daily marks for the track record. record_trade_ledger() is a no-op on
         # brokers that don't reconstruct closed round-trips (e.g. simulated);
@@ -120,6 +164,8 @@ class AgentTradingMode:
             f"Starting agent trading mode (research {self.research_hour:02d}:"
             f"{self.research_minute:02d} ET, intraday every {self.intraday_minutes} min)"
         )
+        if self.steering is not None:
+            self.steering.start()  # bus + hook settings + token (before any turn spawns the agent)
         self._launch(fresh=fresh)
 
         self.scheduler.add_daily_job(
@@ -131,6 +177,13 @@ class AgentTradingMode:
             self._intraday, interval_minutes=self.intraday_minutes, job_id="agent_intraday"
         )
         self.scheduler.add_market_close_job(self._eod, job_id="agent_eod")
+        if self.steering is not None:
+            self.scheduler.add_seconds_job(self.steering.poll_commands, 2, "steering_poll")
+            self.scheduler.add_seconds_job(self.steering.publish_snapshot, 5, "steering_snapshot")
+            self.scheduler.add_seconds_job(self.steering.poll_agent_questions, 5, "steering_questions")
+            self.scheduler.add_daily_job(
+                self.steering.daily_sweep, hour=0, minute=1, job_id="steering_sweep"
+            )
         self.scheduler.start()
 
         try:
@@ -142,3 +195,5 @@ class AgentTradingMode:
 
     def stop(self) -> None:
         self.scheduler.stop()
+        if self.steering is not None:
+            self.steering.stop()

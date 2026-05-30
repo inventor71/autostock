@@ -1,0 +1,3 @@
+[submodule "operator-console/cli"]
+	path = operator-console/cli
+	url = git@github.com:inventor71/autostock-cli.git

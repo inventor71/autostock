@@ -601,3 +601,61 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
       events.jsonl → ui.toast on fill/pending/agent_question; (3) keystroke LLM-bypass path — keymap.registerLayer → deterministic
       parse (reuse parser) → ui.DialogConfirm (per-verb, can force destructive re-confirm) → file-drop write (reuse filedrop). Slice 3
       ALSO solves the deferred per-verb/destructive-always confirm (our code owns the modal, not opencode's MCP auto-gate).
+## New Feature Track: Steering Console Redesign (F4)
+- **Started**: 2026-05-29. **Picked up / resumed**: 2026-05-30. **Stage**: CONSTRUCTION → Code Generation (Unit B).
+- **Supersedes F2 front-end** (prompt_toolkit console replaced). Keeps F2's daemon-side safety model but
+  reimplemented cleanly. Locked decisions (F4 Q1–Q9 + Clarif-1/2) live in the project memory
+  `steering-console-redesign.md` / `f4-steering-runtime-wiring.md` (F4 inception requirements doc was not
+  committed to the repo — decisions are authoritative in memory). **Design = APPROVED.**
+- **Worktree**: `.claude/worktrees/steering-core`, branch `feat/steering-core`.
+- **Two units**:
+  - **Unit A — steering-core** (Python daemon side, `src/agent/steering/`): file-drop JSONL command channel +
+    single serialized CommandBus + TurnCoordinator + SteeringState + executor gate + privilege-separation hook.
+    Opt-in via `main.py --mode agent --steering` (all paths guarded `if self.steering is not None`; default
+    `--mode agent` unaffected). **STATUS: COMPLETE** — codegen Step 1–10 done; suite **273 tests green**.
+  - **Unit B — operator-console** (opencode hard-fork, submodule `operator-console/cli` + `operator-console/src`):
+    trader-rebranded opencode; talks to the daemon ONLY via the repo-root `steering/` channel; no order authority
+    (proposes → human confirm → daemon `RiskManager→Broker` gate). Auth: console LLM = non-Anthropic (OpenAI OAuth);
+    🚫 never the Claude subscription in opencode.
+- **Unit B roadmap (README.md)**:
+  - **Phase 1 — DONE**: deterministic core (`src/parser.ts`/`filedrop.ts`/`dispatch.ts`) + PTY injection harness +
+    `steer`/`steer_read` MCP server (confirm = opencode core auto-gate). Committed lockdown `opencode.json`
+    (`"*":"deny"` + allowlist) + `verify-lockdown.ts`.
+  - **Phase 2 — IN PROGRESS**: slice 1 (autostock sidebar panel: run-state/positions/pending) DONE.
+    **Remaining**: sidebar/orders + event-feed (tail `steering/events.jsonl`); pure-keystroke LLM-bypass command
+    path (TUI input → `dispatch.ts` Dispatcher, no LLM).
+  - **Phase 3 — TODO** (this pickup's target): compile-time removal of side-effect tools in
+    `packages/opencode/src/tool/registry.ts` builtin (shell/edit/write/task/fetch/patch/search) so they are never
+    registered (defense-in-depth atop the permission default-deny → opencode permission bugs structurally moot);
+    extend `verify-lockdown.ts` to assert ABSENCE (not just deny); pin the fork baseline + rebrand.
+  - **Phase 4 — DEFERRED** (beyond this pickup): cross-language contract test (TS schema ↔ Unit A pydantic golden
+    samples) + injection e2e vs `bun dev`.
+- **Code Generation plan**: `aidlc-docs/construction/plans/steering-console-redesign-code-generation-plan.md`.
+- **Extension Configuration (F4)**: project default — Security Baseline Enabled (NFR-1 privilege separation is the
+  headline: operator command authority structurally unreachable from advisor agent sessions; SECURITY-11/03/15
+  applicable). Property-Based Testing N/A for the TS console phases (deterministic parser already example-tested).
+- **Stage Progress (F4)**:
+  - [x] Workspace/Reverse-Eng/Requirements/Planning/Design — reused/approved (see memory).
+  - [x] Unit A Code Generation — COMPLETE (273 green).
+  - [~] Unit B Code Generation — Phase 1 done; **Phase 2 DONE — NL-only** (Step 1 사이드바 확장 유지;
+        Step 2 키스트로크 LLM-bypass는 구현·라이브검증까지 했으나 **제품 결정으로 제거** — 아래 NL-only 참고);
+        **Phase 3 (Step 3–5) DONE** (2026-05-30):
+        registry 락다운 필터(opt-in `AUTOSTOCK_LOCKDOWN=on`, 콘솔 런치 기본 ON), 2-레이어 검증(verify-lockdown
+        PASS + registry 부재 테스트 16 그린), baseline 핀(opencode v1.15.12) + README.
+  - [x] **Phase 4 (크로스랭귀지 컨트랙트) DONE** (2026-05-30): 골든 `operator-console/contract/contract.json`
+        (pydantic 생성) 양방향 핀 — Python `tests/test_steering_contract.py`(4) + TS `test/contract.test.ts`(5) +
+        `schema.ts` 망라성 타입체크. 드리프트 음성검증 통과. Python 273→**277 그린**, 콘솔 own **24 그린**.
+  - [x] Build and Test — bun tests + tsc(schema/registry) + verify-lockdown PASS + python no-regression(277). **F4 Unit B 완료.**
+  - **Note**: 부모 repo는 서브모듈 `operator-console/cli` 변경분(registry.ts/package.json/verify-lockdown/
+        registry.test/사이드바/sidebar.tsx/index.tsx)을 아직 서브모듈에 커밋+재핀하지 않음. 머신-로컬 `.opencode/opencode.jsonc`는 커밋 제외.
+  - **사이드바 가독성 (라이브 피드백 2026-05-30):** events가 raw JSON이라 안 읽힘 → kind별 사람-친화 포맷(시각+글리프)
+        + `wrapMode="word"`로 폭 안에서 전체 표시(잘림 제거). 폭은 `AUTOSTOCK_SIDEBAR_WIDTH` env knob(기본 42,
+        24–120)로 조절 가능(sidebar.tsx+index.tsx). tsgo 0 errors.
+- **제품 결정 — NL-only (2026-05-30):** 콘솔 명령 경로를 **자연어(MCP `autostock_steer`)** 단일 경로로 확정.
+  한 번 만들었던 모델-비경유 키스트로크 경로(`tui-plugin.ts`/`dispatch.ts`/`console-stub.ts`/PTY e2e + tui.json
+  등록)는 **제거**. 근거: 두 경로가 같은 confirm+게이트라 안전성 동일, 둘째 경로 값은 타이핑 절약뿐 → 깔끔함 우선.
+  결정성은 MCP 경로 내부 `parser.ts`(검증기)에 유지. 트레이드오프: steering이 콘솔 LLM(OpenAI) 가용성에 의존
+  (break-glass=Alpaca UI→reconcile). 안전 아키텍처(confirm/RiskManager/Broker/Unit A)는 불변. F4 Q4=B("LLM은
+  제안만")와 일관 — 제거한 건 로드맵 *추가분*이지 락된 결정이 아님.
+- **Deferred feature idea (F-future): 사이드바 마우스 드래그 리사이즈** — opencode 사이드바는 폭 고정(42, 이제 env override).
+  마우스 드래그 핸들/동적 상태/재레이아웃이 필요해 별도 AI-DLC feature 트랙으로 분리(사용자 결정 2026-05-30).

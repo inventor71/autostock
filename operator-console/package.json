@@ -1,0 +1,16 @@
+{
+  "name": "autostock-console",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "F4 Unit B — operator console (opencode thin fork) for steering the autostock trading daemon via the file-drop contract.",
+  "license": "MIT",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opencode-ai/plugin": "^1.15.12",
+    "zod": "^4.4.3"
+  }
+}
