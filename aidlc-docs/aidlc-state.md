@@ -1,5 +1,33 @@
 # AI-DLC State Tracking
 
+> **Layout change (2026-05-31): concurrent multi-track partition.** This root file is now the
+> **Track Registry** (the table below). New tracks keep their full state + audit in
+> `aidlc-docs/tracks/<id>/{state.md,audit.md}` (single writer per track) — see
+> `.aidlc-rule-details/common/concurrent-tracks.md`. Everything **below the registry** is the
+> **archived pre-partition history** (F1–F8 + refactor), kept as record; do not add new per-track
+> detail to it.
+
+## Track Registry
+| ID | Title | Status | Branch | Worktree | Submodule branch | Base | Updated |
+|----|-------|--------|--------|----------|------------------|------|---------|
+| F1 | Dynamic Intraday Pattern Detection | merged | — | — | — | — | 2026-05-28 |
+| F2 | Human-Steering Console (agent mode) | abandoned | feat/human-steering-console | — | — | — | 2026-05-30 |
+| F3 | Intraday Loop Redesign | merged | feat/intraday-redesign | — | — | 95f94d1 | 2026-05-30 |
+| F4 | Claude-Code-native Steering Console | merged | — | — | feat/* | 1719fcf | 2026-05-30 |
+| F5 | Console-native Launcher & Rebrand | merged | — | — | merged→origin | aaf01e2 | 2026-05-30 |
+| F6 | Console Sidebar Upgrade | active | feat/console-sidebar-upgrade | — | — | — | 2026-05-30 |
+| F7 | Trading-native home copy | merged | — | — | merged→main | 631ec6e | 2026-05-31 |
+| F8 | Console Sidebar Status Rich | active | feat/console-sidebar-status-rich | .claude/worktrees/sidebar-status-rich | TBD | — | 2026-05-31 |
+| R1 | New-surface refactor review | active | (TBD) | (TBD) | — | — | 2026-05-31 |
+| M1 | AI-DLC multi-track customization | active | main (rules/docs) | — | — | 631ec6e | 2026-05-31 |
+
+> Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
+> (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
+> reconstructed from the archived history below at migration time and may be approximate; the
+> per-track files under `tracks/` are authoritative for any track started after the migration.
+
+---
+
 ## Project Information
 - **Project Type**: Brownfield
 - **Start Date**: 2026-05-28T00:00:00Z

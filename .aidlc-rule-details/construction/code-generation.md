@@ -12,6 +12,8 @@ This stage generates code for each unit of work through two integrated parts:
 - NFR Implementation (if executed) must be complete for the unit
 - All unit design artifacts must be available
 - Unit is ready for code generation
+- **Worktree gate (concurrent-tracks)**: a track worktree MUST exist before Part 2. See
+  `common/concurrent-tracks.md`.
 
 ---
 
@@ -87,13 +89,24 @@ This stage generates code for each unit of work through two integrated parts:
 - [ ] Mark the approval status clearly
 
 ## Step 9: Update Progress
-- [ ] Mark Code Generation Part 1 (Planning) complete in `aidlc-state.md`
+- [ ] Mark Code Generation Part 1 (Planning) complete in the track's `aidlc-docs/tracks/<id>/state.md` (NOT root aidlc-state.md — see `common/concurrent-tracks.md`)
 - [ ] Update the "Current Status" section
 - [ ] Prepare for transition to Code Generation
 
 ---
 
 # PART 2: GENERATION
+
+## Step 9.5: Worktree Gate (MANDATORY, blocking)
+Per `common/concurrent-tracks.md`, **no application code may be generated outside a worktree.**
+- [ ] Confirm the session is on this track's worktree branch (`.claude/worktrees/<track>`,
+      `feat/<track>`). If on `main` with uncommitted code changes → **STOP**, create the worktree
+      (`git worktree add .claude/worktrees/<track> -b feat/<track>`) and switch before any coding.
+- [ ] If this unit changes the submodule (`operator-console/cli`): branch inside the submodule
+      (`git -C operator-console/cli switch -c feat/<track>`, never detached HEAD). The parent
+      gitlink is committed ONLY at merge time.
+- [ ] Progress + audit for this track go to `aidlc-docs/tracks/<id>/{state.md,audit.md}` — NOT the
+      root files (root `aidlc-state.md` = registry, root `audit.md` = merge-time only).
 
 ## Step 10: Load Unit Code Generation Plan
 - [ ] Read the complete plan from `aidlc-docs/construction/plans/{unit-name}-code-generation-plan.md`
@@ -116,7 +129,7 @@ This stage generates code for each unit of work through two integrated parts:
 ## Step 12: Update Progress
 - [ ] Mark the completed step as [x] in the unit code generation plan
 - [ ] Mark associated unit stories as [x] when their generation is finished
-- [ ] Update `aidlc-docs/aidlc-state.md` current status
+- [ ] Update the track's `aidlc-docs/tracks/<id>/state.md` current status (NOT root aidlc-state.md)
 - [ ] **Brownfield only**: Verify no duplicate files created (e.g., no `ClassName_modified.java` alongside `ClassName.java`)
 - [ ] Save all generated artifacts
 

@@ -59,5 +59,11 @@ workspace/
 # F4 Unit B (operator-console, TS): node_modules anywhere; keep bun.lock (pinned).
 node_modules/
 
-# AI-DLC raw audit log (local scratch; append-only, may contain verbatim prompts)
+# AI-DLC raw audit logs (local scratch; append-only, may contain verbatim prompts).
+# Global timeline + per-track logs are local-only; per-track state.md IS tracked (committed record).
 aidlc-docs/audit.md
+aidlc-docs/tracks/*/audit.md
+!aidlc-docs/tracks/_TEMPLATE/audit.md
+
+# AI-DLC concurrent tracks: git worktrees live here — never commit worktree contents.
+.claude/worktrees/

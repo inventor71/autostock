@@ -75,6 +75,26 @@ All subsequent rule detail file references (e.g., `common/process-overview.md`, 
 3. This should only be done ONCE at the start of a new workflow
 4. Do NOT load this file in subsequent interactions to save context space
 
+## MANDATORY: Concurrent Multi-Track Development (solo, local)
+**CRITICAL**: This project is developed by a single developer running **multiple feature tracks
+concurrently**, each in its own git worktree. To prevent the shared-state races that single
+`aidlc-state.md` / `audit.md` files cause, **load and obey `common/concurrent-tracks.md`** at
+workflow start. Non-negotiable rules from it:
+
+- **Partition, don't lock — one writer per file.** Each track keeps its full state and audit in
+  `aidlc-docs/tracks/<id>/{state.md,audit.md}` (single writer = that track's worktree session).
+  Start from `aidlc-docs/tracks/_TEMPLATE/`.
+- **Root `aidlc-state.md` = Track Registry only** (a table of tracks: id/branch/worktree/status).
+  Edit it only at track create/close. **Root `audit.md` = global timeline**, appended **only at
+  merge** (one-line summary). Do NOT write per-track detail to either root file mid-flight.
+- **Worktree gate (blocking)**: no application code may be generated outside a worktree. If coding
+  while on `main`, STOP and create the track worktree first. If the track touches the submodule
+  (`operator-console/cli`), branch **inside the submodule** too (no detached HEAD) and commit the
+  parent gitlink **only at merge**.
+
+This OVERRIDES any instruction below that says to write progress/audit to the root
+`aidlc-state.md` / `audit.md` directly — route those to the track's files instead.
+
 # Adaptive Software Development Workflow
 
 ---
@@ -530,8 +550,11 @@ The Operations stage will eventually include:
 │   │   │   └── code/               # Markdown summaries only
 │   │   └── build-and-test/
 │   ├── operations/                 # 🟡 OPERATIONS PHASE (placeholder)
-│   ├── aidlc-state.md
-│   └── audit.md
+│   ├── tracks/                      # 🧩 CONCURRENT TRACKS (one dir per feature)
+│   │   ├── _TEMPLATE/               # copy to start a track (state.md, audit.md)
+│   │   └── {Fn}/                    # per-track state.md + audit.md (SINGLE writer)
+│   ├── aidlc-state.md               # Track Registry only (+ archived pre-partition history)
+│   └── audit.md                     # GLOBAL timeline (merge-time appends only)
 ```
 
 **CRITICAL RULE**:

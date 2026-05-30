@@ -1,0 +1,39 @@
+# Track M1 — AI-DLC concurrent multi-track customization
+
+> Per-track state. Single writer = this session. See `.aidlc-rule-details/common/concurrent-tracks.md`.
+
+## Track Info
+- **Track ID**: M1
+- **Title**: AI-DLC concurrent multi-track customization (partition + worktree gate)
+- **Type**: process/meta (applied directly on main per user; not a feature worktree)
+- **Status**: active
+- **Branch**: main (rule/command/doc edits only — no application code)
+- **Worktree**: — (meta-work; worktree gate applies to application code, not rule edits)
+- **Submodule branch**: —
+- **Base commit**: 631ec6e
+- **Start Date**: 2026-05-31
+
+## Scope
+Customize AI-DLC for a solo developer running multiple feature tracks concurrently. User chose
+"full partition + worktree gate". Decided in chat 2026-05-31.
+
+Root cause being fixed: shared single-file state (`aidlc-state.md`, `audit.md`) is written by
+multiple concurrent track sessions → "file modified externally" races (observed live between
+F7/F8, and again during this very session on `audit.md`).
+
+## Decisions
+- **Partition, don't lock.** One writer per file. Per-track `tracks/<id>/{state.md,audit.md}`.
+- Root `aidlc-state.md` → **Track Registry** only. Root `audit.md` → global timeline, merge-time
+  appends only (so this M1 work deliberately does NOT append to root audit.md mid-flight).
+- **Worktree gate (blocking)**: no application code outside a worktree; submodule gets its own
+  `feat/<track>` branch; parent gitlink committed only at merge.
+
+## Stage Progress
+- [x] New rule `common/concurrent-tracks.md`
+- [x] `tracks/_TEMPLATE/{state.md,audit.md}`
+- [x] `code-generation.md` worktree gate (Step 9.5) + track-file references
+- [x] `CLAUDE.md` concurrent-tracks section + directory tree
+- [x] Commands updated: ai-dlc-request, ai-dlc-resume, ai-dlc-status
+- [x] Root `aidlc-state.md` Track Registry + migration note
+- [x] Memory note (process decision) — `[[aidlc-multitrack-partition]]`
+- [ ] Optional follow-up: also wire refactor/deprecate commands + a track-merge helper (deferred)

@@ -25,11 +25,21 @@ CLAUDE.md의 INCEPTION → CONSTRUCTION 흐름을 그대로 따른다. 요약하
 
 2. **Welcome 메시지 1회 표시.** `common/welcome-message.md`를 로드해 처음 한 번만 보여준다.
 
-3. **요청 기록.** 사용자의 **원문 그대로**를 `aidlc-docs/audit.md`에 append(덮어쓰기 금지).
+2.5. **트랙 생성 (동시 다중 트랙).** `common/concurrent-tracks.md`를 로드하고 따른다.
+   - 새 **Track ID** 부여(기존 최대 +1, 예: `F9`).
+   - `aidlc-docs/tracks/_TEMPLATE/`를 `aidlc-docs/tracks/<id>/`로 복사해 `state.md`/`audit.md` 생성.
+   - 루트 `aidlc-docs/aidlc-state.md`의 **Track Registry** 테이블에 행 추가(`active`).
+   - **worktree 게이트**: 실제 코드 생성(Code Gen Part 2) 전에 반드시
+     `git worktree add .claude/worktrees/<track> -b feat/<track>`. `main`에서 코드 변경 금지.
+     서브모듈(`operator-console/cli`)을 건드리면 그 안에서도 `feat/<track>` 브랜치를 따고,
+     부모 gitlink는 **머지 시점에만** 커밋. (설계/문서 단계는 worktree 전이라도 진행 가능.)
+
+3. **요청 기록.** 사용자의 **원문 그대로**를 **그 트랙의** `aidlc-docs/tracks/<id>/audit.md`에
+   append(루트 audit.md 아님; 덮어쓰기 금지).
 
 4. **Workspace Detection (항상).** `inception/workspace-detection.md` 실행.
-   - 기존 `aidlc-state.md`가 있으면 → 이건 새 요청이 아니라 재개일 수 있으니
-     사용자에게 알리고 **`/ai-dlc-resume` 사용을 제안**한다.
+   - 루트 `aidlc-state.md`의 Track Registry에 **진행 중(active) 트랙**이 있으면 → 새 요청이 아니라
+     재개일 수 있으니 알리고 **`/ai-dlc-resume` 제안**.
    - 코드 존재 여부로 brownfield/greenfield 판정.
 
 5. **Reverse Engineering (brownfield + 아티팩트 없을 때만).** `inception/reverse-engineering.md`.
@@ -46,8 +56,11 @@ CLAUDE.md의 INCEPTION → CONSTRUCTION 흐름을 그대로 따른다. 요약하
 
 ## 운영 규칙 (CLAUDE.md 준수)
 
-- 모든 사용자 입력/승인은 audit.md에 **append**(요약 금지, ISO 8601 타임스탬프).
+- 모든 사용자 입력/승인은 **그 트랙의** `tracks/<id>/audit.md`에 **append**(요약 금지, ISO 8601).
+  루트 `audit.md`는 **머지 시점 한 줄 요약**만.
 - 질문/계획/설계 문서는 **한국어**가 기본.
-- 애플리케이션 코드는 워크스페이스 루트에, 문서는 `aidlc-docs/`에만.
+- 애플리케이션 코드는 **트랙 worktree** 안에서만 생성(루트 `main` 트리에 코드 변경 금지).
+  문서는 `aidlc-docs/`에만.
 - 설계 승인 후 Construction(코드+테스트)은 **자율 진행**하고, 진짜 사람 판단이 필요할 때만 멈춘다.
-- 진행 상황은 `aidlc-docs/aidlc-state.md`와 각 plan의 체크박스에 **즉시** 반영.
+- 진행 상황은 **트랙의** `aidlc-docs/tracks/<id>/state.md`와 각 plan 체크박스에 **즉시** 반영
+  (루트 `aidlc-state.md`는 Track Registry 행만, 생성/종료 때만 갱신).
