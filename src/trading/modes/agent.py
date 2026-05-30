@@ -166,7 +166,6 @@ class AgentTradingMode:
         )
         if self.steering is not None:
             self.steering.start()  # bus + hook settings + token (before any turn spawns the agent)
-        self._launch(fresh=fresh)
 
         self.scheduler.add_daily_job(
             self._premarket_research, hour=self.research_hour,
@@ -185,6 +184,13 @@ class AgentTradingMode:
                 self.steering.daily_sweep, hour=0, minute=1, job_id="steering_sweep"
             )
         self.scheduler.start()
+
+        # Launch turns (premarket research can take MINUTES) run AFTER the scheduler is
+        # live, so steering (poll_commands/publish_snapshot every 2-5s) is responsive from
+        # t=0 instead of being dead until the startup research finishes. The turn_lock +
+        # CommandBus serialize this launch turn against any scheduled turn, so it is
+        # race-safe to have the scheduler already running here.
+        self._launch(fresh=fresh)
 
         try:
             while True:

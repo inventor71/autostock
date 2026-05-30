@@ -94,6 +94,10 @@ class CommandHandler:
 
     # ---- helpers ---------------------------------------------------------- #
     def _emit(self, cmd: SteeringCommand, outcome: str, detail: str = "") -> None:
+        # One visible line per handled command (no token — SECURITY-03). The poll/
+        # snapshot ticks stay silent; this is the audit-worthy "a command did something".
+        logger.info("steering: {} {} -> {}{}", cmd.verb, cmd.id[:8], outcome,
+                    f" ({detail})" if detail else "")
         self.channel.emit_outcome(cmd.id, outcome, detail)
         rec = InterventionRecord(
             kind=_KIND.get(cmd.verb, "note"),
