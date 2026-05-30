@@ -995,6 +995,13 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
           autostock sidebar now renders on the **home route** (home.tsx row layout + new `home_sidebar` slot, wide-gated BR-7.2;
           autostock.tsx registers View into it). Fresh launch = autostock logo + prompt + live sidebar, no stale chat. Submodule commit
           `21ac3bc` (pushed to autostock-cli); tsgo clean + 26 launcher tests green. Parent re-pin + cli.ts committed to main.
+    - **✅ F5 COMPLETE & CLOSED 2026-05-30 (user: "잘 뜨네. 마무리해줘").** Live-verified end-to-end: `autostock` (one command) →
+          systemd daemon (agent+steering) auto-start/attach → opencode console (MCP autostock Connected) → fresh home + live trading
+          sidebar (option ②). All three asks delivered: (1) sidebar-first start, (2) autostock rebrand (logo/titles/resume/wordmark),
+          (3) `autostock` binary + systemd daemon mgmt + fail-closed error handling. On `main` (merge `aaf01e2` + post-merge `187877c`/
+          `5559178`/`d8b407a`); fork submodule `21ac3bc` on `feat/console-native-launcher` pushed to autostock-cli. Construction Build&Test
+          satisfied by the live verification + 26 launcher / console-own test runs + tsgo. Redundant worktree removed. **F7** (trading-native
+          copy/tips) remains carved out + resumable. Project memory: `console-native-launcher.md`.
 
 ## New Feature Track: Console Sidebar Upgrade (F6)
 - **Started**: 2026-05-30. **Stage**: INCEPTION → Requirements Analysis (Standard depth) — **COMPLETE, awaiting approval.**
