@@ -94,6 +94,13 @@ python main.py --mode agent --fresh
 저널·결정·로그는 `workspace/`(gitignore)에 영속화됩니다. 모델은 `config/settings.yaml`의
 `agent.model`(장중/EOD)·`agent.research_model`(리서치)로 설정합니다.
 
+**장중 루프 재설계(F3, `--steering` 시 활성)**: 매 장중 턴에 Python이 조립한 구조화 brief
+(가격/레벨/거리 + 계좌 진실 + 사람 개입 + 뉴스 diff)를 주입해 재계산을 없애고, 판단이 필요한
+시장 이벤트(체결·비정상 움직임·watch 트리거·보호선 체결)에서 15분을 기다리지 않고 우선 발화하는
+wake 턴을 추가합니다. 에이전트는 `watch set <SYM> <price_above|price_below|close_above|close_below>
+<level>` 도구로 감시 조건을 등록하고, Python이 충족 시 깨워 ADJUST_STOP 여부를 판단하게 합니다
+(자문-실행 분리 불변). 튜닝은 `config/settings.yaml`의 `intraday:` 블록.
+
 ### 3. 전략 변경
 
 `config/strategies.yaml`에서 활성 전략 변경:

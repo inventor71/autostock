@@ -9,7 +9,10 @@ from loguru import logger
 # defaults (critic #3): a job never self-overlaps (max_instances=1) and a missed
 # fire coalesces into one (coalesce=True). The F4 turn_lock handles cross-job
 # (scheduled vs reconcile) serialization; this handles a job vs itself.
-_JOB_DEFAULTS = {"max_instances": 1, "coalesce": True}
+# ``misfire_grace_time`` lets a job that fired late (thread-pool contention, a
+# slow tick) still run within the grace window instead of being dropped outright
+# (F3 critic#3: a blocked seconds-job would otherwise silently lose ticks).
+_JOB_DEFAULTS = {"max_instances": 1, "coalesce": True, "misfire_grace_time": 30}
 
 
 class TradingScheduler:

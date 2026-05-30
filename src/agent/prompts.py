@@ -71,20 +71,51 @@ Keep decisions.jsonl consistent with what your thesis files say.
 def intraday_prompt(
     quotes: dict[str, float] | None = None,
     held: list[str] | None = None,
+    brief: str | None = None,
 ) -> str:
-    """Light resumed turn: act only if a plan triggers or the thesis shifts."""
-    held_str = ", ".join(held) if held else "none"
+    """Light resumed turn: act only if a plan triggers or the thesis shifts.
+
+    F3: when a Python-assembled ``brief`` is supplied (price/levels/distance,
+    account truth, human context, delta, news), it replaces the bare quotes/held
+    lines so the agent reasons over a ready book instead of re-deriving it."""
     lines = ["Intraday update turn (continuing today's session)."]
-    if quotes:
-        rendered = "; ".join(f"{sym}={price}" for sym, price in quotes.items())
-        lines.append(f"Current prices: {rendered}.")
-    lines.append(f"Positions / watchlist to check: {held_str}.")
+    if brief:
+        lines.append(brief)
+    else:
+        held_str = ", ".join(held) if held else "none"
+        if quotes:
+            rendered = "; ".join(f"{sym}={price}" for sym, price in quotes.items())
+            lines.append(f"Current prices: {rendered}.")
+        lines.append(f"Positions / watchlist to check: {held_str}.")
     lines.append(
         "Re-check your existing plans: has price reached a planned entry, stop, "
         "or target, or has the thesis changed (fresh news/catalyst)? If so, "
         "update the relevant positions/<SYMBOL>.md and append the decision "
         "(including ADJUST_STOP to tighten a stop) to decisions.jsonl. If nothing "
         "is triggered, do nothing — do not churn."
+    )
+    lines.append(_ADVISOR_REMINDER)
+    return "\n".join(lines)
+
+
+def wake_prompt(brief: str | None, reasons: list[str] | None = None) -> str:
+    """Event-driven wake turn (F3 FR-4): Python detected judgement-worthy events
+    out-of-band (a fill, an abnormal move, a met watch condition, a protective
+    fill) and woke the agent before the next scheduled tick. Scoped to the
+    events — not a full re-survey."""
+    lines = ["Event-driven wake turn (continuing today's session) — Python "
+             "detected judgement-worthy events out-of-band."]
+    if reasons:
+        lines.append("Trigger(s):")
+        lines.extend(f"  - {r}" for r in reasons)
+    if brief:
+        lines.append(brief)
+    lines.append(
+        "Assess ONLY what these events imply for your existing plans: confirm a "
+        "fill against your journal, reassess a thesis on an abnormal move, judge "
+        "whether a met watch condition warrants an ADJUST_STOP, or handle a "
+        "protective fill. Append any decision (incl. ADJUST_STOP) to "
+        "decisions.jsonl. If the events need no action, do nothing — do not churn."
     )
     lines.append(_ADVISOR_REMINDER)
     return "\n".join(lines)

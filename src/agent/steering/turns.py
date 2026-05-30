@@ -80,42 +80,60 @@ class TurnCoordinator:
 
 
 class ReconcileWorker:
-    """Debounced, per-kind reconcile trigger. Rapid triggers of the same kind
-    coalesce into one turn; distinct kinds each fire once (latest run_fn wins)."""
+    """Debounced, per-kind reconcile trigger with **independent per-kind timers**.
 
-    def __init__(self, coordinator: TurnCoordinator, debounce: float = 1.0) -> None:
+    Each kind (e.g. ``reconcile`` for human steering, ``wake`` for F3 market
+    events) owns its own debounce timer, so a stream of ``wake`` triggers can no
+    longer cancel/reset the ``human`` timer and starve it indefinitely
+    (critic#2). Within a kind, rapid triggers coalesce (latest run_fn wins) and
+    fire once. A per-kind ``timeout`` bounds the lock *acquisition* (wake gets a
+    shorter one than human) — note this bounds *waiting*, not the LLM run itself,
+    which is bounded by a turn-level timeout passed into the run_fn elsewhere.
+
+    The shared ``turn_lock`` still serializes execution (NFR-1), so a human
+    reconcile arriving while a wake turn is in-flight waits for that one turn to
+    finish — an inherent, bounded cost of the single-session model, not removed
+    here (CQ-R1)."""
+
+    def __init__(self, coordinator: TurnCoordinator, debounce: float = 1.0,
+                 *, default_timeout: float = 600.0) -> None:
         self._coord = coordinator
         self._debounce = debounce
+        self._default_timeout = default_timeout
         self._lock = threading.Lock()
-        self._pending: dict[str, Callable[[], Any]] = {}
-        self._timer: threading.Timer | None = None
+        self._pending: dict[str, tuple[Callable[[], Any], float]] = {}
+        self._timers: dict[str, threading.Timer] = {}
         self._stopped = False
 
-    def trigger(self, run_fn: Callable[[], Any], *, kind: str = "reconcile") -> None:
+    def trigger(self, run_fn: Callable[[], Any], *, kind: str = "reconcile",
+                timeout: float | None = None) -> None:
         with self._lock:
             if self._stopped:
                 return
-            self._pending[kind] = run_fn  # coalesce within kind
-            if self._timer is not None:
-                self._timer.cancel()
-            self._timer = threading.Timer(self._debounce, self._fire)
-            self._timer.daemon = True
-            self._timer.start()
+            self._pending[kind] = (run_fn, self._default_timeout if timeout is None else timeout)
+            existing = self._timers.get(kind)
+            if existing is not None:
+                existing.cancel()  # reset THIS kind's debounce only
+            timer = threading.Timer(self._debounce, self._fire, args=(kind,))
+            timer.daemon = True
+            self._timers[kind] = timer
+            timer.start()
 
-    def _fire(self) -> None:
+    def _fire(self, kind: str) -> None:
         with self._lock:
-            pending = dict(self._pending)
-            self._pending.clear()
-            self._timer = None
-        for kind, run_fn in pending.items():
-            try:
-                self._coord.reconcile_turn(run_fn)
-            except Exception as e:  # belt-and-suspenders; reconcile_turn is already best-effort
-                logger.error("reconcile worker fire failed ({}): {}", kind, e)
+            entry = self._pending.pop(kind, None)
+            self._timers.pop(kind, None)
+        if entry is None:
+            return
+        run_fn, timeout = entry
+        try:
+            self._coord.reconcile_turn(run_fn, timeout=timeout)
+        except Exception as e:  # belt-and-suspenders; reconcile_turn is already best-effort
+            logger.error("reconcile worker fire failed ({}): {}", kind, e)
 
     def stop(self) -> None:
         with self._lock:
             self._stopped = True
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
+            for timer in self._timers.values():
+                timer.cancel()
+            self._timers.clear()

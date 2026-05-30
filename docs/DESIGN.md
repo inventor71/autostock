@@ -313,6 +313,34 @@ AgentTradingMode (trading/modes/agent.py)   장중 인식 스케줄로 두 축�
 > 참고: 실행기가 Alpaca에 한해 trade-ledger를 재구성할 때 브로커의 비공개 속성에 접근하는 등 일부 누수가 있다 —
 > §9 및 `aidlc-docs/inception/reverse-engineering/code-quality-assessment.md`(S-4) 참고.
 
+#### 5.8.1 장중 루프 재설계 (F3, `src/agent/intraday/`)
+
+15분 스케줄 장중 턴은 유지하되 **(1) 구조화 brief 주입으로 재계산을 없애고, (2) 판단이 필요한 시장
+이벤트에서 우선 발화하는 이벤트 기반 wake 턴을 추가**한다. `--steering`일 때만 활성(스냅샷/RunState/
+ReconcileWorker에 의존). 없으면 레거시 프롬프트로 폴백(동작 보존).
+
+```
+agent_wake(5s, 캐시만)   WakeDetector ─ WakeEvent[] ─┐ coalesce(버퍼는 fire 시 drain)
+ data_provider→BarCache   ▲ last_snapshot(fills/pos)  ▼
+ watch.jsonl ────────────┘   ReconcileWorker.trigger(kind="wake") → reconcile_turn(turn_lock)
+ agent_intraday(15m)   BriefAssembler → run_intraday(brief)   [try_scheduled_turn=skip-if-busy]
+                        LLM 턴 ─ decisions.jsonl ─ gate ─ RiskManager ─ Broker   (불변)
+```
+
+- **brief**(`brief.py`): 시장데이터=데몬 `BarCache`(캐시), account/체결/락/대기승인=in-proc `last_snapshot`만
+  (브로커 직접호출 없음), 사람 directive=SteeringState. held는 스냅샷 positions에서. 스냅샷 없으면 account
+  섹션 생략(fail-closed).
+- **wake 감지**(`wake.py`): new_fill(활동내역 커서)·abnormal_move(`abnormal.py`: ATR k 또는 vol m)·watch_trigger·
+  protective_reassess. 캐시만 읽어 스케줄러 스레드 비블로킹. `paused`면 전체 보류, `entries_halted`면
+  `entry_inducing` wake만 억제(게이트는 halt를 막지 않으므로 발화 단계에서).
+- **watch**(`watch_store.py` + agent `watch set/clear/list` 도구): append-only `watch.jsonl`(도구가 유일 writer),
+  fired 상태는 별도 `watch_fired.json{et_date,fired_ids}`(ET-자정 sweep).
+- **체결 진실**(`get_fills`): Alpaca `/account/activities`(raw GET, 활동 id 기준 멱등)를 bus 워커에서 조회해
+  스냅샷 `fills`로 — 시세 추론이 아닌 broker 권위.
+- **동시성**: 새 프리미티브 없음. `ReconcileWorker`는 per-kind 타이머로 바뀌어 wake 폭주가 human reconcile을
+  굶기지 않음. 단일 `turn_lock`은 유지 — human reconcile은 진행 중 wake 턴 1회분만 대기(세션 무결성의 본질 비용).
+- 튜닝: `config/settings.yaml`의 `intraday:` 블록(abnormal_move/wake/news/bars/price).
+
 ---
 
 ## 6. 주요 데이터 흐름

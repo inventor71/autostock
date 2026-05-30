@@ -109,8 +109,24 @@ class AgentTradingLoop:
             timeout=self.research_timeout,
         )
 
-    def run_intraday(self, quotes: dict[str, float] | None = None) -> AgentTurnResult:
-        return self._run(prompts.intraday_prompt(quotes, self.held_symbols()), "intraday")
+    def run_intraday(self, brief: str | None = None) -> AgentTurnResult:
+        """Scheduled intraday turn. F3: when ``brief`` is supplied (assembled by
+        the daemon from the snapshot + cached market data), it is injected and we
+        do NOT call ``held_symbols()`` (a broker hit on the turn thread, critic#6)
+        — the brief already lists the book. Without a brief (steering disabled,
+        NFR-8) it falls back to the legacy held-symbols prompt."""
+        if brief is not None:
+            return self._run(prompts.intraday_prompt(brief=brief), "intraday")
+        return self._run(prompts.intraday_prompt(held=self.held_symbols()), "intraday")
+
+    def run_wake(self, brief: str | None, events, *, timeout: float | None = None
+                 ) -> AgentTurnResult:
+        """Event-driven wake turn (F3 FR-4). ``events`` are the typed WakeEvents
+        that fired; ``timeout`` bounds the turn's execution (the real cap on how
+        long this holds the turn_lock — critic#2). Advisor-only, same journal/
+        executor gate as every other turn."""
+        reasons = [getattr(e, "reason", str(e)) for e in (events or [])]
+        return self._run(prompts.wake_prompt(brief, reasons), "wake", timeout=timeout)
 
     def run_eod_review(self, outcomes: list[str] | None = None) -> AgentTurnResult:
         # `outcomes` are richer (levels vs price, P&L) when the caller assembles

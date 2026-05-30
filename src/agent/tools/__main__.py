@@ -52,6 +52,21 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("account")  # no args: live broker snapshot
 
+    # F3: structured intraday watch-triggers (the sole writer of watch.jsonl, BR-6.1).
+    wp = sub.add_parser("watch")
+    wsub = wp.add_subparsers(dest="watch_cmd", required=True)
+    ws_set = wsub.add_parser("set")
+    ws_set.add_argument("symbol")
+    ws_set.add_argument("condition",
+                        choices=["price_above", "price_below", "close_above", "close_below"])
+    ws_set.add_argument("level", type=float)
+    ws_set.add_argument("--intent", default="")
+    ws_set.add_argument("--until", default=None, help="ET expiry date YYYY-MM-DD")
+    ws_set.add_argument("--thesis", default=None)
+    ws_clear = wsub.add_parser("clear")
+    ws_clear.add_argument("id")
+    wsub.add_parser("list")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "quote":
@@ -67,6 +82,26 @@ def main(argv: list[str] | None = None) -> int:
         out = market.scoreboard(symbols, _provider())
     elif args.cmd == "account":
         out = market.account(_broker())
+    elif args.cmd == "watch":
+        import os
+
+        from src.agent.intraday.watch_store import WatchStore
+        from src.agent.journal import Journal
+
+        # Write to the SAME journal root the daemon's WatchStore reads. The daemon
+        # exports its root as AGENT_JOURNAL_ROOT when it spawns the agent, so a
+        # non-default workspace doesn't split writer/reader (review #5).
+        root = os.environ.get("AGENT_JOURNAL_ROOT") or Journal().root
+        store = WatchStore(root)
+        if args.watch_cmd == "set":
+            t = store.set(args.symbol, args.condition, args.level, intent=args.intent,
+                          valid_until=args.until, thesis_ref=args.thesis)
+            out = {"set": t.model_dump(mode="json")}
+        elif args.watch_cmd == "clear":
+            store.clear(args.id)
+            out = {"cleared": args.id}
+        else:  # list
+            out = {"active": [t.model_dump(mode="json") for t in store.active()]}
     else:  # pragma: no cover - argparse enforces choices
         parser.error(f"unknown command: {args.cmd}")
 

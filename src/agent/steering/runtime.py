@@ -11,11 +11,13 @@ exactly as before (NFR-8).
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
 
 from src.agent.steering.bus import CommandBus
+from src.agent.steering.jsonl import atomic_write_text
 from src.agent.steering.channel import SteeringChannel
 from src.agent.steering.commands import CommandHandler
 from src.agent.steering.records import EMERGENCY_VERBS
@@ -55,6 +57,23 @@ class SteeringRuntime:
             reconcile_worker=self.reconcile_worker, reconcile_run_fn=self._reconcile_run_fn,
         )
         self._pushed_questions: set[str] = set()
+        # F3: in-proc snapshot cache (critic#4) so the BriefAssembler/WakeDetector
+        # read the latest published view from memory, not by re-parsing the file.
+        self.last_snapshot: dict | None = None
+        # F3: broker fill-event cursor (Q3=A) advanced on the bus worker. Persisted
+        # so a restart resumes; on first ever run we start "now" so the daemon does
+        # NOT wake on the whole history of fills.
+        self._fills_cursor_file = Path(executor.journal.root) / ".fills.cursor"
+        self._fills_cursor = self._load_fills_cursor()
+        self._seen_fill_ids: set[str] = set()
+
+    def _load_fills_cursor(self) -> str:
+        try:
+            if self._fills_cursor_file.exists():
+                return self._fills_cursor_file.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            logger.warning("fills cursor load failed: {}", e)
+        return datetime.now(timezone.utc).isoformat()
 
     # ---- lifecycle -------------------------------------------------------- #
     def start(self) -> None:
@@ -94,7 +113,12 @@ class SteeringRuntime:
             logger.error("steering poll failed (continuing): {}", e)
 
     def publish_snapshot(self) -> None:
-        """Publish the live read view. Broker access runs on the worker (NFR-2)."""
+        """Publish the live read view. Broker access runs on the worker (NFR-2).
+
+        F3: also collects *new* fill events (broker activities cursor) into the
+        payload for the new-fill wake, and mirrors the published dict into
+        ``self.last_snapshot`` so off-thread readers (BriefAssembler/WakeDetector)
+        never re-parse the file or touch the broker (critic#3/#4)."""
         def _build():
             broker = self.executor.broker
             try:
@@ -108,12 +132,14 @@ class SteeringRuntime:
             except Exception as e:
                 logger.warning("snapshot build failed (skipping): {}", e)
                 return
-            self.channel.publish_snapshot({
+            new_fills = self._collect_new_fills(broker)
+            snapshot = {
                 "run_state": self.state.run_state().model_dump(mode="json"),
                 "locked_symbols": {s: self.state.lock_status(s) for s in positions},
                 "pending": [p.model_dump(mode="json") for p in self.state.list_pending()],
                 "positions": positions,
                 "open_orders": opens,
+                "fills": [f.model_dump(mode="json") for f in new_fills],
                 "queued_trades": [
                     {"id": c.id, "verb": c.verb,
                      "args": {k: v for k, v in c.args.items() if k != "raw"},
@@ -121,8 +147,35 @@ class SteeringRuntime:
                     for c in self.channel.list_offhours()
                 ],
                 "market_open": market_open,
-            })
+            }
+            self.last_snapshot = snapshot
+            self.channel.publish_snapshot(snapshot)
         self.bus.submit(_build)
+
+    def _collect_new_fills(self, broker) -> list:
+        """Return fill events not yet seen, advancing the persisted cursor.
+
+        Idempotent by activity id: the cursor is the max ``transaction_time``
+        seen, and ``_seen_fill_ids`` retains only ids at that boundary timestamp
+        (which ``after=cursor`` may re-return). Best-effort (NFR-4)."""
+        try:
+            fills = broker.get_fills(since=self._fills_cursor)
+            if not fills:
+                return []
+            new = [f for f in fills if f.fill_id not in self._seen_fill_ids]
+            cursor = max(f.ts for f in fills).isoformat()
+            self._fills_cursor = cursor
+            self._seen_fill_ids = {f.fill_id for f in fills if f.ts.isoformat() == cursor}
+        except Exception as e:
+            # Never abort the snapshot publish over fill detection (NFR-4); the
+            # cursor simply doesn't advance and the next tick retries.
+            logger.warning("new-fill detection failed (skipping): {}", e)
+            return []
+        try:
+            atomic_write_text(self._fills_cursor_file, cursor)
+        except Exception as e:
+            logger.warning("fills cursor persist failed: {}", e)
+        return new
 
     def drain_offhours(self) -> None:
         """At the open: enqueue any off-hours trades queued overnight (BR-2.7)."""

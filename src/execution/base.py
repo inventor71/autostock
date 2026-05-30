@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from src.agent.intraday.records import FillEvent
 from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
 
 
@@ -23,6 +24,16 @@ class BaseBroker(ABC):
         gated on this for the live agent path. Default True (simulated/backtest
         brokers are always 'open')."""
         return True
+
+    def get_fills(self, since: str | None = None) -> list[FillEvent]:
+        """Broker fill events after ``since`` (an opaque, broker-specific cursor).
+
+        Used by the F3 snapshot publisher to detect *new fills* for the new-fill
+        wake (FR-4-A) — keyed by the broker activity id so partial fills stay
+        distinct and the cursor is idempotent. Default returns [] for brokers
+        that don't expose a fill/activity feed (simulated/backtest); live brokers
+        (Alpaca) override it. Read-only — never places orders (advisor-only)."""
+        return []
 
     def record_trade_ledger(
         self,
