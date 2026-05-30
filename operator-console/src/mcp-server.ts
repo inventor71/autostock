@@ -32,7 +32,8 @@ server.registerTool(
       "AGENT APPROVALS (items in snapshot.pending): /approve ID · /reject ID\n" +
       "CANCEL — two distinct meanings, pick by argument:\n" +
       "  • /cancel SYM  → cancel that symbol's resting protective orders\n" +
-      "  • /cancel ID   → remove a DEFERRED/QUEUED off-hours trade (ID from snapshot.queued_trades). " +
+      "  • /cancel ID   → remove a DEFERRED/QUEUED off-hours trade. ID is from " +
+      "snapshot.queued_trades; a short id-prefix (the 8 chars shown in the sidebar) works. " +
       "Use THIS (not /reject) to delete a queued trade.\n" +
       "OTHER: /unlock SYM · /note TEXT · /directive TEXT · /directive-clear ID · /answer ID TEXT",
     inputSchema: { command: z.string().describe("operator command, verbatim, e.g. /sell AAPL 50% or /cancel <id>") },

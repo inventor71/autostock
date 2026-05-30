@@ -59,14 +59,10 @@ test("fail-closed on bad/missing/unknown", () => {
   expect(() => ok("/frobnicate AAPL")).toThrow(ParseError); // unknown verb
 });
 
-test("/cancel <32-hex id> targets the off-hours queue, not a symbol", () => {
-  const id = "a".repeat(32);
-  const d = ok("/cancel " + id);
-  expect(d.verb).toBe("cancel");
-  expect(d.args).toEqual({ queued_id: id });
-});
-
-test("/cancel <SYMBOL> still cancels resting orders", () => {
-  expect(ok("/cancel AAPL").args).toEqual({ symbol: "AAPL" });
+test("/cancel passes the target through (daemon resolves id-prefix vs symbol)", () => {
+  expect(ok("/cancel a1187da8").args).toEqual({ target: "a1187da8" }); // 8-char id prefix
+  expect(ok("/cancel " + "a".repeat(32)).args).toEqual({ target: "a".repeat(32) }); // full id
+  expect(ok("/cancel AAPL").args).toEqual({ target: "AAPL" }); // symbol
+  expect(ok("/cancel a1187da8").verb).toBe("cancel");
   expect(() => ok("/cancel")).toThrow(ParseError); // arg required
 });

@@ -109,15 +109,13 @@ export function parseCommand(input: string): CommandDraft {
       return mk("unlock", { symbol }, `UNLOCK ${symbol}`);
     }
     case "cancel": {
-      // `/cancel <32-hex id>` drops a deferred off-hours trade from the queue (the id
-      // shows in the snapshot's queued_trades); `/cancel <SYMBOL>` cancels resting orders.
+      // The arg is a SYMBOL (cancel its resting orders) OR a queued-trade id / id-PREFIX
+      // (the sidebar's queued list shows an 8-char id). The daemon resolves which — a
+      // unique queued-id prefix wins, else it's a symbol — so we just pass it through.
       const arg = rest[0];
-      if (arg && /^[0-9a-f]{32}$/i.test(arg)) {
-        const queued_id = arg.toLowerCase();
-        return mk("cancel", { queued_id }, `CANCEL queued trade ${queued_id.slice(0, 8)}`);
-      }
-      const symbol = sym(arg);
-      return mk("cancel", { symbol }, `CANCEL open orders for ${symbol}`);
+      if (!arg) throw new ParseError("cancel needs a symbol or a queued-trade id");
+      if (!/^[A-Za-z0-9.\-]{1,32}$/.test(arg)) throw new ParseError(`bad cancel target '${arg}'`);
+      return mk("cancel", { target: arg }, `CANCEL ${arg}`);
     }
     case "note": {
       const text = rest.join(" ");

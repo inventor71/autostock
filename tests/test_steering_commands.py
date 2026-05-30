@@ -190,17 +190,39 @@ def test_unknown_verb_errors_without_raising(tmp_path):
     assert _last_event(channel).payload["outcome"] == "error"
 
 
-def test_cancel_queued_offhours_trade_by_id(tmp_path):
+def test_cancel_queued_offhours_trade_by_full_id(tmp_path):
     h, _, _, channel, _ = _setup(tmp_path)
     queued = _cmd("sell", symbol="AAPL", size=50.0, unit="%")
     channel.queue_offhours(queued)
     assert len(channel.list_offhours()) == 1
-    h.handle(_cmd("cancel", queued_id=queued.id))
+    h.handle(_cmd("cancel", target=queued.id))
     assert channel.list_offhours() == []  # removed from the queue
     assert _last_event(channel).payload["outcome"] == "applied"
 
 
-def test_cancel_unknown_queued_id_is_no_order(tmp_path):
+def test_cancel_queued_offhours_trade_by_short_prefix(tmp_path):
+    # The sidebar shows only an 8-char id; pasting that prefix must cancel the trade.
     h, _, _, channel, _ = _setup(tmp_path)
-    h.handle(_cmd("cancel", queued_id="0" * 32))
+    queued = _cmd("sell", symbol="AAPL", size=50.0, unit="%")
+    channel.queue_offhours(queued)
+    h.handle(_cmd("cancel", target=queued.id[:8]))
+    assert channel.list_offhours() == []
+    assert _last_event(channel).payload["outcome"] == "applied"
+
+
+def test_cancel_ambiguous_prefix_removes_nothing(tmp_path):
+    h, _, _, channel, _ = _setup(tmp_path)
+    a = SteeringCommand(verb="sell", args={"symbol": "AAPL"}, confirmed=True, token=TOKEN, id="abc1" + "0" * 28)
+    b = SteeringCommand(verb="buy", args={"symbol": "MSFT"}, confirmed=True, token=TOKEN, id="abc2" + "0" * 28)
+    channel.queue_offhours(a)
+    channel.queue_offhours(b)
+    h.handle(_cmd("cancel", target="abc"))  # prefix matches both -> refuse
+    assert len(channel.list_offhours()) == 2
+    ev = _last_event(channel).payload
+    assert ev["outcome"] == "no_order" and "ambiguous" in ev["detail"]
+
+
+def test_cancel_unknown_target_is_no_order(tmp_path):
+    h, _, _, channel, _ = _setup(tmp_path)
+    h.handle(_cmd("cancel", target="ZZZZ"))  # no queued match, no resting orders
     assert _last_event(channel).payload["outcome"] == "no_order"

@@ -289,16 +289,23 @@ class CommandHandler:
         self._reconcile()
 
     def _v_cancel(self, cmd: SteeringCommand) -> None:
-        # `/cancel <id>` cancels a deferred off-hours trade still in the queue (before it
-        # fires at the open); `/cancel <SYMBOL>` cancels that symbol's resting broker orders.
-        qid = cmd.args.get("queued_id")
-        if qid:
-            removed = self.channel.remove_offhours(str(qid))
-            self._emit(cmd, "applied" if removed else "no_order",
-                       f"cancelled queued trade {str(qid)[:8]}" if removed
-                       else f"no queued trade {str(qid)[:8]}")
-            return
-        sym = str(cmd.args["symbol"]).upper()
+        # The arg is a SYMBOL (cancel its resting protective orders) OR a queued off-hours
+        # trade id / id-PREFIX (the sidebar shows an 8-char id). Resolve here so the operator
+        # can paste the short id: a UNIQUE queued-id prefix wins; otherwise it's a symbol.
+        target = str(cmd.args.get("target") or cmd.args.get("queued_id")
+                     or cmd.args.get("symbol") or "").strip()
+        pref = target.lower()
+        if pref:
+            matches = [c for c in self.channel.list_offhours() if c.id.startswith(pref)]
+            if len(matches) > 1:
+                self._emit(cmd, "no_order",
+                           f"ambiguous queued-id prefix '{target}' ({len(matches)} matches)")
+                return
+            if len(matches) == 1:
+                self.channel.remove_offhours(matches[0].id)
+                self._emit(cmd, "applied", f"cancelled queued trade {matches[0].id[:8]}")
+                return
+        sym = target.upper()
         opens = self.broker.get_open_orders(sym)
         if not opens:
             self._emit(cmd, "no_order", f"no open orders for {sym}")
