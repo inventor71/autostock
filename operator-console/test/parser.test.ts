@@ -58,3 +58,15 @@ test("fail-closed on bad/missing/unknown", () => {
   expect(() => ok("/sell AAPL 0%")).toThrow(ParseError); // size > 0
   expect(() => ok("/frobnicate AAPL")).toThrow(ParseError); // unknown verb
 });
+
+test("/cancel <32-hex id> targets the off-hours queue, not a symbol", () => {
+  const id = "a".repeat(32);
+  const d = ok("/cancel " + id);
+  expect(d.verb).toBe("cancel");
+  expect(d.args).toEqual({ queued_id: id });
+});
+
+test("/cancel <SYMBOL> still cancels resting orders", () => {
+  expect(ok("/cancel AAPL").args).toEqual({ symbol: "AAPL" });
+  expect(() => ok("/cancel")).toThrow(ParseError); // arg required
+});

@@ -114,6 +114,12 @@ class SteeringRuntime:
                 "pending": [p.model_dump(mode="json") for p in self.state.list_pending()],
                 "positions": positions,
                 "open_orders": opens,
+                "queued_trades": [
+                    {"id": c.id, "verb": c.verb,
+                     "args": {k: v for k, v in c.args.items() if k != "raw"},
+                     "ts": c.ts.isoformat()}
+                    for c in self.channel.list_offhours()
+                ],
                 "market_open": market_open,
             })
         self.bus.submit(_build)

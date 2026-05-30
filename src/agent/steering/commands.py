@@ -289,6 +289,15 @@ class CommandHandler:
         self._reconcile()
 
     def _v_cancel(self, cmd: SteeringCommand) -> None:
+        # `/cancel <id>` cancels a deferred off-hours trade still in the queue (before it
+        # fires at the open); `/cancel <SYMBOL>` cancels that symbol's resting broker orders.
+        qid = cmd.args.get("queued_id")
+        if qid:
+            removed = self.channel.remove_offhours(str(qid))
+            self._emit(cmd, "applied" if removed else "no_order",
+                       f"cancelled queued trade {str(qid)[:8]}" if removed
+                       else f"no queued trade {str(qid)[:8]}")
+            return
         sym = str(cmd.args["symbol"]).upper()
         opens = self.broker.get_open_orders(sym)
         if not opens:

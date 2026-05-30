@@ -188,3 +188,19 @@ def test_unknown_verb_errors_without_raising(tmp_path):
     object.__setattr__(cmd, "verb", "bogus")
     h.handle(cmd)
     assert _last_event(channel).payload["outcome"] == "error"
+
+
+def test_cancel_queued_offhours_trade_by_id(tmp_path):
+    h, _, _, channel, _ = _setup(tmp_path)
+    queued = _cmd("sell", symbol="AAPL", size=50.0, unit="%")
+    channel.queue_offhours(queued)
+    assert len(channel.list_offhours()) == 1
+    h.handle(_cmd("cancel", queued_id=queued.id))
+    assert channel.list_offhours() == []  # removed from the queue
+    assert _last_event(channel).payload["outcome"] == "applied"
+
+
+def test_cancel_unknown_queued_id_is_no_order(tmp_path):
+    h, _, _, channel, _ = _setup(tmp_path)
+    h.handle(_cmd("cancel", queued_id="0" * 32))
+    assert _last_event(channel).payload["outcome"] == "no_order"

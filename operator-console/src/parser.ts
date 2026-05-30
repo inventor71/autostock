@@ -109,7 +109,14 @@ export function parseCommand(input: string): CommandDraft {
       return mk("unlock", { symbol }, `UNLOCK ${symbol}`);
     }
     case "cancel": {
-      const symbol = sym(rest[0]);
+      // `/cancel <32-hex id>` drops a deferred off-hours trade from the queue (the id
+      // shows in the snapshot's queued_trades); `/cancel <SYMBOL>` cancels resting orders.
+      const arg = rest[0];
+      if (arg && /^[0-9a-f]{32}$/i.test(arg)) {
+        const queued_id = arg.toLowerCase();
+        return mk("cancel", { queued_id }, `CANCEL queued trade ${queued_id.slice(0, 8)}`);
+      }
+      const symbol = sym(arg);
       return mk("cancel", { symbol }, `CANCEL open orders for ${symbol}`);
     }
     case "note": {

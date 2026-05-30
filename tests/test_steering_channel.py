@@ -79,3 +79,18 @@ def test_snapshot_atomic_and_complete(tmp_path):
     assert data["run_state"]["paused"] is False
     assert "published_at" in data
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_offhours_list_and_remove(tmp_path):
+    ch = SteeringChannel(tmp_path, TOKEN)
+    a = SteeringCommand(verb="sell", args={"symbol": "AAPL"}, confirmed=True, token=TOKEN)
+    b = SteeringCommand(verb="buy", args={"symbol": "MSFT"}, confirmed=True, token=TOKEN)
+    ch.queue_offhours(a)
+    ch.queue_offhours(b)
+    assert {c.id for c in ch.list_offhours()} == {a.id, b.id}
+    assert len(ch.list_offhours()) == 2  # list does NOT clear (unlike drain)
+    assert ch.remove_offhours(a.id) is True
+    assert [c.id for c in ch.list_offhours()] == [b.id]
+    assert ch.remove_offhours("0" * 32) is False  # unknown id -> nothing removed
+    assert ch.remove_offhours(b.id) is True  # removing the last empties the queue
+    assert ch.list_offhours() == []

@@ -132,6 +132,37 @@ class SteeringChannel:
         self._offhours_file.unlink(missing_ok=True)
         return out
 
+    def list_offhours(self) -> list[SteeringCommand]:
+        """Read the queued off-hours trades WITHOUT clearing (for the snapshot so the
+        operator can see -- and cancel -- what will fire at the next open)."""
+        if not self._offhours_file.exists():
+            return []
+        out: list[SteeringCommand] = []
+        for line in self._offhours_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(SteeringCommand.model_validate_json(line))
+            except Exception as exc:
+                logger.warning("steering: bad off-hours line skipped: {}", exc)
+        return out
+
+    def remove_offhours(self, command_id: str) -> bool:
+        """Drop one queued off-hours trade by id (operator cancel of a deferred trade).
+        Rewrites the queue minus that id; returns whether anything was removed. Runs on
+        the CommandBus worker (same thread as queue/drain), so no file race."""
+        current = self.list_offhours()
+        remaining = [c for c in current if c.id != command_id]
+        if len(remaining) == len(current):
+            return False
+        if remaining:
+            self._offhours_file.write_text(
+                "".join(c.model_dump_json() + "\n" for c in remaining), encoding="utf-8")
+        else:
+            self._offhours_file.unlink(missing_ok=True)
+        return True
+
     # ---- events / snapshot out ------------------------------------------- #
     def append_event(self, event: SteeringEvent) -> None:
         self.events_file.parent.mkdir(parents=True, exist_ok=True)
