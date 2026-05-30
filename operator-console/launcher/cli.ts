@@ -49,11 +49,15 @@ export async function main(): Promise<void> {
 
   // 4. launch console — TTY handoff (inherit stdio), session-first (Q1=A/critic2 #5 option B: -c).
   //    NO launcher-side watch loop after this; runtime-disconnect monitoring lives in the console.
+  //    Forward any user args (e.g. `autostock -s ses_x` to resume a session); default to `-c`
+  //    (continue last session) so the bare `autostock` lands in a session view + sidebar.
   const env = consoleEnv(cfg);
+  const userArgs = process.argv.slice(2);
+  const consoleArgs = userArgs.length > 0 ? userArgs : ["-c"];
   let code: number;
   try {
     // @ts-ignore Bun global
-    const proc = Bun.spawn(["bun", "run", "dev", "--", "-c"], {
+    const proc = Bun.spawn(["bun", "run", "dev", "--", ...consoleArgs], {
       cwd: cfg.consoleCwd,
       env,
       stdin: "inherit",
