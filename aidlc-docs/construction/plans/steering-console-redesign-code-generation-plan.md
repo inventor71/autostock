@@ -76,6 +76,15 @@
 
 ---
 
+## Phase 4 — 크로스랭귀지 컨트랙트 테스트 ✅ (2026-05-30)
+NL-only라 콘솔↔데몬 파일드롭 JSON이 유일 결합점 → verb/event-kind/envelope-필드 드리프트 가드.
+- [x] 골든 `operator-console/contract/contract.json` — Unit A pydantic introspection(`get_args`+`model_fields`)으로 생성.
+- [x] Python `tests/test_steering_contract.py` — live 모델 == 골든 + TS-shape 명령/이벤트 validate + round-trip (4 그린). standalone `--write` 재생성(`sys.path` 부트스트랩).
+- [x] TS `operator-console/test/contract.test.ts` — `schema.ts` 런타임 상수(ALL_VERBS/ALL_EVENT_KINDS/COMMAND_FIELDS/EVENT_FIELDS) == 골든 + `FileDrop.build` envelope == 골든 (5 그린).
+- [x] `schema.ts` 망라성 타입체크(`satisfies` + `Exclude<…> extends never`) — 타입↔런타임 양방향 핀, tsc 0 errors.
+- [x] **음성 검증**: 골든에 가짜 verb 주입 → Python·TS 둘 다 FAIL 확인 후 복구(가드에 이빨 있음 증명).
+- 스코프 노트: per-verb args 시맨틱(commands.py 핸들러)은 별도(parser.test + 데몬 명령 테스트). 이번은 envelope+enum 스키마 계약.
+
 ## Build & Test (마무리)
 - [ ] `operator-console`: `bun test` 그린 + `tsgo` 타입체크 클린.
 - [ ] `bun run verify-lockdown.ts` 통과(allow/deny/ask + 부재 단언).

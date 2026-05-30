@@ -295,7 +295,10 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
         **Phase 3 (Step 3–5) DONE** (2026-05-30):
         registry 락다운 필터(opt-in `AUTOSTOCK_LOCKDOWN=on`, 콘솔 런치 기본 ON), 2-레이어 검증(verify-lockdown
         PASS + registry 부재 테스트 16 그린), baseline 핀(opencode v1.15.12) + README.
-  - [ ] Build and Test — final (bun tests + tsgo typecheck + verify-lockdown + python no-regression).
+  - [x] **Phase 4 (크로스랭귀지 컨트랙트) DONE** (2026-05-30): 골든 `operator-console/contract/contract.json`
+        (pydantic 생성) 양방향 핀 — Python `tests/test_steering_contract.py`(4) + TS `test/contract.test.ts`(5) +
+        `schema.ts` 망라성 타입체크. 드리프트 음성검증 통과. Python 273→**277 그린**, 콘솔 own **24 그린**.
+  - [x] Build and Test — bun tests + tsc(schema/registry) + verify-lockdown PASS + python no-regression(277). **F4 Unit B 완료.**
   - **Note**: 부모 repo는 서브모듈 `operator-console/cli` 변경분(registry.ts/package.json/verify-lockdown/
         registry.test/사이드바/sidebar.tsx/index.tsx)을 아직 서브모듈에 커밋+재핀하지 않음. 머신-로컬 `.opencode/opencode.jsonc`는 커밋 제외.
   - **사이드바 가독성 (라이브 피드백 2026-05-30):** events가 raw JSON이라 안 읽힘 → kind별 사람-친화 포맷(시각+글리프)

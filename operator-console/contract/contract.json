@@ -1,0 +1,47 @@
+{
+  "verbs": [
+    "buy",
+    "sell",
+    "flatten",
+    "flatten_all",
+    "stop",
+    "pause",
+    "resume",
+    "halt_entries",
+    "allow_entries",
+    "kill",
+    "approve",
+    "reject",
+    "unlock",
+    "cancel",
+    "note",
+    "directive",
+    "directive_clear",
+    "answer"
+  ],
+  "event_kinds": [
+    "outcome",
+    "fill",
+    "decision",
+    "pending",
+    "agent_question",
+    "lifecycle",
+    "reconcile"
+  ],
+  "command_fields": [
+    "id",
+    "ts",
+    "verb",
+    "args",
+    "confirmed",
+    "token",
+    "source"
+  ],
+  "event_fields": [
+    "id",
+    "corr_id",
+    "ts",
+    "kind",
+    "payload"
+  ]
+}

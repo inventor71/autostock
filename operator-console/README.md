@@ -106,4 +106,11 @@ missing/mismatched — the key is **`<server>_<tool>`** (underscore), i.e. `auto
   `AUTOSTOCK_LOCKDOWN=on`: bash/edit/write/task/webfetch/websearch/patch/repo_*) → only steer +
   reads; absence-asserted in `test/tool/registry.test.ts`; baseline pinned (opencode v1.15.12);
   branding surface-only. (Layered atop the Phase-1 permission default-deny.)
-- **Phase 4:** cross-language contract test (golden samples vs Unit A pydantic).
+- **Phase 4 (done):** cross-language contract test. The console↔daemon file-drop JSON is the
+  only coupling (NL-only), so verb/event-kind/envelope-field drift would silently break it. A
+  golden `contract/contract.json` (generated from Unit A's pydantic models) is pinned from BOTH
+  sides: `tests/test_steering_contract.py` (live models == golden) and `test/contract.test.ts`
+  (schema.ts runtime consts + `FileDrop.build` envelope == golden). Drift on either side fails a
+  test. `schema.ts` adds `ALL_VERBS`/`ALL_EVENT_KINDS`/`COMMAND_FIELDS`/`EVENT_FIELDS` with
+  compile-time exhaustiveness checks against the types. Regenerate (intentional change):
+  `python tests/test_steering_contract.py --write`.
