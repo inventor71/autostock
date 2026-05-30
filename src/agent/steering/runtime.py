@@ -38,7 +38,13 @@ class SteeringRuntime:
         self.executor = executor
         self.orchestrator = orchestrator
         self.steering_dir = Path(steering_dir) if steering_dir else DEFAULT_STEERING_DIR
-        self.token = token or issue_token()
+        # Honor a pre-set STEERING_OPERATOR_TOKEN (from .env / the daemon's shell) so the
+        # SEPARATELY-launched console can share ONE secret with the daemon; only generate a
+        # random one when none is provided. (Previously this always generated a random token
+        # and start() overwrote the env value -> the console's token never matched -> the
+        # channel rejected every command as "bad token" -> end-to-end steering silently failed.)
+        # session._invoke still scrubs this var from the AGENT's env (BR-10.2).
+        self.token = token or os.environ.get(TOKEN_ENV_VAR) or issue_token()
         self.channel = SteeringChannel(self.steering_dir, self.token)
         self.state = SteeringState(executor.journal.root)
         self.bus = CommandBus()
