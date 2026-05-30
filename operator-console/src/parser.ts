@@ -21,6 +21,9 @@ export interface CommandDraft {
 export const READ_VERBS = new Set([
   "status", "positions", "book", "orders", "log", "agent-trace", "why",
   "pending", "directives", "help", "inbox",
+  // F6: deep-monitoring views served from steering/monitor.json (turn cost/activity,
+  // recent decisions). `log` (above) also reads the monitor view's log tail.
+  "turns", "decisions",
 ]);
 
 const VERB_ALIASES: Record<string, SteeringVerb> = {

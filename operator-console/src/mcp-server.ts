@@ -45,12 +45,13 @@ server.registerTool(
   "steer_read",
   {
     description:
-      "Read the autostock daemon state (read-only, no order authority). Returns the live snapshot.\n" +
-      "Verbs: /status · /positions · /orders · /book · /log · /agent-trace · /why\n" +
-      "The snapshot includes: run_state, positions, open_orders (resting), pending (agent decisions " +
-      "awaiting /approve|/reject), queued_trades (deferred human trades awaiting next open — cancel " +
-      "one with /cancel <id>), locked_symbols, market_open.",
-    inputSchema: { command: z.string().describe("a read command, e.g. /status") },
+      "Read the autostock daemon state (read-only, no order authority).\n" +
+      "SNAPSHOT verbs: /status · /positions · /orders · /book · /agent-trace · /why — return the live " +
+      "snapshot (run_state, account [equity/cash/open_pnl], round_trip [today win_rate/realized_pnl], " +
+      "positions, open_orders, pending, queued_trades, locked_symbols, market_open).\n" +
+      "MONITOR verbs (deep view, from monitor.json): /turns (turn cost/activity) · /decisions (recent " +
+      "decisions) · /log (agent log tail).",
+    inputSchema: { command: z.string().describe("a read command, e.g. /status or /turns") },
   },
   async ({ command }) => ({ content: [{ type: "text", text: handleSteerRead(command, fd) }] }),
 );

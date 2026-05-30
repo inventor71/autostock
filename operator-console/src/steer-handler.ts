@@ -24,6 +24,10 @@ export function handleSteer(command: string, fd: FileDrop): string {
   return `OK ${draft.verb} ${id} — ${draft.echo}`;
 }
 
+// F6: deep-monitoring views are served from steering/monitor.json, not the snapshot.
+// `log` returns just the log tail; turns/decisions return their slice.
+const MONITOR_VERBS: Record<string, string> = { turns: "turns", decisions: "decisions", log: "log" };
+
 /** Read-only path (status/positions/orders/...). No order authority; not gated. */
 export function handleSteerRead(command: string, fd: FileDrop): string {
   let draft;
@@ -34,6 +38,14 @@ export function handleSteerRead(command: string, fd: FileDrop): string {
   }
   if (!draft.readOnly) {
     return "this is a mutating command — use the steer tool (opencode will ask you to confirm)";
+  }
+  // F6: dispatch deep-monitoring verbs to monitor.json (previously every read verb,
+  // even `log`, fell through to the snapshot — critic #3).
+  const key = MONITOR_VERBS[draft.verb];
+  if (key) {
+    const mon = fd.readMonitor();
+    if (!mon) return "(no monitor data yet)";
+    return `${key}: ${JSON.stringify(mon[key] ?? null)}`;
   }
   const snap = fd.readSnapshot();
   return snap ? `snapshot: ${JSON.stringify(snap)}` : "(no snapshot yet)";

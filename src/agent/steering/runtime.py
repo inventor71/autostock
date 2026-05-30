@@ -10,7 +10,9 @@ exactly as before (NFR-8).
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -66,6 +68,11 @@ class SteeringRuntime:
         self._fills_cursor_file = Path(executor.journal.root) / ".fills.cursor"
         self._fills_cursor = self._load_fills_cursor()
         self._seen_fill_ids: set[str] = set()
+        # F6: latest today's-round-trip summary, refreshed on a slow cadence by
+        # refresh_round_trip() (one broker get_fills call) and folded into the snapshot
+        # by publish_snapshot — keeping snapshot.json single-writer while the network
+        # fills call runs far less often than the 5s snapshot publish.
+        self._round_trip: dict = {}
 
     def _load_fills_cursor(self) -> str:
         try:
@@ -147,6 +154,8 @@ class SteeringRuntime:
                     for c in self.channel.list_offhours()
                 ],
                 "market_open": market_open,
+                "account": self._account_block(ps),  # F6 FR-2 (reuses equity_log.snapshot)
+                "round_trip": self._round_trip,       # F6 FR-3 (cached, slow-cadence refresh)
             }
             self.last_snapshot = snapshot
             self.channel.publish_snapshot(snapshot)
@@ -210,3 +219,121 @@ class SteeringRuntime:
         self.state.sweep_expired()
         self.channel.daily_reset()
         self._pushed_questions.clear()
+
+    # ---- F6: account / round-trip / monitor read views -------------------- #
+    @staticmethod
+    def _account_block(ps) -> dict:
+        """F6 FR-2: compact account summary. Reuses equity_log.snapshot (critic #5)
+        so the sidebar and the equity track record never diverge."""
+        from src.agent.equity_log import snapshot as equity_snapshot
+        full = equity_snapshot(ps)
+        return {k: full[k] for k in ("equity", "cash", "open_pnl", "position_count")}
+
+    def refresh_round_trip(self, *, since: str | None = None) -> None:
+        """F6 FR-3: refresh today's round-trip summary from the broker's live fills
+        on the worker (NFR-2). Reuses F3's get_fills (FillEvent stream) — trades.jsonl
+        is EOD-only, so a file read would be empty intraday. Slow cadence (one network
+        call); publish_snapshot folds the cached result in at its own rate. Best-effort."""
+        from src.core.trades import _ET, summarize_today_round_trips
+
+        def _build():
+            try:
+                fills = self.executor.broker.get_fills(since=since)
+                dicts = [
+                    {"symbol": f.symbol, "side": f.side, "qty": f.qty,
+                     "price": f.price, "ts": f.ts.isoformat()}
+                    for f in fills
+                ]
+                self._round_trip = summarize_today_round_trips(dicts, now_et=datetime.now(_ET))
+            except Exception as e:
+                logger.warning("round-trip refresh failed (skipping): {}", e)
+        self.bus.submit(_build)
+
+    def publish_monitor(self) -> None:
+        """F6 FR-4: publish compact turns / decisions / agent-log summaries to
+        steering/monitor.json (read-only, served on demand by steer_read{view}).
+        Files only — no broker access. Best-effort; secrets masked in the log tail."""
+        try:
+            payload = {
+                "ts": datetime.now().isoformat(timespec="seconds"),
+                "turns": _turns_summary(self.executor.journal.root / "turns.jsonl"),
+                "decisions": _decisions_tail(self.executor.journal.root / "decisions.jsonl"),
+                "log": _log_tail(_REPO_ROOT / "logs" / "autostock.log"),
+            }
+            atomic_write_text(self.steering_dir / "monitor.json", json.dumps(payload, default=str))
+        except Exception as e:
+            logger.error("steering monitor publish failed (continuing): {}", e)
+
+
+# ---- monitor.json helpers (F6 FR-4) ------------------------------------- #
+# File-only, defensive, read-only. Build the deep-monitoring view (turn telemetry /
+# recent decisions / agent log tail) the operator pulls on demand via steer_read{view}.
+
+_MONITOR_TURNS = 8
+_MONITOR_DECISIONS = 10
+_MONITOR_LOG = 30
+# Redact obvious secrets from the log tail (SECURITY-03): the value after a
+# token/key/secret key, and any long opaque hex/base64 run.
+_SECRET_KV = re.compile(r"(?i)\b(token|secret|api[_-]?key|password|authorization)\b\s*[=:]\s*\S+")
+_SECRET_BLOB = re.compile(r"\b[A-Za-z0-9_\-]{24,}\b")
+
+
+def _hhmm(ts) -> str:
+    if not ts:
+        return ""
+    try:
+        return datetime.fromisoformat(str(ts)).strftime("%H:%M")
+    except (ValueError, TypeError):
+        return str(ts)[11:16]
+
+
+def _turns_summary(path: Path) -> dict:
+    """Today's turn count + total cost + the last few turns, compact."""
+    from src.agent.turn_log import read_turns
+    rows = read_turns(path)
+    today = datetime.now().date().isoformat()
+    todays = [r for r in rows if str(r.get("date", "")) == today]
+    cost = round(sum(float(r.get("cost_usd") or 0) for r in todays), 4)
+    recent = [
+        f"{_hhmm(r.get('ts'))} {r.get('turn_type', '?')} "
+        f"${float(r.get('cost_usd') or 0):.2f} {r.get('num_decisions', 0)}dec"
+        for r in rows[-_MONITOR_TURNS:]
+    ]
+    return {"today_count": len(todays), "today_cost_usd": cost, "recent": recent}
+
+
+def _decisions_tail(path: Path) -> list[str]:
+    """Last N decisions as compact one-liners."""
+    from src.agent.steering.jsonl import read_complete_lines
+    try:
+        lines, _ = read_complete_lines(path, 0)
+    except Exception:
+        return []
+    out: list[str] = []
+    for line in lines[-_MONITOR_DECISIONS:]:
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        reason = str(d.get("reason") or "")
+        if len(reason) > 60:
+            reason = reason[:59] + "…"
+        out.append(
+            f"{_hhmm(d.get('ts'))} {d.get('symbol', '?')} {d.get('action', '?')} "
+            f"{d.get('confidence', '')} {reason}".rstrip()
+        )
+    return out
+
+
+def _mask_secrets(line: str) -> str:
+    line = _SECRET_KV.sub(lambda m: m.group(0).split(m.group(1))[0] + m.group(1) + "=***", line)
+    return _SECRET_BLOB.sub("***", line)
+
+
+def _log_tail(path: Path) -> list[str]:
+    """Last N log lines with secrets masked (SECURITY-03)."""
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    return [_mask_secrets(ln) for ln in lines[-_MONITOR_LOG:]]
