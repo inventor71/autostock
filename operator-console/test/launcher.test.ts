@@ -138,6 +138,17 @@ describe("unit-template.renderUnit (critic2 #3/#4)", () => {
     expect(u).toContain("Restart=on-failure");
     expect(u).toContain("WantedBy=default.target");
   });
+  test("no path → no Environment=PATH line (systemd --user bare PATH)", () => {
+    expect(u).not.toContain("Environment=PATH=");
+  });
+  test("path present → Environment=PATH baked in (claude on PATH)", () => {
+    const up = renderUnit({
+      autostockRoot: "/r",
+      python: "/r/.venv/bin/python",
+      path: "/home/u/.nvm/versions/node/v24.9.0/bin:/usr/bin:/bin",
+    });
+    expect(up).toContain("Environment=PATH=/home/u/.nvm/versions/node/v24.9.0/bin:/usr/bin:/bin");
+  });
 });
 
 describe("daemon.publishedAtMs (critic2 #6 — naive-local)", () => {
@@ -237,6 +248,7 @@ describe("daemon.ensureRunning (health-first attach + systemd, live-verify harde
       fileExists: () => true,
       writeFile: () => {},
       readFile: () => null,
+      whichClaude: () => "/opt/cbin/claude",
     });
     return { d, calls };
   }
@@ -271,22 +283,31 @@ describe("daemon.ensureRunning (health-first attach + systemd, live-verify harde
 });
 
 describe("daemon.ensureInstalled (review #2 — self-healing stale unit)", () => {
-  function installHarness(existing: string | null) {
+  // Shared root so unit CONTENT (which embeds autostockRoot) varies only by the dep under test.
+  function installHarness(
+    existing: string | null,
+    whichClaude: () => string | null = () => "/opt/cbin/claude",
+    root: string = fakeRoot(),
+  ) {
     const clk = fakeClock();
     const calls: string[][] = [];
     const writes: string[] = [];
-    const d = svc({
+    const warns: string[] = [];
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: root }, home: tmp() });
+    const d = new DaemonService(cfg, {
       now: clk.now,
       sleep: clk.sleep,
       fileExists: () => true,
       readFile: () => existing,
       writeFile: (_p, c) => writes.push(c),
+      warn: (m) => warns.push(m),
+      whichClaude,
       run: async (args) => {
         calls.push(args);
         return { code: 0, stdout: "", stderr: "" };
       },
     });
-    return { d, calls, writes };
+    return { d, calls, writes, warns, root };
   }
 
   test("stale unit content → rewrites + daemon-reload", async () => {
@@ -297,13 +318,39 @@ describe("daemon.ensureInstalled (review #2 — self-healing stale unit)", () =>
   });
 
   test("identical unit content → no rewrite, no daemon-reload (idempotent)", async () => {
-    // first render the desired content, feed it back as existing
+    // first render the desired content, feed it back as existing (same root → same content)
     const probe = installHarness(null);
     await probe.d.ensureInstalled();
     const desired = probe.writes[0];
-    const { calls, writes } = installHarness(desired);
+    const { calls, writes } = installHarness(desired, () => "/opt/cbin/claude", probe.root);
     expect(writes.length).toBe(0);
     expect(calls.some((c) => c.includes("daemon-reload"))).toBe(false);
+  });
+
+  test("detected claude → bakes its dir + std dirs into Environment=PATH", async () => {
+    const { d, writes } = installHarness(null, () => "/opt/cbin/claude");
+    await d.ensureInstalled();
+    expect(writes[0]).toContain("Environment=PATH=/opt/cbin:/usr/local/bin:/usr/bin:/bin");
+  });
+
+  test("detection FAILS but unit already has a PATH → preserve it, do NOT regress (critic HIGH)", async () => {
+    // Build a known-good unit (claude was detectable), then re-run from a PATH-poor context.
+    const probe = installHarness(null, () => "/old/cbin/claude");
+    await probe.d.ensureInstalled();
+    const goodUnit = probe.writes[0];
+    expect(goodUnit).toContain("Environment=PATH=/old/cbin:");
+
+    const h = installHarness(goodUnit, () => null, probe.root); // claude no longer resolvable
+    await h.d.ensureInstalled();
+    expect(h.writes.length).toBe(0); // preserved → identical → no rewrite, no silent regression
+    expect(h.calls.some((c) => c.includes("daemon-reload"))).toBe(false);
+  });
+
+  test("detection FAILS and no existing PATH → omit line + warn loudly", async () => {
+    const { d, writes, warns } = installHarness("[Unit]\nDescription=OLD\n", () => null);
+    await d.ensureInstalled();
+    expect(writes[0]).not.toContain("Environment=PATH=");
+    expect(warns.some((m) => m.includes("`claude` CLI not found"))).toBe(true);
   });
 });
 

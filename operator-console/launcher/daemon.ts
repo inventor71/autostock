@@ -34,6 +34,7 @@ export interface DaemonDeps {
   writeFile?: (p: string, c: string) => void;
   readFile?: (p: string) => string | null;
   warn?: (msg: string) => void;
+  whichClaude?: () => string | null; // absolute path to `claude` on PATH, or null (Bun.which default)
 }
 
 /** Default runner: spawn a command, capture stdout/stderr/exit, with a hard timeout (review #4). */
@@ -90,6 +91,7 @@ export class DaemonService {
   private writeFile: (p: string, c: string) => void;
   private readFile: (p: string) => string | null;
   private warn: (msg: string) => void;
+  private whichClaude: () => string | null;
 
   constructor(private cfg: LauncherConfig, deps: DaemonDeps = {}) {
     this.run = deps.run ?? defaultRunner();
@@ -110,6 +112,10 @@ export class DaemonService {
       }
     });
     this.warn = deps.warn ?? ((m) => console.error(`autostock: warning — ${m}`));
+    this.whichClaude = deps.whichClaude ?? (() => {
+      // @ts-ignore Bun global — executable-aware (skips dirs/non-exec), unlike a bare existence check.
+      return Bun.which("claude");
+    });
   }
 
   unitPath(): string {
@@ -152,13 +158,51 @@ export class DaemonService {
     return firstPresent ?? "python3";
   }
 
+  /** The `Environment=PATH=` value already baked into an on-disk unit, if any. */
+  private existingUnitPath(unit: string | null): string | undefined {
+    const m = unit?.match(/^Environment=PATH=(.*)$/m);
+    return m ? m[1] : undefined;
+  }
+
+  /** PATH to bake into the unit. systemd --user starts with a bare PATH that lacks the dir holding
+   *  `claude` (often an nvm-versioned node bin), so the daemon's subprocess(['claude', ...]) would
+   *  fail with FileNotFoundError. We DETECT `claude` on the launcher's OWN PATH (the operator runs
+   *  `autostock` from their login shell, so it resolves there) and prepend its dir to the standard
+   *  system dirs. Re-detected every run, so a node-version bump is absorbed on the next `autostock`.
+   *
+   *  Crucially, if detection FAILS (launcher invoked from a PATH-poor context — cron, another unit,
+   *  a non-login shell) we PRESERVE the PATH already in the on-disk unit instead of dropping it:
+   *  otherwise self-heal would silently overwrite a working unit with a PATH-less one and re-break
+   *  the daemon (critic: HIGH regression). Neither detected nor present → omit + warn loudly. We do
+   *  NOT touch the operator's environment (no ~/.local/bin symlinks); only this unit's PATH. */
+  private resolveDaemonPath(existingUnit: string | null): string | undefined {
+    const std = ["/usr/local/bin", "/usr/bin", "/bin"];
+    const claude = this.whichClaude();
+    if (claude) {
+      const dir = dirname(claude);
+      return [dir, ...std.filter((d) => d !== dir)].join(":");
+    }
+    const existing = this.existingUnitPath(existingUnit);
+    if (existing) return existing; // preserve a working unit — never silently regress
+    this.warn(
+      "`claude` CLI not found on PATH; the daemon unit will have no claude on its PATH and LLM " +
+        "turns will fail. Install claude (and ensure it's on your shell PATH), then re-run `autostock`.",
+    );
+    return undefined;
+  }
+
   /** Install/refresh the unit, reload, enable, enable-linger. Idempotent AND self-healing:
    *  rewrites the unit when its content drifts (review #2 — a stale unit must not silently persist
    *  after a path/template change). linger failure warns rather than silently dropping (review #3). */
   async ensureInstalled(): Promise<void> {
     const path = this.unitPath();
-    const desired = renderUnit({ autostockRoot: this.cfg.autostockRoot, python: await this.resolvePython() });
-    if (this.readFile(path) !== desired) {
+    const existing = this.readFile(path);
+    const desired = renderUnit({
+      autostockRoot: this.cfg.autostockRoot,
+      python: await this.resolvePython(),
+      path: this.resolveDaemonPath(existing),
+    });
+    if (existing !== desired) {
       this.writeFile(path, desired);
       await this.sc(["daemon-reload"]);
     }
