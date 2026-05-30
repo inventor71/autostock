@@ -178,6 +178,30 @@ def test_watch_trigger_fires_once():
     assert worker.pending is None and len(captured) == 1
 
 
+def test_new_fill_deduped_across_ticks():
+    # The same fill lingering in last_snapshot['fills'] across detect ticks must
+    # wake only once (review #1). Fills carry a fill_id (as FillEvent.model_dump).
+    snap = {"positions": {}, "fills":
+            [{"fill_id": "a1", "side": "buy", "qty": 5, "symbol": "META", "price": 631.2}]}
+    det, worker, captured = _detector(snap)
+    det.detect_wakes()
+    det.detect_wakes()  # same fill again before a new publish clears it
+    worker.fire()
+    assert sum(1 for e in captured[0] if e.kind == "new_fill") == 1
+
+
+def test_watch_mark_fired_deferred_until_turn_runs():
+    watch = _Watch([_WT("w1", "AAPL", "price_above", 99.0)])
+    snap = {"positions": {}, "fills": []}
+    det, worker, captured = _detector(snap, watch=watch, price=100.0)
+    det.detect_wakes()
+    assert watch.is_fired("w1") is False           # NOT marked at detect (review #2)
+    det.detect_wakes()                             # pending guard: don't re-buffer
+    worker.fire()
+    assert watch.is_fired("w1") is True            # marked only when the turn ran
+    assert sum(1 for e in captured[0] if e.kind == "watch_trigger") == 1
+
+
 def test_classify_watch_entry_inducing():
     assert classify_watch_entry_inducing(_WT("a", "X", "price_above", 1, "tighten stop")) is False
     assert classify_watch_entry_inducing(_WT("b", "X", "price_above", 1, "add on breakout")) is True

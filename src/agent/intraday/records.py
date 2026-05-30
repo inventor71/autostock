@@ -11,7 +11,7 @@ written to a durable channel.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -90,7 +90,9 @@ class FillEvent(BaseModel):
     price: float
     side: Literal["buy", "sell"]
     kind: Literal["entry", "protective", "unknown"] = "unknown"
-    ts: datetime = Field(default_factory=datetime.now)
+    # tz-aware so a mix of broker (RFC3339 +00:00) and fallback timestamps never
+    # raises on max()/comparison in the snapshot cursor (review #3).
+    ts: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator("symbol")
     @classmethod

@@ -71,7 +71,10 @@ class NewsPoller:
         self._save_seen()
 
     def diff_for(self, symbols) -> dict[str, NewsDiff]:
-        return {s: self._diffs[s] for s in symbols if s in self._diffs}
+        # Snapshot items once so a concurrent poll_once pop/assign on the poller
+        # thread can't raise KeyError on this (turn-path) read (review #7).
+        wanted = set(symbols)
+        return {s: nd for s, nd in list(self._diffs.items()) if s in wanted}
 
     # ---- background thread ------------------------------------------------- #
     def start(self) -> None:

@@ -160,15 +160,17 @@ class SteeringRuntime:
         (which ``after=cursor`` may re-return). Best-effort (NFR-4)."""
         try:
             fills = broker.get_fills(since=self._fills_cursor)
+            if not fills:
+                return []
+            new = [f for f in fills if f.fill_id not in self._seen_fill_ids]
+            cursor = max(f.ts for f in fills).isoformat()
+            self._fills_cursor = cursor
+            self._seen_fill_ids = {f.fill_id for f in fills if f.ts.isoformat() == cursor}
         except Exception as e:
-            logger.warning("get_fills failed (skipping new-fill detection): {}", e)
+            # Never abort the snapshot publish over fill detection (NFR-4); the
+            # cursor simply doesn't advance and the next tick retries.
+            logger.warning("new-fill detection failed (skipping): {}", e)
             return []
-        if not fills:
-            return []
-        new = [f for f in fills if f.fill_id not in self._seen_fill_ids]
-        cursor = max(f.ts for f in fills).isoformat()
-        self._fills_cursor = cursor
-        self._seen_fill_ids = {f.fill_id for f in fills if f.ts.isoformat() == cursor}
         try:
             atomic_write_text(self._fills_cursor_file, cursor)
         except Exception as e:

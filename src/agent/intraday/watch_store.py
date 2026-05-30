@@ -11,6 +11,7 @@ ET-midnight daily sweep (BR-6.4/6.5).
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 from loguru import logger
@@ -25,6 +26,15 @@ class WatchStore:
         root = Path(root)
         self.path = root / "watch.jsonl"
         self.fired_file = root / "watch_fired.json"
+        # Reader-side caches (review #8): tail watch.jsonl incrementally instead of
+        # re-reading + re-parsing the whole file on every active() call, and hold
+        # the today-scoped fired-set in memory behind a lock (the detector and the
+        # midnight sweep run on different threads).
+        self._lock = threading.Lock()
+        self._read_offset = 0
+        self._records_cache: list[WatchRecord] = []
+        self._fired_date: str | None = None
+        self._fired_ids: set[str] = set()
 
     # ---- writer side (used by the agent ``watch`` tool, BR-6.1) ----------- #
     def set(self, symbol: str, condition: WatchCondition, level: float, *,
@@ -46,14 +56,23 @@ class WatchStore:
 
     # ---- reader side (daemon WakeDetector) -------------------------------- #
     def _records(self) -> list[WatchRecord]:
-        lines, _ = read_complete_lines(self.path, 0)  # full torn-safe scan (small file)
-        out: list[WatchRecord] = []
-        for line in lines:
-            try:
-                out.append(WatchRecord.model_validate_json(line))
-            except Exception:
-                continue  # skip malformed line (fail-closed, BR-13)
-        return out
+        """All watch records, read incrementally (tail only) and cached.
+
+        watch.jsonl is append-only with a single writer, so each call consumes
+        only the bytes appended since the last read instead of re-parsing the
+        whole file (review #8)."""
+        with self._lock:
+            prev = self._read_offset
+            lines, new_offset = read_complete_lines(self.path, self._read_offset)
+            if new_offset < prev:  # file truncated/rotated -> rebuild from scratch
+                self._records_cache = []
+            self._read_offset = new_offset
+            for line in lines:
+                try:
+                    self._records_cache.append(WatchRecord.model_validate_json(line))
+                except Exception:
+                    continue  # skip malformed line (fail-closed, BR-13)
+            return list(self._records_cache)
 
     def active(self) -> list[WatchTrigger]:
         """Currently-active triggers: set, not cleared, not past ``valid_until``.
@@ -79,31 +98,44 @@ class WatchStore:
         return out
 
     # ---- fired-set (id-set scoped to an ET date, critic#5) ---------------- #
-    def _load_fired(self) -> tuple[str, set[str]]:
+    # In-memory + a lock so mark_fired (wake-turn thread) and the midnight sweep
+    # don't lose updates via an unsynchronized read-modify-write (review #8).
+    def _ensure_fired_loaded(self) -> str:
+        """Load the fired-set for today on first use / ET-date rollover. Caller
+        holds ``self._lock``. Returns today's ET date."""
         today = today_et().isoformat()
+        if self._fired_date == today:
+            return today
+        self._fired_date = today
+        self._fired_ids = set()
         try:
             data = json.loads(self.fired_file.read_text(encoding="utf-8"))
             if data.get("et_date") == today:
-                return today, set(data.get("fired_ids", []))
+                self._fired_ids = set(data.get("fired_ids", []))
         except Exception:
-            pass
-        return today, set()  # missing / stale (rolled over) -> empty today
+            pass  # missing / stale (rolled over) -> empty today
+        return today
 
     def is_fired(self, trigger_id: str) -> bool:
-        _, fired = self._load_fired()
-        return trigger_id in fired
+        with self._lock:
+            self._ensure_fired_loaded()
+            return trigger_id in self._fired_ids
 
     def mark_fired(self, trigger_id: str) -> None:
-        today, fired = self._load_fired()
-        if trigger_id in fired:
-            return
-        fired.add(trigger_id)
-        self._write_fired(today, fired)
+        with self._lock:
+            today = self._ensure_fired_loaded()
+            if trigger_id in self._fired_ids:
+                return
+            self._fired_ids.add(trigger_id)
+            self._write_fired(today, self._fired_ids)
 
     def sweep(self) -> None:
-        """ET-midnight: reset the fired set to today's empty set if rolled over."""
-        today, fired = self._load_fired()  # already today-scoped (rollover -> empty)
-        self._write_fired(today, fired)
+        """ET-midnight: reset the fired set to today's empty set (rollover)."""
+        with self._lock:
+            today = today_et().isoformat()
+            self._fired_date = today
+            self._fired_ids = set()
+            self._write_fired(today, self._fired_ids)
 
     def _write_fired(self, et_date: str, fired_ids: set[str]) -> None:
         try:

@@ -68,8 +68,9 @@ def test_brief_held_symbols_come_from_snapshot_not_broker():
 
 
 def test_brief_includes_news_when_present():
+    from src.agent.intraday.records import NewsDiff
     cache = BarCache(_Provider())
-    news = {"AAPL": {"headlines": ["AAPL unveils chip"]}}
+    news = {"AAPL": NewsDiff(symbol="AAPL", headlines=["AAPL unveils chip"])}
     brief = BriefAssembler(cache).build(snapshot=_snapshot(), news=news)
     assert "NEWS (new): AAPL: AAPL unveils chip" in brief
 

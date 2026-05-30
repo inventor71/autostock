@@ -49,6 +49,13 @@ class AgentTradingMode:
         self.experiment_start = experiment_start
         self.min_trade_notional = min_trade_notional
         self.scheduler = TradingScheduler()
+        # Tell the agent subprocess which journal root to write watch.jsonl to, so
+        # the `watch` tool and the daemon's WatchStore never split on a non-default
+        # workspace (review #5). Inherited via session._invoke's env copy.
+        journal = getattr(self.executor, "journal", None)
+        if journal is not None:
+            import os
+            os.environ["AGENT_JOURNAL_ROOT"] = str(journal.root)
         # F3 intraday redesign: brief assembly + event-driven wakes + news diff.
         # Active ONLY with steering (it reads the snapshot/RunState/ReconcileWorker);
         # without steering, _intraday falls back to the legacy prompt (NFR-8).
@@ -93,14 +100,9 @@ class AgentTradingMode:
         return YFinanceNewsProvider()
 
     def _intraday_symbols(self) -> list[str]:
-        snap = (self.steering.last_snapshot or {}) if self.steering else {}
-        held = list((snap.get("positions") or {}).keys())
-        watched = []
-        try:
-            watched = [t.symbol for t in self._watch.active()] if self._watch else []
-        except Exception:
-            pass
-        return list(dict.fromkeys(held + watched))
+        from src.agent.intraday.util import held_and_watched
+        snap = self.steering.last_snapshot if self.steering else None
+        return held_and_watched(snap, self._watch)
 
     def _brief(self, *, include_news: bool) -> str:
         snap = self.steering.last_snapshot if self.steering else None

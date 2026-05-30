@@ -125,9 +125,10 @@ class BriefAssembler:
         return "DELTA new_fills: " + "; ".join(bits)
 
     def _news_line(self, news) -> str:
+        # news is dict[str, NewsDiff] from NewsPoller.diff_for.
         bits = []
         for sym, nd in news.items():
-            heads = getattr(nd, "headlines", None) or (nd.get("headlines") if isinstance(nd, dict) else None)
+            heads = getattr(nd, "headlines", None)
             if heads:
                 bits.append(f"{sym}: {heads[0]}")
         return ("NEWS (new): " + " | ".join(bits)) if bits else ""

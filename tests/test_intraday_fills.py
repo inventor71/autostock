@@ -93,6 +93,28 @@ def test_alpaca_get_fills_parses_real_activities_shape():
     assert fills[1].symbol == "RTX" and fills[1].fill_id != fills[0].fill_id
 
 
+def test_to_fill_event_fallback_ts_is_tz_aware():
+    # No transaction_time -> fallback must be tz-aware so a mixed batch never
+    # raises on max(f.ts) in the snapshot cursor (review #3).
+    ev = AlpacaBroker._to_fill_event(
+        {"id": "x", "symbol": "AAPL", "qty": "1", "price": "1", "side": "buy"})
+    assert ev is not None and ev.ts.tzinfo is not None
+
+
+def test_get_fills_mixed_missing_and_present_transaction_time():
+    rows = [
+        {"id": "a1", "symbol": "AAPL", "qty": "1", "price": "1", "side": "buy",
+         "transaction_time": "2026-05-30T14:31:00Z"},
+        {"id": "a2", "symbol": "AAPL", "qty": "1", "price": "1", "side": "buy"},  # no ts
+    ]
+    broker = _alpaca()
+    broker._client = _FakeClient(rows)
+    fills = broker.get_fills()
+    # both parse, both tz-aware -> max(f.ts) is safe
+    assert len(fills) == 2 and all(f.ts.tzinfo is not None for f in fills)
+    assert max(f.ts for f in fills)  # does not raise
+
+
 def test_fill_event_idempotent_by_activity_id():
     # The same order partially filling twice yields two distinct activity ids,
     # so they must NOT collapse (the order-level _alpaca_fills bug this replaces).

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -300,7 +300,7 @@ class AlpacaBroker(BaseBroker):
             ts_raw = a.get("transaction_time") or a.get("date")
             ts = (
                 datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
-                if ts_raw else datetime.now()
+                if ts_raw else datetime.now(timezone.utc)  # tz-aware fallback (review #3)
             )
             return FillEvent(
                 fill_id=str(a["id"]),

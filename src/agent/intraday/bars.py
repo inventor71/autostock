@@ -33,10 +33,13 @@ def atr(bars: pd.DataFrame | None, period: int = 14) -> float | None:
 
 
 def avg_volume(bars: pd.DataFrame | None, period: int = 20) -> float | None:
-    """Mean volume over the last ``period`` bars (pure). None if unavailable."""
-    if bars is None or "volume" not in getattr(bars, "columns", []) or len(bars) == 0:
+    """Mean volume over the ``period`` bars BEFORE the last one (pure).
+
+    Excludes the current/last bar so a volume spike doesn't inflate its own
+    baseline and mask itself (review #6). None if there's no prior bar."""
+    if bars is None or "volume" not in getattr(bars, "columns", []) or len(bars) < 2:
         return None
-    return float(bars["volume"].tail(period).mean())
+    return float(bars["volume"].iloc[:-1].tail(period).mean())
 
 
 class BarCache:

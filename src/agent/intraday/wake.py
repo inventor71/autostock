@@ -20,6 +20,7 @@ from loguru import logger
 
 from src.agent.intraday.abnormal import AbnormalConfig, detect_abnormal
 from src.agent.intraday.records import WakeEvent
+from src.agent.intraday.util import held_and_watched, session_open
 
 _EXIT_KW = ("stop", "tighten", "trim", "exit", "sell", "reduce", "protect")
 _ENTRY_KW = ("buy", "add", "enter", "long", "scale", "accumulate")
@@ -54,6 +55,8 @@ class WakeDetector:
         self._buffer: list[WakeEvent] = []
         self._lock = threading.Lock()
         self._abnormal_fired: set[str] = set()    # latch: one wake per abnormal episode
+        self._seen_fill_ids: set[str] = set()     # latch: one wake per fill (review #1)
+        self._pending_watch: set[str] = set()     # watch ids buffered but not yet fired (review #2)
 
     # ---- scheduler entry point (5s) --------------------------------------- #
     def detect_wakes(self) -> None:
@@ -82,12 +85,26 @@ class WakeDetector:
             self._buffer = []
         if not events:
             return None
+        # Mark watch triggers fired ONLY now, when their turn actually runs — not
+        # at detect time, so a timed-out/never-run wake doesn't silently consume a
+        # watch for the day (review #2). They were held in _pending_watch meanwhile.
+        for ev in events:
+            if ev.kind == "watch_trigger":
+                wid = ev.payload.get("id")
+                if wid:
+                    self._watch.mark_fired(wid)
+                    self._pending_watch.discard(wid)
         return self._wake_runner(events)
 
     # ---- detectors (all read cached data only) ---------------------------- #
     def _fill_events(self, snap) -> list[WakeEvent]:
         out = []
         for f in snap.get("fills", []) or []:
+            fid = f.get("fill_id")
+            if fid and fid in self._seen_fill_ids:
+                continue  # already woke for this fill (review #1)
+            if fid:
+                self._seen_fill_ids.add(fid)
             sell = str(f.get("side")) == "sell"
             kind = "protective_reassess" if sell else "new_fill"
             out.append(WakeEvent(
@@ -97,25 +114,14 @@ class WakeDetector:
         return out
 
     def _symbols(self, snap) -> list[str]:
-        held = list((snap.get("positions") or {}).keys())
-        watched = []
-        try:
-            watched = [t.symbol for t in self._watch.active()] if self._watch else []
-        except Exception:
-            pass
-        return list(dict.fromkeys(held + watched))
+        return held_and_watched(snap, self._watch)
 
     def _abnormal_events(self, snap) -> list[WakeEvent]:
         out = []
         for sym in self._symbols(snap):
             price = self._bars.get_price(sym)
             bars = self._bars.get_bars(sym)
-            ref = None
-            if bars is not None and len(bars) > 0:
-                try:
-                    ref = float(bars["open"].iloc[0])
-                except Exception:
-                    ref = None
+            ref = session_open(bars)  # session open, not the rolling-window oldest bar (review #4)
             sig = detect_abnormal(sym, price, ref, bars, self._cfg)
             if sig is None:
                 self._abnormal_fired.discard(sym)  # episode cleared -> re-armable
@@ -133,11 +139,11 @@ class WakeDetector:
             return []
         out = []
         for t in self._watch.active():
-            if self._watch.is_fired(t.id):
-                continue
+            if self._watch.is_fired(t.id) or t.id in self._pending_watch:
+                continue  # already fired today, or already buffered (review #2)
             if not self._watch_met(t):
                 continue
-            self._watch.mark_fired(t.id)
+            self._pending_watch.add(t.id)  # mark_fired deferred to _fire_wake
             out.append(WakeEvent(
                 kind="watch_trigger", symbol=t.symbol,
                 reason=f"{t.symbol} {t.condition} {t.level} met (intent: {t.intent or 'n/a'})",

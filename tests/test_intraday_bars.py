@@ -39,7 +39,8 @@ def test_atr_and_avg_volume_example():
     bars = _bars([110, 112, 111], [100, 101, 103], [105, 108, 107], [100, 200, 300])
     a = atr(bars, period=14)
     assert a is not None and a > 0
-    assert avg_volume(bars) == 200.0
+    # excludes the current (last) bar from its own baseline (review #6): mean(100,200)
+    assert avg_volume(bars) == 150.0
 
 
 def test_atr_none_when_insufficient():

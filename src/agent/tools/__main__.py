@@ -83,10 +83,16 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "account":
         out = market.account(_broker())
     elif args.cmd == "watch":
+        import os
+
         from src.agent.intraday.watch_store import WatchStore
         from src.agent.journal import Journal
 
-        store = WatchStore(Journal().root)
+        # Write to the SAME journal root the daemon's WatchStore reads. The daemon
+        # exports its root as AGENT_JOURNAL_ROOT when it spawns the agent, so a
+        # non-default workspace doesn't split writer/reader (review #5).
+        root = os.environ.get("AGENT_JOURNAL_ROOT") or Journal().root
+        store = WatchStore(root)
         if args.watch_cmd == "set":
             t = store.set(args.symbol, args.condition, args.level, intent=args.intent,
                           valid_until=args.until, thesis_ref=args.thesis)
