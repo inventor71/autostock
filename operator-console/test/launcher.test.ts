@@ -195,39 +195,51 @@ describe("daemon.healthWait (critic #1)", () => {
     const d = svc({ now: clk.now, sleep: clk.sleep, readSnapshot: () => null, fileExists: () => true });
     expect((await d.healthWait()).healthy).toBe(false);
   });
+
+  test("fresh but FROZEN (not advancing) → wedged (dead-recent daemon, live-verify)", async () => {
+    const clk = fakeClock();
+    const frozen = new Date(clk.get()).toISOString(); // recent but never changes
+    const d = svc({ now: clk.now, sleep: clk.sleep, readSnapshot: () => ({ published_at: frozen }), fileExists: () => true });
+    expect((await d.healthWait()).healthy).toBe(false); // advance required, not just freshness
+  });
 });
 
-describe("daemon.ensureRunning state machine (BR-3/BR-9.1)", () => {
-  function withState(state: string, snapAdvancing = true) {
+describe("daemon.ensureRunning (health-first attach + systemd, live-verify hardening)", () => {
+  function harness(opts: { state?: string; freshFrom?: "always" | "afterStart" | "never" }) {
     const clk = fakeClock();
     const calls: string[][] = [];
+    let started = false;
     const run = async (args: string[]) => {
       calls.push(args);
-      if (args.includes("is-active")) return { code: 0, stdout: state, stderr: "" };
+      if (args.includes("is-active")) return { code: 0, stdout: opts.state ?? "inactive", stderr: "" };
+      if (args.includes("start")) started = true;
       return { code: 0, stdout: "", stderr: "" };
     };
-    const readSnapshot = () =>
-      snapAdvancing ? { published_at: new Date(clk.get()).toISOString() } : null;
+    const readSnapshot = () => {
+      const live = opts.freshFrom === "always" || (opts.freshFrom === "afterStart" && started);
+      return live ? { published_at: new Date(clk.get()).toISOString() } : null;
+    };
     const d = svc({ run, readSnapshot, now: clk.now, sleep: clk.sleep, fileExists: () => true });
     return { d, calls };
   }
 
-  test("inactive → start called → healthy", async () => {
-    const { d, calls } = withState("inactive");
+  test("already running (fresh snapshot, e.g. a MANUAL daemon) → attach, NO systemctl start", async () => {
+    const { d, calls } = harness({ state: "inactive", freshFrom: "always" });
+    const r = await d.ensureRunning();
+    expect(r.healthy).toBe(true);
+    expect(r.reason).toContain("attached");
+    expect(calls.some((c) => c.includes("start"))).toBe(false); // never double-start
+  });
+
+  test("down (no fresh snapshot) → systemctl start → healthy after it publishes", async () => {
+    const { d, calls } = harness({ state: "inactive", freshFrom: "afterStart" });
     const r = await d.ensureRunning();
     expect(r.healthy).toBe(true);
     expect(calls.some((c) => c.includes("start"))).toBe(true);
   });
 
-  test("active → no start, health verified", async () => {
-    const { d, calls } = withState("active");
-    const r = await d.ensureRunning();
-    expect(r.healthy).toBe(true);
-    expect(calls.some((c) => c.includes("start"))).toBe(false);
-  });
-
-  test("failed → throws DaemonStartError (no papering over)", async () => {
-    const { d } = withState("failed");
+  test("failed unit + no fresh snapshot → throws DaemonStartError (no papering over)", async () => {
+    const { d } = harness({ state: "failed", freshFrom: "never" });
     await expect(d.ensureRunning()).rejects.toBeInstanceOf(DaemonStartError);
   });
 });

@@ -13,6 +13,7 @@ import type { LauncherConfig } from "./config";
 export const HEALTH_WINDOW_MS = 45_000; // critic #1: bus worst-case, not the 5s publish cadence
 export const HEALTHWAIT_TIMEOUT_MS = 60_000; // absorbs cold-start premarket research batch
 export const HEALTH_POLL_MS = 1_000;
+export const ATTACH_PROBE_MS = 8_000; // attach-if-running probe: ~1 publish interval (5s) + margin
 
 export interface RunResult {
   code: number;
@@ -119,11 +120,31 @@ export class DaemonService {
     await this.run(["loginctl", "enable-linger", process.env.USER ?? ""]).catch(() => undefined);
   }
 
+  /** True if a snapshot is fresh RIGHT NOW — i.e. some daemon (systemd OR manual) is publishing.
+   *  The real liveness signal is the snapshot, not systemd state (live-verify finding): a
+   *  manually-run daemon is invisible to `systemctl is-active` yet very much alive. */
+  isFreshNow(): boolean {
+    const pub = publishedAtMs(this.readSnapshot());
+    return !Number.isNaN(pub) && this.now() - pub < HEALTH_WINDOW_MS;
+  }
+
   /**
-   * Ensure the daemon is up and publishing. active → verify health; inactive → start (idempotent,
-   * BR-9.1) → health-wait; failed → diagnose (do not paper over with start).
+   * Ensure the daemon is up and publishing, then attach. Order (live-verify hardening):
+   *  1. If a daemon is ALREADY publishing fresh snapshots → confirm liveness & attach. NEVER
+   *     start a second instance over a running (possibly manual) daemon — that would double up
+   *     on the same channel/broker.
+   *  2. Otherwise manage via systemd: install (idempotent) → start (idempotent, BR-9.1) →
+   *     health-wait. 'failed' → diagnose (do not paper over with start).
    */
   async ensureRunning(): Promise<HealthResult> {
+    // 1. attach-if-running (true liveness = a fresh, advancing snapshot)
+    if (this.isFreshNow()) {
+      const h = await this.healthWait(ATTACH_PROBE_MS);
+      if (h.healthy) return { healthy: true, reason: `attached to running daemon (${h.reason})` };
+      // fresh but not advancing → daemon may have just died; fall through to the start path.
+    }
+
+    // 2. start via systemd
     await this.ensureInstalled();
     const st = await this.state();
     if (st === "failed") {
@@ -151,26 +172,23 @@ export class DaemonService {
 
   /**
    * Poll snapshot.json until the daemon proves liveness: published_at ADVANCES from the first
-   * observation OR two consecutive fresh reads (critic #1). Bare mtime is never trusted.
+   * observation while staying fresh (critic #1). Bare mtime is never trusted; "fresh but frozen"
+   * (a daemon that died <window ago, leaving a recent snapshot) is correctly NOT accepted —
+   * only a new publish (advance) proves the daemon is alive now.
    */
-  async healthWait(): Promise<HealthResult> {
-    const deadline = this.now() + HEALTHWAIT_TIMEOUT_MS;
+  async healthWait(timeoutMs: number = HEALTHWAIT_TIMEOUT_MS): Promise<HealthResult> {
+    const deadline = this.now() + timeoutMs;
     const initial = publishedAtMs(this.readSnapshot());
-    let consecutiveFresh = 0;
     while (this.now() <= deadline) {
       const pub = publishedAtMs(this.readSnapshot());
       const fresh = !Number.isNaN(pub) && this.now() - pub < HEALTH_WINDOW_MS;
       const advanced = !Number.isNaN(pub) && (Number.isNaN(initial) || pub > initial);
-      if (fresh && advanced) return { healthy: true, reason: "snapshot advanced & fresh" };
-      consecutiveFresh = fresh ? consecutiveFresh + 1 : 0;
-      if (consecutiveFresh >= 2) return { healthy: true, reason: "snapshot fresh (x2)" };
+      if (fresh && advanced) return { healthy: true, reason: "snapshot advancing & fresh" };
       await this.sleep(HEALTH_POLL_MS);
     }
     return {
       healthy: false,
-      reason: `daemon active but snapshot not advancing within ${Math.round(
-        HEALTHWAIT_TIMEOUT_MS / 1000,
-      )}s (wedged?)`,
+      reason: `snapshot not advancing within ${Math.round(timeoutMs / 1000)}s (daemon wedged/down?)`,
     };
   }
 }
