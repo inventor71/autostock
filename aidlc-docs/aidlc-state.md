@@ -327,11 +327,125 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
         already merged); base = **worktree off `main`** (F2 branch abandoned per F4 Q7=C). Docs updated: requirements §11.0 table +
         §1/§5/NFR-3; execution-plan banner + Component/Risk lines. **Next = CONSTRUCTION → Functional Design (EXECUTE) on the main base.**
   - **CONSTRUCTION — Unit `intraday-redesign`:**
-    - [~] Functional Design **Part B (plan+questions)** created 2026-05-30 — **AWAITING ANSWERS at the gate.**
-          `aidlc-docs/construction/plans/intraday-redesign-functional-design-plan.md` (Korean, `[Answer]:` tags).
-          8 open FD decisions: Q1 watch.jsonl writer path, Q2 condition vocab, Q3 new-fill detect basis (C-3 snapshot fills cursor),
-          Q4 abnormal-move def+thresholds+config, Q5 multi-trigger coalesce, Q6 brief render format, Q7 entries_halted BUY-wake
-          suppression, Q8 news diff scope/cadence. On answers → generate domain-entities/business-logic-model/business-rules.md.
+    - [x] Functional Design **Part B answered** 2026-05-30 — all 8 = recommended defaults: **Q1=A** (new `watch set/clear`
+          agent tool, sole writer of `workspace/watch.jsonl`), **Q2=A,B** (`price_above/below` + `close_above/below`),
+          **Q3=A** (broker fills/activities cursor via `get_fills(since)` → snapshot payload; truth, not qty-diff inference),
+          **Q4=A(i)** (ATR×k OR vol×m, `config/settings.yaml` `intraday.abnormal_move` block), **Q5=A** (coalesce multi-wake
+          into ONE wake turn), **Q6=A** (compact structured text brief), **Q7=B** (entries_halted = keep firing + inject
+          "no new entries" prompt; final block stays `gate_agent_decision` — NOT kind-based suppression), **Q8=B** (news diff
+          over held + watched symbols, ≥15min TTL).
+    - [x] Functional Design **artifacts generated** 2026-05-30 (awaiting approval). Grounded against main `src/agent/steering/`
+          (turns.py try_scheduled_turn/ReconcileWorker.trigger(kind=), runtime.publish_snapshot, gate, state RunState).
+          `construction/intraday-redesign/functional-design/{domain-entities,business-logic-model,business-rules}.md` (UI 없음→frontend 생략).
+          **Entities:** E1 WatchTrigger (jsonl, agent-tool-written, fired/valid_until cursor) · E2 IntradayBrief (transient,
+          market=daemon-direct / account+fills=snapshot-cache, C-7) · E3 WakeEvent (4 kinds, coalesced) · E4 SnapshotDelta/FillDelta
+          (fills-cursor based, C-3 잔여) · E5 NewsDiff · E6 AbnormalMoveSignal; + main reuse boundary (RunState/snapshot/ByteCursor/
+          TurnCoordinator/ReconcileWorker/gate — no new concurrency primitive). **Key FD finding:** main `ReconcileWorker._fire`
+          fires each *kind* as a SEPARATE reconcile_turn → Q5=A "one turn" needs a single `wake` kind whose run_fn drains a
+          typed-event buffer into one prompt (noted in BLM-2/BR-9). F3 net-new = brief assembly + wake detector (new_fill/abnormal/
+          watch/protective) + news poller + watch.jsonl + fills-cursor snapshot ext + entries_halted prompt hook; concurrency/JSONL/
+          snapshot skeleton inherited from main.
+    - **`/critic` adversarial review (isolated subagent) 2026-05-30 — 8 findings (HIGH 3, MED 4, LOW 2), ALL cross-verified
+          valid vs `main` code; reflected into the FD docs:** #1 [HIGH] `_with_human_context` **does not exist** — F4 injects
+          human context (`_recent_context`) only into `run_reconcile` (`runtime.py:75`), NOT intraday/scheduled/wake → BriefAssembler
+          must BUILD it (directives/pending/locks) as net-new, not "preserve" (E2/BLM-1/BR-5.3). #2 [HIGH] Q5=A coalesce can starve
+          the human reconcile — `ReconcileWorker` debounce timer is **kind-shared** (`turns.py:99-101`) + `_fire` sequential (`:110`,
+          600s timeout) → split wake/human lanes (or per-kind timers) + shorten wake timeout + typed-event buffer is WakeDetector-owned,
+          drained at fire time (BLM-2/BR-9; ReconcileWorker is a *modification*, not pure reuse). #3 [HIGH] `get_fills` must be
+          `GetActivitiesRequest(FILL)` — existing `_alpaca_fills` is order-level (`get_orders`, `trades_log.py:45`), no per-fill id /
+          partial-fill blind → net-new broker work (E4/BLM-6/BR-7). #4 [MED] entries_halted "gate blocks BUY" is **false** —
+          `gate_agent_decision` only checks human locks (`gate.py:8,33-49`), no entries_halted consumer anywhere. #5 [MED] `ByteCursor`
+          has no date scoping (integer offset, `jsonl.py:67-84`) → fired tracking needs separate `{et_date, fired_ids}` (E1/BR-6.4/6.5).
+          #6 [MED] `outcome_lines` calls `broker.get_position` directly (`review.py:42`) → reuse formatting only, data from snapshot
+          (BR-5.4). #7 [MED] ATR(14) needs intraday bars; `data_provider.get_bars` uncached + yfinance rate-limited → bar cache 1–5min,
+          separate from pure ATR math (E6/BR-8). #8 [LOW] `run_intraday` called with no args (`agent.py:110`) → brief needs builder +
+          signature + call-site wiring (BLM-1/3). Validated-as-sound: try_scheduled_turn skip-vs-yield, `_paused()` on scheduled path,
+          5s snapshot bus job + atomic write.
+          **Policy forks resolved by user:** **#4 → Q7=A** (entries_halted = WakeDetector suppresses `entry_inducing` wakes; gate stays
+          out of it since it truly doesn't block — REVERSES the earlier Q7=B), **#3 → activities API adopted** (`GetActivitiesRequest(FILL)`,
+          new broker port). Other 6 = engineering refinements folded into FD docs. F3 net-new (post-critic) = BriefAssembler
+          (market-direct + snapshot account/fills + **human-context** + delta + news) · WakeDetector (new_fill via activities cursor /
+          abnormal-move with bar cache / watch / protective; **entry_inducing suppression when halted**) · news poller · watch.jsonl
+          (+`watch set/clear` tool, fired-set {et_date,fired_ids}) · snapshot fills-event ext · **ReconcileWorker lane/timer mod** ·
+          broker `get_fills` activities port.
+    - [x] Functional Design — **APPROVED** 2026-05-30 ("다음 단계로 진행"). Construction running autonomously per
+          [[feedback-autonomy-construction]] (NFR Req → NFR Design → Code Gen Part 1, stop before worktree).
+    - [x] NFR Requirements — **COMPLETE (minimal)** 2026-05-30 (awaiting approval). Artifacts:
+          `construction/intraday-redesign/nfr-requirements/{nfr-requirements,tech-stack-decisions}.md`. **Conclusion: 0 new runtime
+          deps** (stdlib threading/queue/json + pydantic/loguru/APScheduler/alpaca-py/yfinance reused; Hypothesis dev). **alpaca-py
+          0.43.2 verified**: `GetActivitiesRequest` absent from the *Trading* client (Broker client only), but `TradeActivity` model +
+          `ActivityType.FILL` exist → `get_fills` via raw `TradingClient.get("/account/activities", …)` (inherited RESTClient.get),
+          still 0 new deps but a paper-account live-verify item (R1). Deferred to NFR Design: ReconcileWorker lane/timer, snapshot fills
+          payload, bar cache cadence, brief threading, wake detector cadence, entry_inducing placement, fired-set form.
+    - [x] NFR Design — **COMPLETE** 2026-05-30 (awaiting approval). Artifacts:
+          `construction/intraday-redesign/nfr-design/{nfr-design-patterns,logical-components}.md`. P1–P6 adapted from F2/F4 with all
+          critic fixes. **7 deferred resolved:** (1) ReconcileWorker **per-kind timers** (`dict[str,Timer]`, kills wake→human
+          starvation) + wake-lane timeout ~120s + WakeDetector-owned buffer drained at fire time; (2) `publish_snapshot` adds `fills`
+          events + `.fills.cursor` (bus-worker `get_fills`, id-dedup); (3) **BarCache** 60s stale + pure ATR/avg split; (4) BriefAssembler
+          runs inside the turn run_fn (scheduled/wake thread), snapshot+data_provider only, **no `outcome_lines`** (it calls
+          `broker.get_position`); (5) `agent_wake` 5s APScheduler job → detect_wakes (non-blocking trigger only, market data direct,
+          account via snapshot); (6) `classify_entry_inducing` pure fn in WakeDetector, fail-closed True; (7) fired-set
+          `watch_fired.json{et_date,fired_ids}` swept by the existing 0:01 `daily_sweep`. New modules `src/agent/intraday/{records,
+          watch_store,bars,abnormal,brief,news_diff,wake}.py` + `watch` tool + broker `get_fills` (base no-op + Alpaca raw GET) + 6
+          workspace data files + settings `intraday:` block; edits to turns/runtime/orchestrator/prompts/modes-agent/brokers.
+          Concurrency table maps thread→broker/market/turn_lock so NFR-1/NFR-2 invariants hold. Infra Design SKIP (local daemon).
+    - [x] Infrastructure Design — **SKIP** (local CLI/daemon, no cloud infra).
+    - [~] Code Generation **Part 1 (plan)** — created 2026-05-30, **awaiting approval to enter Part 2**. Plan:
+          `construction/plans/intraday-redesign-code-generation-plan.md` (Steps 0–11: worktree → records → broker get_fills → snapshot
+          fills → watch+tool+fired-set → bars/abnormal → BriefAssembler → news poller → WakeDetector+ReconcileWorker lane → orchestrator/
+          prompts → modes/agent+settings wiring → integration/PBT/regression+R1 live). 0 new deps. On approval, Part 2's FIRST action =
+          `git worktree add … -b feat/intraday-redesign main`; no code/worktree yet.
+    - **`/critic` 2nd review (NFR Design + Code Gen plan, isolated subagent) 2026-05-30 — 8 findings (HIGH 3, MED 4, LOW 3),
+          ALL cross-verified valid vs `main`; reflected into NFR Design + plan (engineering only, no policy fork):** #1 [HIGH]
+          per-kind timers DON'T "solve" starvation — the real serialization point is the single `turn_lock`; `_fire` calls
+          `reconcile_turn` sequentially (`turns.py:110-112`), so human waits ≤ one in-flight wake turn (inherent/non-preemptible,
+          = CQ-R1). Fix: per-kind timers only kill the *indefinite cancellation* starvation; `_fire` dispatches human-kind first;
+          state the one-turn wait honestly. #2 [HIGH] the "120s wake timeout" path doesn't exist — `_fire` passes no timeout
+          (`turns.py:112`) and `reconcile_turn` timeout is *acquire*-only, not execution (`turns.py:53,70`) → bound wake execution via a
+          turn-level `_run(timeout=)`; plumb kind→timeout. #3 [HIGH] `detect_wakes` does blocking market-data network on the
+          APScheduler default pool; `coalesce=True` (`scheduler.py:12`) silently drops wake ticks if a tick overruns 5s → detect_wakes
+          reads cached data only (BarCache + short price TTL) + `misfire_grace_time`/dedicated executor. #4 [MED] snapshot is file-only
+          (`channel.py:178`, no in-proc getter) → add `SteeringRuntime.last_snapshot` in-proc dict, brief reads memory not file;
+          empty-snapshot fail-closed. #5 [MED] `get_fills` on the bus is delayed behind emergency/long batches → new_fill staleness
+          bounded by bus backlog; ACCEPTED (OCO protection mechanical, fill *awareness* lateness is safe). #6 [MED] `held_symbols()`
+          calls `portfolio_provider()`→broker on the turn thread (`orchestrator.py:62-70`) → F3 brief/wake derive held from snapshot
+          positions, not held_symbols. #7 [MED] steering=None degrade undefined → `_intraday` falls back to legacy
+          `intraday_prompt(quotes,held)`, wake/news off (NFR-8 preserved). #8/#9/#10 [LOW] base broker path is `src/execution/base.py`
+          (get_fills concrete no-op safe, verified); `/account/activities` must NOT include `/v2` (get prepends version); Step 2
+          monkeypatch tests assume response shape → R1 live is authoritative. Edits: nfr-design-patterns.md (P1/P2/P5/P7+table),
+          logical-components.md (file-edit table+brief+broker path), tech-stack-decisions.md (/v2), code-generation-plan.md
+          (Steps 2/3/5/6/8/9/10/11+surface). **Decisions taken (flag if disagree):** #5 keep get_fills on bus, #7 legacy fallback when
+          steering off. **Gate: approve Part 1 plan to start coding.**
+    - [x] Code Generation **Part 1 (plan) — APPROVED** 2026-05-30 ("시작하자"; turn_lock kept per user decision — removal would
+          require a session-model redesign, deferred, not even backlogged as a separate feature until observed pain).
+    - [x] Code Generation **Part 2 (build) — COMPLETE** 2026-05-30 on worktree `.claude/worktrees/intraday-redesign`, branch
+          `feat/intraday-redesign` off main (e231015). **All Steps 0–11 green; full suite 282 → 346.** Commits: `826335a` (S1 records +
+          S2 broker get_fills activities), `e58e7ee` (S3 snapshot fills + last_snapshot in-proc), `625371e` (S4 watch store/tool/fired-set
+          + S5 bars/abnormal PBT), `1029451` (S6 BriefAssembler + S7 NewsPoller), `18e77cb` (S8 WakeDetector + ReconcileWorker per-kind
+          timers), `124e725` (S9 orchestrator run_intraday(brief)/run_wake + prompts), `fbd174d` (S10 daemon wiring + IntradayConfig +
+          settings.yaml + scheduler misfire_grace), `32fdab5` (S11 integration + DESIGN §5.8.1/README).
+          **New:** `src/agent/intraday/{records,watch_store,bars,abnormal,brief,news_diff,wake,settings}.py` + `watch` agent tool + 13
+          test modules (incl. Hypothesis PBT). **Modified:** steering/turns.py (per-kind timers — note: chosen over the planned "_fire
+          human-first dispatch" because per-kind timers make batch-ordering moot; human has an independent timer so it's not starved,
+          while the single turn_lock keeps the inherent one-turn wait), steering/runtime.py (snapshot fills + last_snapshot), orchestrator
+          (brief/run_wake/held-from-snapshot), prompts (brief/wake_prompt), modes/agent (F3 wiring + steering=None legacy fallback),
+          scheduler (misfire_grace_time=30), execution/base + alpaca_broker (get_fills), config (intraday block). **Invariants held:**
+          advisor-only, decisions.jsonl→gate→RiskManager→Broker unchanged, 0 new runtime deps, agentic path not backtested.
+          **R1 live verify — DONE & PASSED 2026-05-30** (run directly, market closed, read-only `/account/activities`): raw GET returns
+          a list of 14 FILL dicts (keys id/activity_type/transaction_time/type/side/symbol/qty/price/cum_qty/leaves_qty/order_id/
+          order_status); **activity `id` is `<seq>::<uuid>`, unique even for `type=partial_fill`** → idempotency-by-id holds and partial
+          fills are NOT collapsed (the exact Q3=A goal the order-level `_alpaca_fills` couldn't meet); `after` cursor filters strictly
+          newer; RFC3339(Z) `transaction_time` parses. Real shape locked into `test_intraday_fills.py` (commit 072f6ac). Known limit:
+          single-page GET (≤100/poll; fine with a recent `after` cursor). Monkeypatch assumptions matched reality. **Full suite 347 green.**
+          Build & Test stage + merge decision = next.
+    - [x] **Build and Test — COMPLETE** 2026-05-30 (awaiting approval to proceed to Operations). Instruction docs:
+          `construction/build-and-test/intraday-redesign/{build-instructions,unit-test-instructions,integration-test-instructions,
+          performance-test-instructions,build-and-test-summary}.md`. **Results captured:** build import-smoke OK + `pip check` clean (0 new
+          deps); F3 unit tests **65 passed** (11 modules incl. Hypothesis PBT); **full regression 347 passed** (282 baseline + 65, 0
+          regressions); integration seams green (wake-through-real-engine, skip-if-busy V3, daemon wiring, steering=None fallback);
+          **R1 live PASSED & pinned**; perf/load = N/A (single local daemon) with NF-1..5 concurrency/responsiveness guards documented;
+          Security Baseline applicable rules met (SECURITY-03/-15). Invariants held.
+          **REMAINING (user): merge decision** for `feat/intraday-redesign` → `main` (then Operations = placeholder). Branch NOT merged.
 
 ## New Feature Track: Claude-Code-native Steering Console (F4 — replaces F2 front-end)
 > **STATUS (2026-05-30): DONE & merged to `main` (merge `1719fcf`).** This is the INCEPTION/design
@@ -684,3 +798,284 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
   제안만")와 일관 — 제거한 건 로드맵 *추가분*이지 락된 결정이 아님.
 - **Deferred feature idea (F-future): 사이드바 마우스 드래그 리사이즈** — opencode 사이드바는 폭 고정(42, 이제 env override).
   마우스 드래그 핸들/동적 상태/재레이아웃이 필요해 별도 AI-DLC feature 트랙으로 분리(사용자 결정 2026-05-30).
+
+## New Feature Track: Console-native Launcher & Rebrand (F5)
+- **Started**: 2026-05-30. **Stage**: INCEPTION → Requirements Analysis (Standard depth), awaiting answers at the gate.
+- **Goal (user)**: Make the F4 operator console more convenient & stock-native. Three musts: (1) start directly in the
+  sidebar-visible view (currently the opencode home/splash with the animated "opencode" logo + "Ask anything..." box shows
+  first); (2) rebrand the logo "opencode" → "autostock"; (3) replace the entry point — instead of `cd operator-console/cli &&
+  bun dev`, ship a `claude`-like binary/single command, manage the daemon via systemd (auto-start if down, attach if already
+  running), and improve error handling so a failed tool launch never silently exits.
+- **Built on F4** (DONE/merged engine + opencode hard-fork console at `operator-console/`). Brownfield; Workspace Detection &
+  Reverse Engineering reused.
+- **Grounding (read 2026-05-30):** logo glyphs `operator-console/cli/packages/opencode/src/cli/logo.ts` (+ `component/logo.tsx`
+  shimmer render); home screen `feature-plugins/home/`; sidebar `feature-plugins/sidebar/autostock.tsx` (toggle `<leader>b`);
+  launch `cd operator-console/cli && bun dev`; daemon `python main.py --mode agent --steering` (repo-root `steering/` channel,
+  shared token). **Platform = WSL2** → systemd may be disabled (flagged for item 3, drives Q4 portable-fallback option).
+- **Extensions (F5)**: default to project config (Security Baseline Enabled — esp. SECURITY-03 no-secret-in-logs given new
+  diagnostics could leak the operator token, SECURITY-11 privilege separation unchanged, SECURITY-15 fail-closed startup;
+  PBT mostly N/A for launcher/TS UX) — confirming via Q8.
+- **Stage Progress (F5)**:
+  - [x] Workspace Detection — reused (brownfield, existing project).
+  - [x] Reverse Engineering — reused (artifacts already exist).
+  - [x] Requirements Analysis — **COMPLETE** 2026-05-30 (awaiting approval). Answers (all recommended defaults, no contradictions):
+        **Q1=A** (skip home/splash → session view + autostock sidebar default-on), **Q2=B** (rebrand ASCII logo + ALL visible
+        "opencode" strings), **Q3=A** (systemd manages the Python trading daemon; console = foreground TUI that attaches, auto-starts
+        daemon if down), **Q4=A** (systemd **user** service; user note: re-decide if systemd activation breaks), **Q5=A** (`autostock`
+        thin launcher installed on PATH, bun runtime — not a compiled binary), **Q6=B** (preflight + runtime disconnect banner; no
+        silent exit), **Q7=A** (token value never printed/logged, masked), **Q8=A** (project-default extensions). Requirements doc:
+        `aidlc-docs/inception/requirements/console-native-launcher.md`. **Env verified:** systemd IS live in this WSL2 (PID1=systemd,
+        `systemctl --user`=running, wsl.conf systemd=true, bun 1.3.14) → Q4=A premise holds, contingency not triggered.
+  - [x] User Stories — **SKIP** (single-operator tool; workflows captured as FR-1..6; consistent with F2/F3/F4).
+  - [x] Workflow Planning — **COMPLETE** 2026-05-30 (awaiting approval). Plan:
+        `aidlc-docs/inception/plans/console-native-launcher-execution-plan.md`. Risk **Medium**. Application Design SKIP (→Functional
+        Design), Units Generation SKIP, Infrastructure Design SKIP (systemd unit folded into Functional/NFR Design). **Single unit
+        `console-native-launcher`**, internal sequence S1 rebrand → S2 sidebar-first → S3 preflight → S4 systemd-user daemon
+        auto-start/attach → S5 `autostock` thin launcher+install → S6 runtime-disconnect banner → S7 tests+submodule re-pin+live
+        verify. Per-unit Functional Design (light) / NFR Requirements (minimal, 0 new runtime deps) / NFR Design / Code Generation /
+        Build&Test = EXECUTE. worktree-isolated. 2-unit alternative (console-ux / launcher-ops) noted, not recommended.
+  - **CONSTRUCTION — Unit `console-native-launcher`:**
+    - [~] Functional Design — questions posed 2026-05-30 `construction/console-native-launcher/functional-design/functional-design-questions.md`
+          (Q1 logo wordmark layout [1-line/2-line-stack/2-segment, previews] · Q2 systemd policy: auto-restart+boot-enable(linger) ·
+          Q3 daemon lifecycle on console exit · Q4 install PATH target). Grounded: home plugin `feature-plugins/home/` (tips/footer in
+          internal.ts), sidebar `autostock.tsx` `sidebar_content()` slot, daemon `main.py --steering` loads root `.env` token.
+    - [x] Functional Design — **COMPLETE** 2026-05-30 (awaiting approval). Answers (all recommended): **Q1=B** (logo = 2-line stack
+          "auto"/"stock", shimmer kept), **Q2=A** (systemd user: Restart=on-failure + boot/login enable + linger), **Q3=A** (daemon
+          detached, survives console exit), **Q4=A** (install `~/.local/bin/autostock`). Artifacts in
+          `construction/console-native-launcher/functional-design/`: domain-entities.md (E1 PreflightCheck/E2 PreflightReport/E3
+          DaemonService/E4 DaemonHealth[snapshot.json freshness]/E5 LauncherConfig[token in-memory only]/E6 RuntimeHealthSignal/E7
+          BrandSurface), business-logic-model.md (launch seq env→preflight→ensure_running→console→watch; token-match constant-time
+          boolean; mcp_path guards the relative-path/Module-not-found regression), business-rules.md (BR-1 fail-closed/no-silent-exit,
+          BR-2 wedged, BR-3/9 no-double-start, BR-4 console-independent daemon, BR-5 systemd policy, BR-6 token-never-printed, BR-10/11
+          privilege unchanged, BR-12 contract unchanged, BR-13 no-regression, BR-7 sidebar-first, BR-8 banner, BR-14 rebrand scope,
+          BR-15 install path), frontend-components.md (FC-1..5). Python daemon code-change target = 0.
+    - [x] Functional Design — **APPROVED** 2026-05-30 ("승인후 다음단계").
+    - [x] NFR Requirements — **COMPLETE (minimal)** 2026-05-30 (awaiting approval). Artifacts in
+          `construction/console-native-launcher/nfr-requirements/`: nfr-requirements.md + tech-stack-decisions.md. **Conclusion: 0 new
+          runtime deps.** Launcher = Bun/TS script + thin shell shim on `~/.local/bin/autostock` (reuses `operator-console/src/
+          filedrop.ts`+`schema.ts`); systemd via `systemctl --user`/`loginctl enable-linger` + generated user unit
+          (`~/.config/systemd/user/autostock-daemon.service`, ExecStart=venv python `main.py --mode agent --steering`,
+          EnvironmentFile=root .env); preflight TS reusing filedrop; rebrand/sidebar/banner = fork TS/SolidJS edits; idempotent install
+          script. No new question round. Deferred to NFR Design: launcher concurrency (health-wait poll × systemctl), exact unit
+          fields/install order, preflight module boundary + constant-time token compare placement, banner injection. health-wait consts
+          (window 15s / timeout 20s / poll 0.5s) to confirm in Code Gen.
+    - **`/critic` adversarial review (isolated subagent) 2026-05-30 — 6 findings, all cross-verified valid vs main code; engineering
+          refinements applied to FD+tech-stack docs:** #1 [MED] snapshot health=mtime but `publish_snapshot` queues `_build` on the
+          SINGLE bus worker (runtime.py:125) behind executor `_funnel(timeout=180)` (agent.py:58) → mtime lags → health_window=15s
+          false-"wedged" → **BR-2.1** (window ≥30-45s + published_at/2-consecutive-fresh, not bare mtime). #2 [MED] `"opencode"` is a
+          load-bearing provider-id (`item.id !== "opencode"` tips.tsx:44, sidebar/footer.tsx:12) + capitalized titles "OpenCode"/"OC |"
+          (app.tsx:459/466/471/476) → **BR-14.1** (exclude provider-id literal) + **BR-14.2** (add caps titles to visible_strings).
+          #3 [MED] home is the default ROUTE not a skippable splash (app.tsx:458; session nav only --session/-c/-fork) → **BR-7.1**
+          (home-skip = auto-nav-to-session OR sidebar slot on home route; Code-Gen spike, default = sidebar-on-home). #4 systemd unit
+          MUST set `WorkingDirectory={AUTOSTOCK_ROOT}`(+EnvironmentFile) else main.py:366 load_dotenv (CWD-relative) misses .env →
+          runtime.py:47 random token → console mismatch → all commands rejected; `--steering` no-TTY (while-True loop) → Type=simple OK,
+          "0 Python changes" holds → **tech-stack §2 hardened**. #5 sidebar default-on = auto only in WIDE terminals, hidden narrow/child
+          (session/index.tsx:236-241) → **BR-7.2** qualified. #6 ONE canonical token source compared AND injected (root .env), warn on
+          cli/.env drift → **tech-stack §3 hardened**. Sound (not churned): shimmer renderer data-driven (logo.tsx:299),
+          atomic_write_text bumps mtime (jsonl.py:28-31), systemd start idempotent (**BR-9.1**). **Policy fork → user:**
+          `critic-clarification-questions.md` Q1 = submodule `operator-console/cli` re-pin ownership.
+    - **Re-pin ownership = A** (answered 2026-05-30): F5 owns submodule commit + push to autostock-cli remote + parent re-pin
+          (at Code-Gen S7). Caveat: if remote push auth unavailable in env → surface + fall back to local commit + parent re-pin.
+          **Gate: 2-option NFR Requirements (hardened) — awaiting approval.**
+    - [x] NFR Requirements — **APPROVED** 2026-05-30 ("승인할게").
+    - [x] NFR Design — **COMPLETE** 2026-05-30 (awaiting approval). Artifacts in
+          `construction/console-native-launcher/nfr-design/`: nfr-design-patterns.md + logical-components.md. **Patterns:** P1
+          fail-closed orchestration (exit codes 0/10/11/12/13, no undiagnosed path); P2 health=snapshot freshness — `health_window=45s`
+          (tuned to bus worst-case, NOT 5s cadence) / `healthwait_timeout=60s` / `poll=1s`, healthy = `published_at` advance OR 2
+          consecutive fresh (no bare-mtime) [critic #1]; P3 systemd user unit `Type=simple` + `WorkingDirectory={AUTOSTOCK_ROOT}` +
+          `EnvironmentFile` + `Restart=on-failure`+enable+linger, ensure_installed/ensure_running idempotent [critic #4]; P4 canonical
+          token = root .env compared AND injected, warn on cli/.env drift, never printed [critic #6]; P5 preflight pure checks
+          (token_canonical/steering_dir/mcp_path blocking); P6 home-skip = render autostock sidebar slot on `routes/home.tsx` (input
+          flow preserved; Code-Gen spike) [critic #3]; P7 runtime banner on 1.5s poll; P8 rebrand excludes provider-id literal, includes
+          caps titles [critic #2]. **logical-components:** new `operator-console/launcher/` (cli/config/preflight/daemon/unit-template/
+          install) + `~/.local/bin/autostock` shim, reuses `src/filedrop.ts`/`schema.ts` (0 new deps); fork edits enumerated; Python
+          0-change; verification items 1-6 + test strategy. **Gate: 2-option NFR Design — awaiting approval.**
+    - [x] NFR Design — **APPROVED** 2026-05-30 ("승인").
+    - [x] Infrastructure Design — **SKIP** (local launcher/daemon; systemd unit folded into Functional/NFR Design).
+    - [~] Code Generation **Part 1 (plan)** — created 2026-05-30, **awaiting approval to enter Part 2**. Plan:
+          `construction/plans/console-native-launcher-code-generation-plan.md` (Step 0 worktree → 1 launcher core [config/preflight/
+          unit-template]+tests → 2 daemon.ts systemd+health-wait+tests → 3 cli.ts orchestration+install shim → 4 rebrand
+          [logo 2-line/titles/provider-id-exclude] → 5 home sidebar slot [critic #3 spike] → 6 runtime banner → 7 tests+live verify
+          [items 1-6]+submodule re-pin=A push). 0 new runtime deps; Python 0-change. On approval Part 2's first action = worktree off
+          `main`; then S0-S7 autonomously, stopping only for live verification (fork build = user machine) + remote push auth. No code/worktree yet.
+    - **`/critic` round 2 (code-gen plan + NFR design) 2026-05-30 — 6 findings, all cross-verified valid; engineering refinements
+          applied to plan + nfr-design + business-rules:** #1 [HIGH] cli.ts exec-handoff (NO launcher-side watch; disconnect-watch lives
+          in console P7) — "launchConsole→watch" was a TTY-contention contradiction → P1/Step3 fixed. #2 [HIGH] Step3 token-only inject
+          → MCP silent-fail; opencode.jsonc:20 needs `{env:AUTOSTOCK_ROOT}` abs path + cwd=operator-console/cli → inject
+          AUTOSTOCK_ROOT+STEERING_DIR+token + correct cwd + post-launch `autostock_steer` assertion (P4/Step3). #3 [MED] systemd
+          EnvironmentFile≠dotenv (.env clean now, latent) → DROP EnvironmentFile, WorkingDirectory+load_dotenv authoritative (P3/Step2).
+          #4 [MED] worktree skips submodule checkout + detached-HEAD risk → Step0 `submodule update --init` + submodule real branch;
+          Step7 gitlink commit in worktree. #6 [LOW] published_at naive-local → parse-as-local in JS (mirror autostock.tsx:92) + test (P2).
+          **#5 [HIGH→POLICY FORK]:** sidebar-on-home is layout surgery, not slot-registration (home.tsx:74-89 centered column, no
+          side-region; `sidebar_content` only at session/sidebar.tsx:92, session-gated session/index.tsx:236). Round-1 "less invasive"
+          premise FLIPPED; **original Q1=A "바로 세션 뷰로" aligns with auto-nav-to-session.** Re-scoped BR-7.1/P6/Step5 to 2 options:
+          **A** home row-layout surgery vs **B (recommend)** auto-nav to session route (`-c`/synthetic) reusing the working sidebar path.
+          → `critic2-clarification-questions.md` Q1 — **answered = B** (auto-nav to session, matches Q1=A intent). Step 5 finalized to B.
+    - [x] Code Generation **Part 1 (plan)** — **APPROVED** 2026-05-30 ("B로 하고 승인"). Entering Part 2 (autonomous).
+    - [~] Code Generation **Part 2 (build)** — IN PROGRESS 2026-05-30. **Steps 0-3 DONE + committed** (worktree
+          `.claude/worktrees/console-native-launcher`, branch `feat/console-native-launcher`; submodule on branch `feat/console-native-launcher`):
+          **Step 0** worktree + submodule init (confirmed empty in fresh worktree = critic2 #4) + submodule real branch.
+          **Steps 1-3** `operator-console/launcher/` {config,preflight,unit-template,daemon,cli,install}.ts — commit `8e51aba`. 0 new deps
+          (reuses src/filedrop.ts). All critic2 fixes in code: #1 exec-handoff no launcher-watch, #2 full console env (AUTOSTOCK_ROOT+
+          STEERING_DIR+token)+cwd, #3 no EnvironmentFile, #6 naive-local published_at; health-wait window 45s/timeout 60s/advance-or-2-fresh
+          (critic #1); exit codes 0/10/11/12/13 (no silent exit). **20 launcher tests + full console suite 45 green; bun build clean.**
+          **Step 4a** terminal titles OpenCode→autostock / OC|→AS| — submodule commit `241351a` (BR-14.2; provider-id literal untouched BR-14.1).
+          **Remaining (render-dependent → user-machine build+live loop):** Step 4 logo glyph art (2-line auto/stock — visual-iterative) +
+          broader visible-string rebrand; Step 5 session-first live behavior (`-c` wired in cli.ts, verify lands in session+sidebar);
+          Step 6 runtime-disconnect banner in autostock.tsx; Step 7 live verify (items 1-6) + submodule push (autostock-cli) + parent re-pin (re-pin=A).
+          NOT pushed/re-pinned yet (fork edits incomplete). Daemon Python code unchanged (0).
+    - **LIVE VERIFICATION 2026-05-30 (user: "직접 라이브 검증… 장 안열려 안전… main의 .env 사용")** — read-only against the MAIN
+          checkout's REAL running daemon (market closed, 0 side effects, 0 LLM). PASSED: config/token(present,unshown)/consoleEnv 4-key
+          inject (critic2 #2); preflight all green; healthWait healthy ~1s vs the real 5s daemon (critic #1 no false-wedged); unit render
+          WorkingDirectory+venv+no-EnvironmentFile (critic #3/#4). **LIVE-VERIFY BUG FOUND & FIXED (commit `8cd1c51`):** the running
+          daemon was MANUAL (not systemd) → `is-active`=inactive → ensureRunning would `systemctl start` a 2ND instance over the same
+          channel/broker. True attach signal = fresh ADVANCING snapshot, not systemd state. Hardened: ensureRunning **health-first**
+          (fresh→advance-probe 8s→attach, never start; start only if not live); healthWait now REQUIRES advance (dropped weak 2-fresh →
+          a dead-<window daemon's frozen-recent snapshot must not read healthy). Live-verified with a throw-on-start runner: attached ~4s,
+          0 systemctl start. Tests: frozen-fresh→wedged + attach/down/failed. **Console own suite 46 pass/0 fail** (submodule fork tests
+          excluded — not runnable here). Launcher core (Steps 0-3 + hardening) = LIVE-VERIFIED. Commits on `feat/console-native-launcher`:
+          `8e51aba` (1-3), `8cd1c51` (health-first); submodule `241351a` (titles).
+    - **`/critic` round 3 (launcher CODE) 2026-05-30 — 4 findings, all fixed + live-verified (commit `cc99630`):** #1 [HIGH] the
+          round-2 health-first fix STILL double-started — the 8s advance probe FELL THROUGH to `systemctl start` when a live-but-busy
+          daemon's 5s snapshot job is delayed past 8s (APScheduler max_instances=1 starved by a minutes-long premarket/intraday LLM turn).
+          FIXED: **fresh ⇒ ATTACH, never start** (advance probe informational only; missing advance ≠ dead) + race-guard re-check before
+          start; BR-3.1 corrected. Trade-off: a daemon dead <45s isn't auto-restarted that invocation → console banner surfaces it (safe
+          lesser evil). #2 [MED] ensureInstalled skip-if-exists → stale unit; FIXED self-healing rewrite+daemon-reload on drift. #3 [MED]
+          linger failure silently swallowed; FIXED warn+guard empty $USER. #4 [LOW] runner no timeout; FIXED RUN_TIMEOUT_MS.
+          Critic-verified SOUND: microsecond published_at non-NaN (local), token never leaked, `bun run dev -- -c` forwards, cfg assigned,
+          stderr-not-stdout. Tests +5 (frozen/busy→no-start, stale→rewrite, identical→no-op, microsecond parse, token-not-in-output):
+          **26 launcher + 51 console-own green; bun build clean.** **Live re-verified vs REAL daemon: advancing AND frozen/busy both
+          attach with ZERO systemctl start.** Launcher core commits: `8e51aba`, `8cd1c51`, `cc99630`.
+    - **Fork UI written 2026-05-30 (user: "①로 남은 포크 UI 마저 작성")** — submodule `feat/console-native-launcher`:
+          **S4c logo** `cli/logo.ts` → 2-line stacked "auto"/"stock" half-block wordmark (8 rows in `left`, empty `right`, block
+          glyphs only; renderer data-driven so no logo.tsx change). **S6 banner** `sidebar/autostock.tsx` → panel now ALWAYS renders
+          (was `Show(snap)` → blank exactly when disconnected) + ⚠ banner when STEERING_DIR unset / snapshot missing / published_at
+          stale >30s (naive-local parse, no secrets). **S5 session-first** = launcher `bun run dev -- -c` (cli.ts). Submodule commit
+          `ea9a885` (+ `241351a` titles). JSX tag-balance checked (box 3/3, Show 6/6). **Not buildable here (fork TUI needs the build
+          toolchain) → logo visual tweak + tsgo + behavior = user-machine live loop.** NOT pushed/re-pinned (re-pin=A deferred to post-verify).
+    - **F5 status:** launcher core (item 3) DONE + 3× critic + live-verified; fork UI (items 1/2: logo/sidebar-first/banner/titles)
+          CODE-COMPLETE, pending user-machine build+visual verify; then Step 7 push to autostock-cli + parent re-pin (re-pin=A).
+
+## New Feature Track: Console Sidebar Upgrade (F6)
+- **Started**: 2026-05-30. **Stage**: INCEPTION → Requirements Analysis (Standard depth) — **COMPLETE, awaiting approval.**
+- **Goal (user)**: Upgrade the F4 operator-console sidebar. Realizes the F4-deferred **mouse-drag resize** (state line ~748)
+  + **visibility/readability** + migrate part of `scripts/monitor.sh`'s monitoring duties into the sidebar. ⚠ F5
+  (console-native-launcher, now at NFR-Requirements gate) is concurrently editing the same files — coordinate.
+- **Built on F4** (opencode hard-fork at `operator-console/`). Brownfield; Workspace Detection & Reverse Engineering reused.
+- **Grounding (read 2026-05-30):** sidebar width `routes/session/sidebar.tsx:15` `sidebarWidth()` = static env read (fixed 42,
+  `AUTOSTOCK_SIDEBAR_WIDTH` 24–120 override), code comment explicitly defers drag-resize → THIS track. Content panel
+  `feature-plugins/sidebar/autostock.tsx` (run-state/market/positions/orders/pending/queued/events, snapshot.json+events.jsonl
+  1.5s poll, read-only). Layout `routes/session/index.tsx:243` `contentWidth = width − sidebar − 4`. **OpenTUI exposes
+  onMouseDown/onMouseDrag/onMouseDragEnd/onMouseDrop/onMouseMove/onMouseUp → drag-resize feasible.** monitor.sh = 4 tmux panes
+  (decisions stream / status.py account dashboard / agent log tail / turns+trades telemetry).
+- **Extensions (F6)**: project default — Security Baseline Enabled (SECURITY-03 no-secret-in-logs for new diagnostics,
+  SECURITY-11 privilege separation UNCHANGED, SECURITY-15 fail-closed display); PBT mostly N/A (TS UI).
+- **Stage Progress (F6)**:
+  - [x] Workspace Detection — reused (brownfield, existing project).
+  - [x] Reverse Engineering — reused (artifacts already exist).
+  - [x] Requirements Analysis — **COMPLETE** 2026-05-30 (awaiting approval). Question file:
+        `inception/requirements/sidebar-upgrade-questions.md`; requirements: `inception/requirements/sidebar-upgrade.md`.
+        **Answers (all recommended defaults):** **Q1=A+E** (sidebar gets account core metrics [equity/cash/day-PnL/cum-PnL]
+        + closed round-trip summary [win-rate/realized-PnL]; **B/C/D = turn-telemetry / recent-decisions / agent-log-tail
+        registered as on-demand slash/read commands, NOT sidebar-resident**), **Q2=A** (readability/style: section
+        dividers, PnL color ±, number alignment, empty states — NOT default-on/width, which F5 owns), **Q3=A** (drag width
+        PERSISTED across restarts; env = initial default only, saved > env > 42), **Q4=A** (independent worktree off `main`,
+        reconcile/rebase at merge; exclude F5-owned default-on/rebrand from F6 scope), **Q5=A** (project-default extensions).
+        **FR-1 drag-resize** (reactive width signal + handle + contentWidth re-layout + persistence), **FR-2/3** account &
+        round-trip summary (prefer publish_snapshot field extension, no off-thread broker), **FR-4** deep monitoring as
+        on-demand read commands (mechanism TBD in FD: opencode slash cmd vs read MCP tool), **FR-5** visibility/style.
+        **Risk Low–Medium** (read-only UI; order path / privilege separation unchanged).
+  - [x] Requirements Analysis — **APPROVED** 2026-05-30 ("계속 진행").
+  - [x] User Stories — **SKIP** (single-operator tool; workflows captured as FR-1..5; consistent with F2/F3/F4/F5).
+  - [x] Workflow Planning — **COMPLETE** 2026-05-30 (awaiting approval). Plan:
+        `inception/plans/sidebar-upgrade-execution-plan.md`. Risk **Low–Medium** (read-only UI; order/steering/privilege
+        path unchanged; largest change = static→reactive sidebar width + main re-layout [TS/SolidJS] + small Python snapshot
+        payload extension). **Stage determination:** Application Design SKIP (→FD), Units Generation SKIP (single unit),
+        Infrastructure Design SKIP (local TUI). **Single unit `console-sidebar-upgrade`**, internal sequence: S1 reactive
+        width + drag-resize (sidebar.tsx + index.tsx contentWidth) → S2 width persistence (saved>env>42) → S3 account
+        metrics + round-trip summary via publish_snapshot extension (runtime.py already calls get_portfolio_state on the
+        worker → add equity/cash/open_pnl/position_count; round-trip via match_round_trips) → S4 readability/style →
+        S5 on-demand read commands (FR-4, slash vs MCP read tool TBD in FD) → S6 tests + submodule re-pin + live verify.
+        Per-unit FD / NFR-Req (minimal, 0 new runtime deps) / NFR-Design / Code Gen / Build&Test = EXECUTE. Base = worktree
+        off `main`; F5-owned default-on/rebrand excluded from F6 scope (coordinate at merge). 2-unit alt noted, not recommended.
+  - **CONSTRUCTION — Unit `console-sidebar-upgrade`:**
+    - [x] Functional Design — **COMPLETE** 2026-05-30 (awaiting approval). FD questions all = recommended: **Q1=A**
+          (drag width persisted to a console-only user state file, XDG `~/.local/state/autostock-console/ui.json`,
+          saved>env>42), **Q2=A** (BOTH account [equity/cash/open_pnl/position_count] AND round-trip summary
+          [closed_count/win_rate/realized_pnl] via `publish_snapshot` extension — account reuses the worker's existing
+          get_portfolio_state, round-trip via `src/core/trades.py match_round_trips` + ET-date filter), **Q3=A** (FR-4 deep
+          monitoring = `steer_read{view}` MCP tool extension reading daemon-published `steering/` read files for
+          turns/decisions/log — read-only, contract boundary kept, F4 NL/MCP consistent), **Q4=A** (thin left-edge drag
+          handle │ + onMouseDown/Drag/DragEnd, width=dims.width−e.x clamped, no keyboard alt). Grounded: sidebar renders
+          right; OpenTUI MouseEvent has absolute x; steer_read already returns snapshot; runtime.publish_snapshot already on
+          worker. Artifacts in `construction/console-sidebar-upgrade/functional-design/`: domain-entities.md (E1 SidebarWidthState
+          /E2 AccountSummary/E3 RoundTripSummary/E4 MonitorView/E5 DragHandle), business-logic-model.md (BLM-1..6 reactive width
+          + snapshot ext + steer_read{view} + data-flow), business-rules.md (BR-1..16), frontend-components.md (FC-1..5 + change
+          surface table). Python daemon change = small (snapshot fields + monitor publisher + round-trip aggregator); order/
+          steering/privilege path unchanged.
+    - [x] Functional Design — **APPROVED** 2026-05-30 ("진행"). Construction running autonomously per
+          [[feedback-autonomy-construction]] (NFR Req → NFR Design → Code Gen Part 1, stop before worktree).
+    - [x] NFR Requirements — **COMPLETE (minimal)** 2026-05-30. Artifacts:
+          `construction/console-sidebar-upgrade/nfr-requirements/{nfr-requirements,tech-stack-decisions}.md`. **Conclusion: 0
+          new runtime deps** (TS: OpenTUI mouse events + stdlib fs + pinned MCP sdk/zod; Python: pydantic/loguru/APScheduler/
+          alpaca + match_round_trips + add_seconds_job reused). NFR-P2 = no extra broker call (account from existing ps).
+          PBT partial candidates: summarize_today_round_trips, clampWidth. No new question round. Verify items R1 (live drag in
+          bun TUI), R2 (XDG ui.json I/O), R3 (steer_read{view} file return).
+    - [x] NFR Design — **COMPLETE** 2026-05-30. Artifacts:
+          `construction/console-sidebar-upgrade/nfr-design/{nfr-design-patterns,logical-components}.md`. P1 single-source
+          reactive width (Sidebar.width + index.tsx contentWidth share one signal); P2 debounced atomic ui.json persist;
+          P3 snapshot account/round_trip additive on the existing worker path (NFR-2, 0 extra broker call); P4 publish_monitor
+          low-freq job (add_seconds_job ~5s) → atomic steering/monitor.json, steer_read{view} reads it (read-only, boundary
+          kept); P5 fail-closed hide-when-absent (back-compat); P6 security (log-tail secret masking, read-only, fail-closed).
+          Concurrency table: broker access stays daemon-worker single; console touches read-view/ui.json only. Infra SKIP.
+    - [x] Infrastructure Design — **SKIP** (local TUI/daemon, no infra).
+    - [~] Code Generation **Part 1 (plan)** — created 2026-05-30, **awaiting approval to enter Part 2**. Plan:
+          `construction/plans/sidebar-upgrade-code-generation-plan.md` (Step 0 worktree → 1 Python round-trip aggregator +
+          snapshot account/round_trip fields → 2 Python publish_monitor job → 3 TS steer_read{view} → 4 TS reactive width +
+          XDG persist → 5 TS drag handle + re-layout → 6 TS sidebar account/perf + style → 7 build/test + submodule re-pin +
+          live verify). 0 new deps. On approval, Part 2's FIRST action = `git worktree add … -b feat/console-sidebar-upgrade
+          main`; no code/worktree yet. F5-owned default-on/rebrand NOT implemented. **Gate: approve Part 1 plan to start coding.**
+    - [x] Code Generation **Part 1 (plan) — APPROVED** 2026-05-30 ("자율진행 시작").
+    - [x] Code Generation **Part 2 (build) — COMPLETE** 2026-05-30 (worktree `.claude/worktrees/console-sidebar-upgrade`,
+          branch `feat/console-sidebar-upgrade` off main; parent `e696630`, submodule `operator-console/cli` `82e009b` re-pinned;
+          NOT pushed/merged). Code summary: `construction/console-sidebar-upgrade/code/code-summary.md`.
+          **Daemon (Python):** broker `get_fills` port (base no-op + Alpaca reuses tested `_alpaca_fills` order-level fills —
+          chosen over raw activities GET, simpler & 0-risk, adequate for the summary); `core/trades.summarize_today_round_trips`
+          (match_round_trips + UTC→ET zoneinfo today filter); `runtime.publish_snapshot` adds `account` (reuses
+          `equity_log.snapshot`) + cached `round_trip`; `refresh_round_trip` (45s worker job, one broker fills call) +
+          `publish_monitor` (10s → `steering/monitor.json`, turns/decisions/log, secrets masked). **Console (TS src):**
+          `steer_read{view}` dispatch (parser turns/decisions verbs, FileDrop.readMonitor, handleSteerRead routes
+          turns/decisions/log→monitor.json — fixes verb-ignored-always-snapshot). **Console UI (submodule):** `sidebar-width.ts`
+          shared reactive signal + XDG `ui.json` persist + clampWidth; `sidebar.tsx` re-export + left-edge drag handle
+          (`selectable={false}`, width=dims.width−e.x); `autostock.tsx` account + round-trip blocks (PnL color, empty state,
+          hide-when-absent); index.tsx unchanged (reactive via re-export). **Tests:** +10 Python (incl UTC/ET boundary +
+          Hypothesis), +5 bun. **Full Python suite 292 green; bun 29 green. 0 new runtime deps.**
+          **PENDING (user — opencode TUI not buildable here, submodule deps uninstalled):** R1 live drag-resize/capture +
+          persistence, R3 `steer_read` view, R4 `get_fills` paper; tsgo typecheck of the 3 submodule TS files; push/merge;
+          F5 merge (share the single width signal). **Gate: 2-option Code Generation completion — awaiting approval.**
+    - [x] Code Generation — **APPROVED** 2026-05-30 ("계속 진행해줘"); **live R1 (drag-resize) user-confirmed**, R3/R4 deferred.
+    - [x] Build and Test — **COMPLETE** 2026-05-30 (awaiting approval). Instruction docs in
+          `construction/build-and-test/console-sidebar-upgrade/` (build / unit-test / integration-and-live / summary).
+          Results: **Python full 292 green**, Python F6 10, **bun core 29 green** (run explicit files — bare `bun test`
+          recurses the un-built submodule). Performance suite N/A (read-only UI; one 45s broker fills job + 10s file write;
+          snapshot 5s / read 1.5s unchanged). Security: SECURITY-03 log-tail masked, SECURITY-11 privilege unchanged,
+          SECURITY-15 fail-closed; PBT on `summarize_today_round_trips`. **Pending before merge:** submodule `tsgo`
+          (deps uninstalled here), live R3/R4, push + F5 width-signal coordination. **Gate: ready for Operations? (placeholder)**
+    - **`/critic` adversarial review (isolated subagent) 2026-05-30 — 7 findings (2 HIGH, 4 MED, 1 LOW), ALL cross-verified
+          valid vs code; reflected into requirements/FD/NFR/plan docs:** #1 [HIGH] FR-3 today round-trip is empty all day —
+          `trades.jsonl` only written at `_eod` (`agent.py:133,178`), not `_intraday` → **policy fork resolved by user = B**
+          (worker aggregates fills/activities at low cadence 30–60s; "0 broker call" assertion dropped; align with F3's designed
+          `get_fills` activities port — no dup). #2 [HIGH] drag handle needs **`selectable={false}`** — OpenTUI default
+          `selectable=true` (core 18185) → text-selection hijacks onMouseDrag; capture is set on first *drag* not down → handle
+          must own capture (live spike R1; fork's logo.tsx uses selectable=false). #3 [MED] `steer_read{view}` is a 4-file change
+          not "add a param" — `parser.ts:22` lacks turns/decisions read verbs, `FileDrop` has no monitor.json reader,
+          `handleSteerRead` ignores verb & always returns snapshot (even `log`). #4 [MED] ET-date filter needs **UTC→ET zoneinfo**
+          (`filled_at` is UTC, `trades_log.py:64`). #5 [MED] account block must **reuse `src/agent/equity_log.py::snapshot(ps)`**
+          (already builds equity/cash/open_pnl/position_count) — no re-derive. #6 [LOW] poll cadence: console read 1.5s
+          (`autostock.tsx:142`) ≠ daemon publish 5s (`agent.py:181`). #7 [LOW] F5 collision is logic-level (shared `index.tsx:236-243`
+          memo + autostock.tsx) → width signal as a context **independent of sidebarVisible**, all consumers share one signal
+          (merge contract). Verified-sound: MouseEvent.x is absolute terminal col; add_seconds_job exists; match_round_trips returns
+          closed_at/realized_pnl; console reads snapshot only (NFR-1 intact). New verify items: R1 drag capture, R4 get_fills paper.
+          Net F6 scope grew slightly (get_fills port shared w/ F3 + low-cadence round-trip job); 0 new runtime deps still holds.
+  - **Deferred-to-FD (resolved):** width-persistence = console XDG ui.json; sourcing = publish_snapshot ext (both); FR-4 =
+        steer_read{view} MCP + daemon steering/ read files; drag-handle = thin left-edge │.
