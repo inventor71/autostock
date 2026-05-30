@@ -70,6 +70,29 @@ def test_alpaca_get_fills_failure_returns_empty(monkeypatch):
     assert broker.get_fills() == []  # best-effort, never raises (NFR-4)
 
 
+def test_alpaca_get_fills_parses_real_activities_shape():
+    # Locked from the live paper /account/activities response (R1, 2026-05-30):
+    # ids are "<seq>::<uuid>" (unique even for partial_fill), extra fields present.
+    rows = [
+        {"id": "20260528094153519::ee11cbd4-b047-4c72-a58a-342e97bb78ac",
+         "activity_type": "FILL", "transaction_time": "2026-05-28T13:41:53.519257Z",
+         "type": "fill", "side": "buy", "symbol": "META", "qty": "5", "price": "629.91",
+         "cum_qty": "5", "leaves_qty": "0", "order_id": "x", "order_status": "filled"},
+        {"id": "20260527093702122::00653c7b-c221-4a6f-b8fd-368ac90b0f2f",
+         "activity_type": "FILL", "transaction_time": "2026-05-27T13:37:02.122775Z",
+         "type": "partial_fill", "side": "buy", "symbol": "RTX", "qty": "19", "price": "176.34",
+         "cum_qty": "19", "leaves_qty": "5", "order_id": "y", "order_status": "partially_filled"},
+    ]
+    broker = _alpaca()
+    broker._client = _FakeClient(rows)
+    fills = broker.get_fills()
+    assert len(fills) == 2
+    assert fills[0].fill_id.endswith("ee11cbd4-b047-4c72-a58a-342e97bb78ac")
+    assert fills[0].symbol == "META" and fills[0].qty == 5.0 and fills[0].price == 629.91
+    # partial_fill keeps its own distinct activity id (idempotency is by id, not order)
+    assert fills[1].symbol == "RTX" and fills[1].fill_id != fills[0].fill_id
+
+
 def test_fill_event_idempotent_by_activity_id():
     # The same order partially filling twice yields two distinct activity ids,
     # so they must NOT collapse (the order-level _alpaca_fills bug this replaces).
