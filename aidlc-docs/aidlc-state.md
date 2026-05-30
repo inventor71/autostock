@@ -316,8 +316,33 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
         is private to read_decisions). C-6 news = per-symbol yfinance+15min cache → off-thread/bus poll. C-7 split gate inputs (market
         data direct, account via bus). C-8 paused short-circuits before the gate (suppression log must live in the wake detector) +
         entries_halted is a new hook + IntervalTrigger not wall-clock-aligned. These land in Functional/NFR Design.
+  - **[/ai-dlc-resume] Integration-base RECONCILIATION 2026-05-30 (F4 merged to main).** F3 was designed against the **unmerged
+        F2 engine @ f63fad2**; F4 reimplemented that engine and **merged it to `main`** (merge `1719fcf`). Re-verified the §11 critic
+        findings against `main/src/agent/steering/`: **C-1 DONE** (`turns.py:37 try_scheduled_turn`, in-flight flag split from waiter
+        count, reconcile-priority; wired at `modes/agent.py:70`), **C-4 DONE** (`ReconcileWorker.trigger(kind=)` per-kind), **C-5 DONE**
+        (`jsonl.read_complete_lines`+`ByteCursor`). **C-3 MOSTLY DONE** (`runtime.publish_snapshot` ships positions+open_orders on a
+        5s bus job, `modes/agent.py:181`) — **remaining: fills cursor / new-fill diff** for FR-4-A. **C-6 (news infra) / C-7 (split
+        gate inputs) unchanged net-new. C-8 PARTIAL** — `RunState`+`_paused()` wired in the scheduled path; **`entries_halted` has no
+        consumer yet** (new hook) + wake-path paused-hold/suppression-log net-new. Net: **F3 scope shrank** (riskiest concurrency
+        already merged); base = **worktree off `main`** (F2 branch abandoned per F4 Q7=C). Docs updated: requirements §11.0 table +
+        §1/§5/NFR-3; execution-plan banner + Component/Risk lines. **Next = CONSTRUCTION → Functional Design (EXECUTE) on the main base.**
+  - **CONSTRUCTION — Unit `intraday-redesign`:**
+    - [~] Functional Design **Part B (plan+questions)** created 2026-05-30 — **AWAITING ANSWERS at the gate.**
+          `aidlc-docs/construction/plans/intraday-redesign-functional-design-plan.md` (Korean, `[Answer]:` tags).
+          8 open FD decisions: Q1 watch.jsonl writer path, Q2 condition vocab, Q3 new-fill detect basis (C-3 snapshot fills cursor),
+          Q4 abnormal-move def+thresholds+config, Q5 multi-trigger coalesce, Q6 brief render format, Q7 entries_halted BUY-wake
+          suppression, Q8 news diff scope/cadence. On answers → generate domain-entities/business-logic-model/business-rules.md.
 
 ## New Feature Track: Claude-Code-native Steering Console (F4 — replaces F2 front-end)
+> **STATUS (2026-05-30): DONE & merged to `main` (merge `1719fcf`).** This is the INCEPTION/design
+> record; two framings below are SUPERSEDED by what shipped: (1) the title "Claude-Code-native" —
+> F4 shipped as an **owned opencode hard-fork** console (per Q2=B in this same section), NOT a Claude
+> Code session; (2) the console is **NL-only** — a second model-free keystroke command path was built
+> then **removed** during construction (both paths shared the same confirm+RiskManager→Broker gate, so
+> cleanliness won). **Authoritative final state = the "Steering Console Redesign (F4)" section at the
+> END of this file** + project memory `steering-console-redesign.md`. For **F3**, you do NOT need to read
+> this section — the distilled F4 impact (which critic findings F4's merged engine already satisfies) is
+> in the F3 track's "Integration-base RECONCILIATION" entry above.
 - **Started**: 2026-05-29. **Stage**: INCEPTION → Requirements Analysis (comprehensive-leaning), awaiting answers at the gate.
 - **Goal (user)**: Replace the in-development F2 human-steering-console (`prompt_toolkit` REPL) with a **Claude Code
   session** that has custom commands registered; optionally a **customized opencode.ai** build. Aims: (1) easier natural-
