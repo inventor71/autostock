@@ -49,11 +49,12 @@ export async function main(): Promise<void> {
 
   // 4. launch console — TTY handoff (inherit stdio), session-first (Q1=A/critic2 #5 option B: -c).
   //    NO launcher-side watch loop after this; runtime-disconnect monitoring lives in the console.
-  //    Forward any user args (e.g. `autostock -s ses_x` to resume a session); default to `-c`
-  //    (continue last session) so the bare `autostock` lands in a session view + sidebar.
+  //    Forward any user args (e.g. `autostock -s ses_x` to resume a session); bare `autostock`
+  //    passes none → opencode opens a FRESH home (no stale session), and the autostock sidebar
+  //    renders on the home route (F5 option ②), so it is sidebar-first without resuming a session.
   const env = consoleEnv(cfg);
   const userArgs = process.argv.slice(2);
-  const consoleArgs = userArgs.length > 0 ? userArgs : ["-c"];
+  const consoleArgs = userArgs;
   let code: number;
   try {
     // @ts-ignore Bun global

@@ -979,10 +979,22 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
           Remaining coding-oriented copy (home prompt placeholders + tips-view.tsx) **carved out to F7** (user decision).
     - **Step 7 DONE 2026-05-30:** final tests **51 console-own + 26 launcher green**; fork branch **pushed to autostock-cli origin**
           (SSH OK, `feat/console-native-launcher`); parent **gitlink re-pinned** to submodule `05df2ce` (commit `da724cf`). re-pin=A complete.
-    - **F5 status: CODE-COMPLETE + verified + pushed/re-pinned on branch `feat/console-native-launcher`.** Parent commits 8e51aba /
-          8cd1c51 / cc99630 / f2616bd / da724cf; submodule fork on `feat/console-native-launcher` (HEAD 05df2ce). **Remaining = merge
-          `feat/console-native-launcher` → main** (needed for `autostock` to run the fork from the main checkout) — outward action,
-          **awaiting user approval**. F7 (trading-native copy) carved out + resumable.
+    - **F5 status: DONE & MERGED TO MAIN 2026-05-30** (user: "머지해"). docs commit `7f21bd1`; merge commit `aaf01e2` (--no-ff);
+          main submodule updated to `05df2ce`; submodule fork pushed to `autostock-cli` origin. Verified on main: launcher files present,
+          logo.ts = autostock, 26 launcher tests green, working tree clean. **F5 COMPLETE.** F7 (trading-native copy/tips) carved out,
+          resumable via /ai-dlc-resume.
+          **Usage:** one-time `bun run operator-console/launcher/install.ts` (installs `~/.local/bin/autostock` + systemd user unit
+          `autostock-daemon.service` w/ Restart+linger); then `autostock` (auto-start/attach daemon → console+sidebar+MCP) or
+          `autostock -s <id>`. NOTE: a manual daemon (PID 1188466, non-systemd) was running — `autostock` health-first ATTACHES to it;
+          to switch to systemd-managed, stop the manual one first.
+    - **Post-merge live fixes 2026-05-30:** (a) name collision — pyproject `autostock`→`autostockd` + install.ts shadow-check
+          (commit `187877c`); (b) broken `.venv` — resolvePython prefers $VIRTUAL_ENV + validates deps, self-healing unit (commit
+          `5559178`). Daemon then started agent+steering correctly; console live-verified (MCP autostock Connected, sidebar live).
+    - **Option ② (sidebar-first, clean session) 2026-05-30 (user: "2번으로 가자")** — `-c` had resumed the last (stale "hello")
+          session. Fix: launcher drops the default `-c` (bare `autostock` → fresh home; `autostock -s <id>` still resumes), and the
+          autostock sidebar now renders on the **home route** (home.tsx row layout + new `home_sidebar` slot, wide-gated BR-7.2;
+          autostock.tsx registers View into it). Fresh launch = autostock logo + prompt + live sidebar, no stale chat. Submodule commit
+          `21ac3bc` (pushed to autostock-cli); tsgo clean + 26 launcher tests green. Parent re-pin + cli.ts committed to main.
 
 ## New Feature Track: Console Sidebar Upgrade (F6)
 - **Started**: 2026-05-30. **Stage**: INCEPTION → Requirements Analysis (Standard depth) — **COMPLETE, awaiting approval.**
