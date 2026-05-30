@@ -1061,6 +1061,12 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
           snapshot 5s / read 1.5s unchanged). Security: SECURITY-03 log-tail masked, SECURITY-11 privilege unchanged,
           SECURITY-15 fail-closed; PBT on `summarize_today_round_trips`. **Pending before merge:** submodule `tsgo`
           (deps uninstalled here), live R3/R4, push + F5 width-signal coordination. **Gate: ready for Operations? (placeholder)**
+    - [x] Build and Test — **APPROVED / F6 TRACK COMPLETE** 2026-05-30 ("F6 완료 처리하고 커밋도 진행, 머지는 나중에").
+          Operations = placeholder (no further work). Docs committed to **main** `60482b0`; code on branch
+          `feat/console-sidebar-upgrade` (`e696630` + submodule `82e009b`), **not merged** (user: merge later).
+          **Open follow-ups (post-track, user-scheduled):** submodule `tsgo` typecheck, live R3 (`steer_read` view) + R4
+          (`get_fills` paper), push, and F5 merge coordination (both edit `autostock.tsx`/`index.tsx`; share the single
+          width signal, F6 omits F5-owned default-on/rebrand).
     - **`/critic` adversarial review (isolated subagent) 2026-05-30 — 7 findings (2 HIGH, 4 MED, 1 LOW), ALL cross-verified
           valid vs code; reflected into requirements/FD/NFR/plan docs:** #1 [HIGH] FR-3 today round-trip is empty all day —
           `trades.jsonl` only written at `_eod` (`agent.py:133,178`), not `_intraday` → **policy fork resolved by user = B**
