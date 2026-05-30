@@ -4,7 +4,7 @@
 // critic2 #6: published_at is naive-local ISO; parse as LOCAL (new Date(s)) — never assume UTC.
 // BR-9.1: `systemctl start` on an already-active unit is an idempotent no-op (not an error).
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { pythonCandidates, renderUnit, UNIT_NAME } from "./unit-template";
@@ -13,7 +13,8 @@ import type { LauncherConfig } from "./config";
 export const HEALTH_WINDOW_MS = 45_000; // critic #1: bus worst-case, not the 5s publish cadence
 export const HEALTHWAIT_TIMEOUT_MS = 60_000; // absorbs cold-start premarket research batch
 export const HEALTH_POLL_MS = 1_000;
-export const ATTACH_PROBE_MS = 8_000; // attach-if-running probe: ~1 publish interval (5s) + margin
+export const ATTACH_PROBE_MS = 8_000; // attach advance probe: informational only (never gates start)
+export const RUN_TIMEOUT_MS = 10_000; // hard cap on a systemctl/loginctl call (review #4: no infinite hang)
 
 export interface RunResult {
   code: number;
@@ -31,19 +32,35 @@ export interface DaemonDeps {
   homeDir?: string;
   fileExists?: (p: string) => boolean;
   writeFile?: (p: string, c: string) => void;
+  readFile?: (p: string) => string | null;
+  warn?: (msg: string) => void;
 }
 
-/** Default runner: spawn a command, capture stdout/stderr/exit. */
-function defaultRunner(): Runner {
+/** Default runner: spawn a command, capture stdout/stderr/exit, with a hard timeout (review #4). */
+function defaultRunner(timeoutMs = RUN_TIMEOUT_MS): Runner {
   return async (args: string[]): Promise<RunResult> => {
     // @ts-ignore Bun global
     const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    const code = await proc.exited;
-    return { code, stdout: stdout.trim(), stderr: stderr.trim() };
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill();
+      } catch {
+        /* already gone */
+      }
+    }, timeoutMs);
+    try {
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      const code = await proc.exited;
+      if (timedOut) return { code: 124, stdout: stdout.trim(), stderr: `${args[0]} timed out after ${timeoutMs}ms` };
+      return { code, stdout: stdout.trim(), stderr: stderr.trim() };
+    } finally {
+      clearTimeout(timer);
+    }
   };
 }
 
@@ -71,6 +88,8 @@ export class DaemonService {
   private home: string;
   private fileExists: (p: string) => boolean;
   private writeFile: (p: string, c: string) => void;
+  private readFile: (p: string) => string | null;
+  private warn: (msg: string) => void;
 
   constructor(private cfg: LauncherConfig, deps: DaemonDeps = {}) {
     this.run = deps.run ?? defaultRunner();
@@ -83,6 +102,14 @@ export class DaemonService {
       mkdirSync(dirname(p), { recursive: true });
       writeFileSync(p, c, "utf8");
     });
+    this.readFile = deps.readFile ?? ((p) => {
+      try {
+        return readFileSync(p, "utf8");
+      } catch {
+        return null;
+      }
+    });
+    this.warn = deps.warn ?? ((m) => console.error(`autostock: warning — ${m}`));
   }
 
   unitPath(): string {
@@ -108,16 +135,26 @@ export class DaemonService {
     return "python3"; // last resort; ensureInstalled diagnoses if even this is wrong at runtime
   }
 
-  /** Create the unit (if absent), reload, enable, enable-linger. Idempotent. */
+  /** Install/refresh the unit, reload, enable, enable-linger. Idempotent AND self-healing:
+   *  rewrites the unit when its content drifts (review #2 — a stale unit must not silently persist
+   *  after a path/template change). linger failure warns rather than silently dropping (review #3). */
   async ensureInstalled(): Promise<void> {
     const path = this.unitPath();
-    if (!this.fileExists(path)) {
-      const python = this.resolvePython();
-      this.writeFile(path, renderUnit({ autostockRoot: this.cfg.autostockRoot, python }));
+    const desired = renderUnit({ autostockRoot: this.cfg.autostockRoot, python: this.resolvePython() });
+    if (this.readFile(path) !== desired) {
+      this.writeFile(path, desired);
       await this.sc(["daemon-reload"]);
     }
     await this.sc(["enable", this.unitName]); // idempotent
-    await this.run(["loginctl", "enable-linger", process.env.USER ?? ""]).catch(() => undefined);
+    const user = process.env.USER ?? "";
+    if (!user) {
+      this.warn("$USER 미설정 → linger 생략(부팅 자동시작 비활성). USER를 설정하거나 `loginctl enable-linger`를 수동 실행하세요.");
+      return;
+    }
+    const r = await this.run(["loginctl", "enable-linger", user]);
+    if (r.code !== 0) {
+      this.warn(`linger 활성화 실패(부팅 자동시작 비활성): ${r.stderr || `loginctl exit ${r.code}`}`);
+    }
   }
 
   /** True if a snapshot is fresh RIGHT NOW — i.e. some daemon (systemd OR manual) is publishing.
@@ -129,22 +166,25 @@ export class DaemonService {
   }
 
   /**
-   * Ensure the daemon is up and publishing, then attach. Order (live-verify hardening):
-   *  1. If a daemon is ALREADY publishing fresh snapshots → confirm liveness & attach. NEVER
-   *     start a second instance over a running (possibly manual) daemon — that would double up
-   *     on the same channel/broker.
-   *  2. Otherwise manage via systemd: install (idempotent) → start (idempotent, BR-9.1) →
-   *     health-wait. 'failed' → diagnose (do not paper over with start).
+   * Ensure the daemon is up, then attach. Safety rule (review #1 — the dominant constraint):
+   * a fresh snapshot ⇒ a daemon is publishing ⇒ **ATTACH, never start.** A live daemon's publish
+   * cadence can lag for MINUTES under an LLM turn (premarket research / intraday; APScheduler
+   * max_instances=1 starves the 5s snapshot job), so a missing *advance* does NOT mean it's dead.
+   * Double-starting a live daemon on the same broker is unacceptable; the lesser evil — attaching
+   * to one that died <window ago — is caught by the console's disconnect banner (S6).
+   *  - fresh now → attach (advance probe is informational only, never gates a start).
+   *  - not fresh → install (idempotent/self-healing) → start (with a re-check race guard) → health-wait.
+   *  - unit 'failed' → diagnose (do not paper over with start).
    */
   async ensureRunning(): Promise<HealthResult> {
-    // 1. attach-if-running (true liveness = a fresh, advancing snapshot)
     if (this.isFreshNow()) {
-      const h = await this.healthWait(ATTACH_PROBE_MS);
-      if (h.healthy) return { healthy: true, reason: `attached to running daemon (${h.reason})` };
-      // fresh but not advancing → daemon may have just died; fall through to the start path.
+      const advancing = await this.probeAdvance(ATTACH_PROBE_MS);
+      return {
+        healthy: true,
+        reason: advancing ? "attached (snapshot advancing & fresh)" : "attached (snapshot fresh; publish lagging — busy?)",
+      };
     }
 
-    // 2. start via systemd
     await this.ensureInstalled();
     const st = await this.state();
     if (st === "failed") {
@@ -153,6 +193,8 @@ export class DaemonService {
       );
     }
     if (st !== "active") {
+      // race guard: a (manual) daemon may have begun publishing since the first check → attach, don't start.
+      if (this.isFreshNow()) return { healthy: true, reason: "attached (became live before start)" };
       const r = await this.sc(["start", this.unitName]); // idempotent if it raced to active
       if (r.code !== 0 && !/already/i.test(r.stderr)) {
         throw new DaemonStartError(
@@ -164,10 +206,24 @@ export class DaemonService {
     const health = await this.healthWait();
     if (!health.healthy) {
       throw new DaemonStartError(
-        `${health.reason}\n      → journalctl --user -u ${this.unitName} -n 50`,
+        `${health.reason} — still starting (premarket research can take minutes) or wedged?\n` +
+          `      → journalctl --user -u ${this.unitName} -n 50`,
       );
     }
     return health;
+  }
+
+  /** Did published_at advance (while staying fresh) within the timeout? Informational only — a
+   *  false here never triggers a start (review #1). Returns true on the first observed advance. */
+  async probeAdvance(timeoutMs: number): Promise<boolean> {
+    const deadline = this.now() + timeoutMs;
+    const initial = publishedAtMs(this.readSnapshot());
+    while (this.now() <= deadline) {
+      const pub = publishedAtMs(this.readSnapshot());
+      if (!Number.isNaN(pub) && (Number.isNaN(initial) || pub > initial)) return true;
+      await this.sleep(HEALTH_POLL_MS);
+    }
+    return false;
   }
 
   /**

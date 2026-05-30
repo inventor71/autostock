@@ -113,6 +113,14 @@ describe("preflight.runPreflight", () => {
     const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot() } });
     expect(formatReport(runPreflight(cfg))).not.toContain("→");
   });
+
+  test("token VALUE never appears in the report output (SECURITY-03, even on drift)", () => {
+    const secret = "SUPERSECRET-do-not-leak-123";
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot(secret, "other-token") } });
+    const out = formatReport(runPreflight(cfg));
+    expect(out).not.toContain(secret);
+    expect(out).not.toContain("other-token");
+  });
 });
 
 describe("unit-template.renderUnit (critic2 #3/#4)", () => {
@@ -205,8 +213,9 @@ describe("daemon.healthWait (critic #1)", () => {
 });
 
 describe("daemon.ensureRunning (health-first attach + systemd, live-verify hardening)", () => {
-  function harness(opts: { state?: string; freshFrom?: "always" | "afterStart" | "never" }) {
+  function harness(opts: { state?: string; freshFrom?: "always" | "afterStart" | "never"; frozen?: boolean }) {
     const clk = fakeClock();
+    const frozenTs = new Date(clk.get()).toISOString();
     const calls: string[][] = [];
     let started = false;
     const run = async (args: string[]) => {
@@ -217,18 +226,35 @@ describe("daemon.ensureRunning (health-first attach + systemd, live-verify harde
     };
     const readSnapshot = () => {
       const live = opts.freshFrom === "always" || (opts.freshFrom === "afterStart" && started);
-      return live ? { published_at: new Date(clk.get()).toISOString() } : null;
+      if (!live) return null;
+      return { published_at: opts.frozen ? frozenTs : new Date(clk.get()).toISOString() };
     };
-    const d = svc({ run, readSnapshot, now: clk.now, sleep: clk.sleep, fileExists: () => true });
+    const d = svc({
+      run,
+      readSnapshot,
+      now: clk.now,
+      sleep: clk.sleep,
+      fileExists: () => true,
+      writeFile: () => {},
+      readFile: () => null,
+    });
     return { d, calls };
   }
 
-  test("already running (fresh snapshot, e.g. a MANUAL daemon) → attach, NO systemctl start", async () => {
+  test("already running (fresh+advancing, e.g. a MANUAL daemon) → attach, NO systemctl start", async () => {
     const { d, calls } = harness({ state: "inactive", freshFrom: "always" });
     const r = await d.ensureRunning();
     expect(r.healthy).toBe(true);
     expect(r.reason).toContain("attached");
     expect(calls.some((c) => c.includes("start"))).toBe(false); // never double-start
+  });
+
+  test("fresh but FROZEN (busy daemon mid-LLM-turn) → STILL attach, NO start (critic: no double-start)", async () => {
+    const { d, calls } = harness({ state: "inactive", freshFrom: "always", frozen: true });
+    const r = await d.ensureRunning();
+    expect(r.healthy).toBe(true);
+    expect(r.reason).toContain("lagging");
+    expect(calls.some((c) => c.includes("start"))).toBe(false); // the key fix: a busy live daemon is not double-started
   });
 
   test("down (no fresh snapshot) → systemctl start → healthy after it publishes", async () => {
@@ -241,5 +267,49 @@ describe("daemon.ensureRunning (health-first attach + systemd, live-verify harde
   test("failed unit + no fresh snapshot → throws DaemonStartError (no papering over)", async () => {
     const { d } = harness({ state: "failed", freshFrom: "never" });
     await expect(d.ensureRunning()).rejects.toBeInstanceOf(DaemonStartError);
+  });
+});
+
+describe("daemon.ensureInstalled (review #2 — self-healing stale unit)", () => {
+  function installHarness(existing: string | null) {
+    const clk = fakeClock();
+    const calls: string[][] = [];
+    const writes: string[] = [];
+    const d = svc({
+      now: clk.now,
+      sleep: clk.sleep,
+      fileExists: () => true,
+      readFile: () => existing,
+      writeFile: (_p, c) => writes.push(c),
+      run: async (args) => {
+        calls.push(args);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    return { d, calls, writes };
+  }
+
+  test("stale unit content → rewrites + daemon-reload", async () => {
+    const { d, calls, writes } = installHarness("[Unit]\nDescription=OLD\n");
+    await d.ensureInstalled();
+    expect(writes.length).toBe(1);
+    expect(calls.some((c) => c.includes("daemon-reload"))).toBe(true);
+  });
+
+  test("identical unit content → no rewrite, no daemon-reload (idempotent)", async () => {
+    // first render the desired content, feed it back as existing
+    const probe = installHarness(null);
+    await probe.d.ensureInstalled();
+    const desired = probe.writes[0];
+    const { calls, writes } = installHarness(desired);
+    expect(writes.length).toBe(0);
+    expect(calls.some((c) => c.includes("daemon-reload"))).toBe(false);
+  });
+});
+
+describe("daemon.publishedAtMs (review #6 — Python microsecond ISO must not NaN)", () => {
+  test("6-digit microsecond naive-local string parses to a real epoch", () => {
+    const ms = publishedAtMs({ published_at: "2026-05-30T18:27:38.102467" });
+    expect(Number.isNaN(ms)).toBe(false);
   });
 });
