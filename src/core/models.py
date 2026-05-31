@@ -46,6 +46,17 @@ class Order(BaseModel):
     take_profit_price: float | None = None
     stop_loss_price: float | None = None
 
+    # F9: Alpaca-shaped extras. ``notional`` is intentionally NOT here — the
+    # human-order gate resolves a $ amount to whole shares (qty) up front,
+    # mirroring the existing ``/buy SYM N$`` floor, so every Order that reaches
+    # a broker carries a concrete qty (avoids Optional-qty churn + fractional
+    # bracket legs Alpaca rejects). A trailing stop carries exactly ONE of
+    # trail_price / trail_percent.
+    trail_price: float | None = None
+    trail_percent: float | None = None
+    extended_hours: bool = False
+    client_order_id: str | None = None
+
     @model_validator(mode="after")
     def _check_bracket_legs(self) -> "Order":
         if self.order_class in (OrderClass.BRACKET, OrderClass.OCO):
@@ -54,6 +65,19 @@ class Order(BaseModel):
                     f"{self.order_class.value} order requires both "
                     f"take_profit_price and stop_loss_price"
                 )
+        if self.order_type == OrderType.TRAILING_STOP:
+            has_price = self.trail_price is not None
+            has_pct = self.trail_percent is not None
+            if has_price == has_pct:  # both set or neither
+                raise ValueError(
+                    "trailing_stop requires exactly one of trail_price / trail_percent"
+                )
+            if has_price and self.trail_price <= 0:
+                raise ValueError("trail_price must be > 0")
+            if has_pct and not (0 < self.trail_percent < 100):
+                raise ValueError("trail_percent must be in (0, 100)")
+        elif self.trail_price is not None or self.trail_percent is not None:
+            raise ValueError("trail_price/trail_percent only valid for trailing_stop orders")
         return self
 
 
