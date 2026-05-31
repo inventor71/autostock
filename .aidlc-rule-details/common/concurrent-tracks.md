@@ -121,10 +121,17 @@ and (b) assuming the install needs the network. So:
   decoupled from host toolchain state; the in-place `--ts`/`--py` paths above remain fine for quick
   local checks.
 
+> **Registry row ⇒ per-track record (no exceptions, even for lean hotfixes).** If a change gets a
+> row in the Track Registry, it MUST have a `aidlc-docs/tracks/<id>/state.md` — at minimum a few
+> lines (title, status, branch/merge commit, what changed, verification). Do NOT ship a track as
+> "registry row + global audit one-liner only"; that leaves `tracks/` inconsistent with the registry.
+> A tiny fix/follow-up may skip the full AI-DLC stages, but never the per-track `state.md` stub.
+
 ## Track lifecycle
 1. **Create.** Pick next `Fn`. `mkdir aidlc-docs/tracks/<id>`, copy `_TEMPLATE/{state.md,audit.md}`.
    Add a registry row (`active`). Create the worktree (and submodule branch if needed) **before**
-   any code generation.
+   any code generation. (Even a lean hotfix track creates `tracks/<id>/state.md` here — see the
+   note above.)
 2. **Work.** All progress + audit go to `tracks/<id>/{state.md,audit.md}` only. Never touch another
    track's files or the root files (except a registry row update if the title/base changes).
 3. **Merge / close.** Merge the branch (and submodule branch first, if any). Flip the registry row
