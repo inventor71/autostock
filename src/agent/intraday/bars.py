@@ -80,3 +80,29 @@ class BarCache:
             return hit[1] if hit else None
         self._price[symbol] = (now, price)
         return price
+
+    # ---- F14: cache-only reads (NEVER fetch) + a prefetch worker ---------- #
+    # The 5s WakeDetector tick MUST NOT do a synchronous market-data fetch on the
+    # scheduler thread (a stalled/half-open socket would overrun the interval and
+    # wedge the daemon — the very bug F14 fixes). So detect_wakes reads via peek_*
+    # (last cached value or None, TTL ignored) and a separate ``prefetch`` job
+    # (its own scheduler thread) keeps the cache warm via the fetching get_*.
+    def peek_price(self, symbol: str) -> float | None:
+        """Last cached price (None if never fetched). NEVER fetches."""
+        hit = self._price.get(symbol)
+        return hit[1] if hit else None
+
+    def peek_bars(self, symbol: str) -> pd.DataFrame | None:
+        """Last cached bars (None if never fetched). NEVER fetches."""
+        hit = self._bars.get(symbol)
+        return hit[1] if hit else None
+
+    def prefetch(self, symbols) -> None:
+        """Warm the price (every call) + bars (bars_ttl-gated) caches for ``symbols``.
+
+        Runs on its OWN scheduler job (off the detect thread). Each get_* is
+        best-effort and now bounded by the broker/provider HTTP timeout (F14-A),
+        so a slow symbol can't hang the worker. De-dupes symbols defensively."""
+        for sym in dict.fromkeys(s for s in symbols if s):
+            self.get_price(sym)
+            self.get_bars(sym)

@@ -15,6 +15,12 @@ export const HEALTHWAIT_TIMEOUT_MS = 60_000; // absorbs cold-start premarket res
 export const HEALTH_POLL_MS = 1_000;
 export const ATTACH_PROBE_MS = 8_000; // attach advance probe: informational only (never gates start)
 export const RUN_TIMEOUT_MS = 10_000; // hard cap on a systemctl/loginctl call (review #4: no infinite hang)
+// F14: when the unit is `active` but the snapshot isn't fresh, it may just be busy (a long
+// LLM turn / slow publish — published_at still advances) OR genuinely wedged (publish frozen
+// on a half-open socket). Wait out a long patience window for an advance before declaring a
+// wedge, so a healthy-but-slow daemon is never killed; then auto-restart ONCE and re-wait.
+export const WEDGE_PATIENCE_MS = 180_000; // active+not-fresh: an advance must appear within this, else wedged
+export const RESTART_HEALTH_MS = 180_000; // after an auto-restart, allow a cold-start publish to appear
 
 export interface RunResult {
   code: number;
@@ -253,16 +259,20 @@ export class DaemonService {
         `daemon unit is 'failed'. inspect: journalctl --user -u ${this.unitName} -n 50`,
       );
     }
-    if (st !== "active") {
-      // race guard: a (manual) daemon may have begun publishing since the first check → attach, don't start.
-      if (this.isFreshNow()) return { healthy: true, reason: "attached (became live before start)" };
-      const r = await this.sc(["start", this.unitName]); // idempotent if it raced to active
-      if (r.code !== 0 && !/already/i.test(r.stderr)) {
-        throw new DaemonStartError(
-          `failed to start daemon (systemctl exit ${r.code}). ${r.stderr || ""}`.trim() +
-            `\n      → journalctl --user -u ${this.unitName} -n 50`,
-        );
-      }
+    // F14: unit is `active` but not fresh → busy-or-wedged. Handle in its own path and
+    // RETURN, so an auto-restart does NOT fall through to the common healthWait below
+    // (that would run a second, redundant health-wait).
+    if (st === "active") {
+      return await this.handleActiveWedge();
+    }
+    // not active: race guard + start, then the common (60s) health-wait — unchanged.
+    if (this.isFreshNow()) return { healthy: true, reason: "attached (became live before start)" };
+    const r = await this.sc(["start", this.unitName]); // idempotent if it raced to active
+    if (r.code !== 0 && !/already/i.test(r.stderr)) {
+      throw new DaemonStartError(
+        `failed to start daemon (systemctl exit ${r.code}). ${r.stderr || ""}`.trim() +
+          `\n      → journalctl --user -u ${this.unitName} -n 50`,
+      );
     }
     const health = await this.healthWait();
     if (!health.healthy) {
@@ -272,6 +282,38 @@ export class DaemonService {
       );
     }
     return health;
+  }
+
+  /**
+   * F14 self-heal: the unit is `active` but the snapshot isn't fresh. It may be BUSY (a long
+   * LLM turn / slow publish — published_at still advances) or genuinely WEDGED (publish frozen).
+   * Wait out a long patience window for an advance; a busy daemon is thus never killed. If no
+   * advance, restart ONCE and re-wait. We KEEP healthWait's `fresh && advanced` gate (not
+   * advance-only): advance-only would risk attaching to a daemon that died moments ago leaving a
+   * stale-but-recent snapshot (review #1). Fail-closed: throw rather than falsely attach.
+   */
+  async handleActiveWedge(): Promise<HealthResult> {
+    const busyOrHealthy = await this.healthWait(WEDGE_PATIENCE_MS);
+    if (busyOrHealthy.healthy) return busyOrHealthy; // advanced within patience → busy, not wedged
+    // wedge confirmed. Race guard: it may have started publishing in the last moment.
+    if (this.isFreshNow()) return { healthy: true, reason: "attached (recovered before restart)" };
+    const r = await this.sc(["restart", this.unitName]);
+    if (r.code !== 0) {
+      throw new DaemonStartError(
+        `daemon wedged (snapshot frozen) and auto-restart failed (systemctl exit ${r.code}). ` +
+          `${r.stderr || ""}`.trim() +
+          `\n      → journalctl --user -u ${this.unitName} -n 50`,
+      );
+    }
+    const after = await this.healthWait(RESTART_HEALTH_MS);
+    if (!after.healthy) {
+      throw new DaemonStartError(
+        `daemon was wedged; auto-restarted but snapshot still not advancing within ` +
+          `${Math.round(RESTART_HEALTH_MS / 1000)}s.\n` +
+          `      → journalctl --user -u ${this.unitName} -n 50`,
+      );
+    }
+    return { healthy: true, reason: "auto-restarted (was wedged); snapshot advancing again" };
   }
 
   /** Did published_at advance (while staying fresh) within the timeout? Informational only — a

@@ -68,6 +68,14 @@ class _Bars:
     def get_bars(self, s):
         return self._bars
 
+    # F14: the detect path now reads cache-only via peek_* (no fetch on the
+    # scheduler thread). The stub mirrors get_* so existing cases keep their data.
+    def peek_price(self, s):
+        return self._price
+
+    def peek_bars(self, s):
+        return self._bars
+
 
 class _Worker:
     def __init__(self):

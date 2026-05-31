@@ -19,6 +19,7 @@ class IntradayConfig:
     news_ttl_minutes: float = 15.0
     bars_cache_seconds: float = 60.0
     price_cache_seconds: float = 3.0
+    prefetch_seconds: int = 5  # F14: BarCache warm cadence (price each tick; bars gated by bars_cache_seconds)
 
     @classmethod
     def from_mapping(cls, m: dict | None) -> "IntradayConfig":
@@ -40,6 +41,7 @@ class IntradayConfig:
             news_ttl_minutes=float(news.get("ttl_minutes", d.news_ttl_minutes)),
             bars_cache_seconds=float(bars.get("cache_seconds", d.bars_cache_seconds)),
             price_cache_seconds=float(price.get("cache_seconds", d.price_cache_seconds)),
+            prefetch_seconds=int(wake.get("prefetch_seconds", d.prefetch_seconds)),
         )
 
     def abnormal(self) -> AbnormalConfig:
