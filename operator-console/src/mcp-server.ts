@@ -21,10 +21,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { AlpacaDataClient } from "./alpaca-data";
 import { FileDrop } from "./filedrop";
 import { handleSteer, handleSteerRead, handleStructured } from "./steer-handler";
 
 const fd = new FileDrop(process.env.STEERING_DIR ?? "./steering");
+const client = new AlpacaDataClient(); // fail-fast: missing keys → process.exit(1) (Q1=B)
 const server = new McpServer({ name: "autostock", version: "0.0.0" });
 const txt = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 
@@ -54,9 +56,9 @@ server.registerTool(
   {
     description:
       "Read the autostock daemon state (read-only, no order authority).\n" +
-      "SNAPSHOT verbs: /status · /positions · /orders · /book · /agent-trace · /why — return the live " +
-      "snapshot (run_state, account [equity/cash/open_pnl], round_trip [today win_rate/realized_pnl], " +
-      "positions, open_orders, pending, queued_trades, locked_symbols, market_open).\n" +
+      "Returns the daemon's periodic SNAPSHOT — may be up to a few seconds stale.\n" +
+      "For live Alpaca data (positions/orders/account/market prices) prefer the get_* tools instead.\n" +
+      "SNAPSHOT verbs: /status · /agent-trace · /why — daemon-internal state ONLY available here.\n" +
       "MONITOR verbs (deep view, from monitor.json): /turns (turn cost/activity) · /decisions (recent " +
       "decisions) · /log (agent log tail).",
     inputSchema: { command: z.string().describe("a read command, e.g. /status or /turns") },
@@ -157,6 +159,224 @@ server.registerTool(
     inputSchema: { cancel_orders: z.boolean().optional() },
   },
   async ({ cancel_orders }) => txt(handleStructured("close_all", { cancel_orders }, fd)),
+);
+
+// ---- F20 Alpaca MCP stock-only READ tools (16, live Alpaca API, no daemon round-trip) ---- //
+// critic M1: all descriptions note "live Alpaca API — fresher than daemon snapshot".
+// All tools are allow-gated (Q4=A, read-only, no order authority).
+
+// -- Trading Read --
+
+server.registerTool(
+  "get_account_info",
+  {
+    description:
+      "Get account summary: equity, cash, buying_power, PDT status, etc. (READ-ONLY). " +
+      "Live Alpaca API — fresher than daemon snapshot.",
+    inputSchema: {},
+  },
+  async () => txt(await client.getAccountInfo()),
+);
+
+server.registerTool(
+  "get_all_positions",
+  {
+    description:
+      "Get all open positions. Live Alpaca API — fresher than daemon snapshot. (READ-ONLY).",
+    inputSchema: {},
+  },
+  async () => txt(await client.getAllPositions()),
+);
+
+server.registerTool(
+  "get_open_position",
+  {
+    description:
+      "Get a single position by symbol or asset id. Live Alpaca API. (READ-ONLY).",
+    inputSchema: {
+      symbol_or_asset_id: z.string().min(1).max(20).describe("symbol or asset id, e.g. AAPL"),
+    },
+  },
+  async ({ symbol_or_asset_id }) => txt(await client.getOpenPosition(symbol_or_asset_id)),
+);
+
+server.registerTool(
+  "get_portfolio_history",
+  {
+    description:
+      "Get portfolio equity/PnL history summary. For detailed timeseries use get_stock_bars. (READ-ONLY).",
+    inputSchema: {
+      period: z.enum(["1D", "1W", "1M", "3M", "6M", "1A", "5A", "all"]).optional(),
+      timeframe: z.enum(["1Min", "5Min", "15Min", "1H", "1D"]).optional(),
+      intraday_reporting: z.enum(["market_hours", "extended_hours", "continuous"]).optional(),
+    },
+  },
+  async (args) => txt(await client.getPortfolioHistory(args)),
+);
+
+server.registerTool(
+  "get_asset",
+  {
+    description:
+      "Get a single asset by symbol or id (tradable, exchange, marginable, etc.). (READ-ONLY).",
+    inputSchema: {
+      symbol_or_asset_id: z.string().min(1).max(20).describe("symbol or asset id, e.g. AAPL"),
+    },
+  },
+  async ({ symbol_or_asset_id }) => txt(await client.getAsset(symbol_or_asset_id)),
+);
+
+server.registerTool(
+  "get_all_assets",
+  {
+    description:
+      "List tradable assets with optional filters (status, asset_class, exchange). (READ-ONLY).",
+    inputSchema: {
+      status: z.enum(["active", "inactive"]).optional().default("active"),
+      asset_class: z.enum(["us_equity"]).optional(),
+      exchange: z.string().optional(),
+    },
+  },
+  async (args) => txt(await client.getAllAssets(args)),
+);
+
+server.registerTool(
+  "get_calendar",
+  {
+    description:
+      "Get market calendar (trading days, holidays) for a date range. (READ-ONLY).",
+    inputSchema: {
+      start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("YYYY-MM-DD"),
+      end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("YYYY-MM-DD"),
+    },
+  },
+  async (args) => txt(await client.getCalendar(args)),
+);
+
+server.registerTool(
+  "get_market_clock",
+  {
+    description:
+      "Get current market status: is_open, next_open, next_close. (READ-ONLY).",
+    inputSchema: {},
+  },
+  async () => txt(await client.getMarketClock()),
+);
+
+server.registerTool(
+  "get_orders",
+  {
+    description:
+      "Get order history with status/symbol/date/direction filters. Live Alpaca API — fresher than daemon snapshot. (READ-ONLY).",
+    inputSchema: {
+      status: z.enum(["open", "closed", "all"]).optional().default("open"),
+      limit: z.number().int().min(1).max(500).optional(),
+      after: z.string().optional().describe("ISO 8601 timestamp"),
+      until: z.string().optional().describe("ISO 8601 timestamp"),
+      direction: z.enum(["asc", "desc"]).optional(),
+      symbols: z.string().optional().describe("comma-separated symbols, e.g. AAPL,MSFT"),
+    },
+  },
+  async (args) => txt(await client.getOrders(args)),
+);
+
+// -- Stock Market Data --
+
+server.registerTool(
+  "get_stock_bars",
+  {
+    description:
+      "Get historical OHLCV bars for one or more symbols. (READ-ONLY).",
+    inputSchema: {
+      symbol_or_symbols: z.string().min(1).max(200).describe("comma-separated symbols, e.g. AAPL,MSFT"),
+      timeframe: z.enum(["1Min", "5Min", "15Min", "30Min", "1Hour", "1Day"]),
+      start: z.string().optional().describe("ISO 8601 timestamp"),
+      end: z.string().optional().describe("ISO 8601 timestamp"),
+      limit: z.number().int().min(1).max(10000).optional(),
+      adjustment: z.enum(["raw", "split", "dividend", "all"]).optional().default("raw"),
+    },
+  },
+  async (args) => txt(await client.getStockBars(args)),
+);
+
+server.registerTool(
+  "get_stock_latest_bar",
+  {
+    description:
+      "Get the most recent minute bar for one or more symbols. (READ-ONLY).",
+    inputSchema: {
+      symbol_or_symbols: z.string().min(1).max(200).describe("comma-separated symbols, e.g. AAPL,MSFT"),
+    },
+  },
+  async ({ symbol_or_symbols }) => txt(await client.getStockLatestBar(symbol_or_symbols)),
+);
+
+server.registerTool(
+  "get_stock_latest_quote",
+  {
+    description:
+      "Get the latest bid/ask quote for one or more symbols. Live Alpaca API. (READ-ONLY).",
+    inputSchema: {
+      symbol_or_symbols: z.string().min(1).max(200).describe("comma-separated symbols, e.g. AAPL,MSFT"),
+    },
+  },
+  async ({ symbol_or_symbols }) => txt(await client.getStockLatestQuote(symbol_or_symbols)),
+);
+
+server.registerTool(
+  "get_stock_latest_trade",
+  {
+    description:
+      "Get the latest trade (price, size, exchange, timestamp) for one or more symbols. " +
+      "Live Alpaca API — fresher than daemon snapshot. Primary tool for \"what's the current price?\". (READ-ONLY).",
+    inputSchema: {
+      symbol_or_symbols: z.string().min(1).max(200).describe("comma-separated symbols, e.g. AAPL,MSFT"),
+    },
+  },
+  async ({ symbol_or_symbols }) => txt(await client.getStockLatestTrade(symbol_or_symbols)),
+);
+
+server.registerTool(
+  "get_stock_quote",
+  {
+    description:
+      "Get historical quote data (bid/ask timeseries) for one or more symbols. (READ-ONLY).",
+    inputSchema: {
+      symbol_or_symbols: z.string().min(1).max(200).describe("comma-separated symbols, e.g. AAPL,MSFT"),
+      start: z.string().optional().describe("ISO 8601 timestamp"),
+      end: z.string().optional().describe("ISO 8601 timestamp"),
+      limit: z.number().int().min(1).max(10000).optional(),
+    },
+  },
+  async (args) => txt(await client.getStockQuote(args)),
+);
+
+server.registerTool(
+  "get_stock_snapshot",
+  {
+    description:
+      "Get comprehensive snapshot (latest trade + quote + minute/daily/previous-daily bars) " +
+      "for one or more symbols. Best single-call overview. (READ-ONLY).",
+    inputSchema: {
+      symbol_or_symbols: z.string().min(1).max(200).describe("comma-separated symbols, e.g. AAPL,MSFT"),
+    },
+  },
+  async ({ symbol_or_symbols }) => txt(await client.getStockSnapshot(symbol_or_symbols)),
+);
+
+server.registerTool(
+  "get_stock_trades",
+  {
+    description:
+      "Get historical trade data (price, size, exchange) for one or more symbols. (READ-ONLY).",
+    inputSchema: {
+      symbol_or_symbols: z.string().min(1).max(200).describe("comma-separated symbols, e.g. AAPL,MSFT"),
+      start: z.string().optional().describe("ISO 8601 timestamp"),
+      end: z.string().optional().describe("ISO 8601 timestamp"),
+      limit: z.number().int().min(1).max(10000).optional(),
+    },
+  },
+  async (args) => txt(await client.getStockTrades(args)),
 );
 
 await server.connect(new StdioServerTransport());

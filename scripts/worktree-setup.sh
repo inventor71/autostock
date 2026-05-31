@@ -88,6 +88,7 @@ if [ "$DO_TS" -eq 1 ]; then
   ( cd "${WT}/${SUBMODULE}" && bun install --frozen-lockfile )
   if [ -x "${WT}/${SUBMODULE}/node_modules/.bin/tsgo" ]; then
     note "tsgo ready → typecheck:  (cd ${WT}/${SUBMODULE} && PATH=${BUN_BIN}:\$PATH bun run typecheck)"
+    note "F20: if this track adds Alpaca read tools, set ALPACA_API_KEY + ALPACA_API_SECRET in env before running MCP server"
   else
     die "tsgo still missing after install — check ${SUBMODULE}/package.json devDeps"
   fi
