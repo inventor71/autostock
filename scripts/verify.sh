@@ -33,7 +33,9 @@ run_typecheck() {
 
 run_unit() {
   log "pytest (deterministic / offline)"
-  PYTHONPATH=/app pytest -q
+  # -p no:cacheprovider → no .pytest_cache written into the bind-mounted worktree (root-owned junk
+  # the host then can't delete). Bytecode + hypothesis are redirected off /app via env (see compose).
+  PYTHONPATH=/app pytest -q -p no:cacheprovider
   log "unit OK"
 }
 

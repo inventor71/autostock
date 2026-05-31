@@ -17,8 +17,9 @@
 #     --ts             TS submodule track: init submodule, branch it, bun install, verify tsgo.
 #     --py             Python track: symlink the main .env into the worktree (pydantic loads it).
 #     --docker-verify  Containerized verification (F10): init submodule on the HOST (the container
-#                      can't — worktree .git is outside the mount) + scaffold .env.test, then print
-#                      the `docker compose -f docker-compose.verify.yml` commands. ZERO prod impact:
+#                      can't — worktree .git is outside the mount) + provision .env.test (COPIED from
+#                      ${MAIN_ROOT}/.env.test if present, else from the example), then print the
+#                      `docker compose -f docker-compose.verify.yml` commands. ZERO prod impact:
 #                      the container loads .env.test only (a TEST paper account), never prod .env.
 #
 # Idempotent: re-running reuses an existing worktree/branch and re-checks deps.
@@ -118,13 +119,20 @@ merge/rebase it into this track first."
   else
     note "submodule already initialized"
   fi
-  # Scaffold .env.test (TEST paper account). NEVER copy the prod .env here — that's the whole point.
-  if [ ! -e "${WT}/.env.test" ]; then
-    cp "${WT}/.env.test.example" "${WT}/.env.test"
-    note ".env.test scaffolded from example — FILL IN the TEST paper account keys (typecheck/unit"
-    note "  run with dummies; smoke needs real TEST keys). It is gitignored; prod .env is never used."
+  # Provision .env.test (TEST paper account). The canonical TEST creds live at the MAIN repo root
+  # `${MAIN_ROOT}/.env.test` — reuse them by COPYING into the worktree (a symlink would dangle
+  # inside the container, which mounts only the worktree). COPY, never the prod `.env` — that is the
+  # whole isolation point. Fall back to the example template if no main .env.test exists yet.
+  if [ -e "${WT}/.env.test" ]; then
+    note ".env.test already present in worktree (reusing)"
+  elif [ -e "${MAIN_ROOT}/.env.test" ]; then
+    cp "${MAIN_ROOT}/.env.test" "${WT}/.env.test"
+    note ".env.test copied from main (${MAIN_ROOT}/.env.test) — reusing the TEST paper account creds."
+    note "  (gitignored in the worktree; prod .env is never used.)"
   else
-    note ".env.test already present (reusing)"
+    cp "${WT}/.env.test.example" "${WT}/.env.test"
+    note ".env.test scaffolded from example — FILL IN the TEST paper account keys (or put them at"
+    note "  ${MAIN_ROOT}/.env.test once and future tracks copy them automatically). gitignored."
   fi
   cat <<EOF
   ✔ ready. Run FROM the worktree dir (so .:/app mounts THIS worktree):
