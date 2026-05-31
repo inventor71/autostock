@@ -1,13 +1,12 @@
-# Track F21 — place_stock_order arg robustness (fail-fast + omit-optional guidance)
+# Track F21 — structured MCP order arg robustness (fail-fast pre-queue + omit-optional guidance)
 
-> Per-track state. Single writer = this track's worktree session. **OPENED only** (no
-> construction yet). See [[f9-gated-alpaca-orders]].
+> Per-track state. Single writer = this track's worktree session. See [[f9-gated-alpaca-orders]].
 
 ## Track Info
 - **Track ID**: F21
-- **Title**: Harden `place_stock_order` against junk/placeholder optional args + validate before queue
-- **Type**: fix (F9 follow-up — robustness)
-- **Status**: active (opened; requirements/design TBD)
+- **Title**: Harden all 3 structured MCP tools (`place_stock_order`, `close_position`, `close_all_positions`) against junk/placeholder args + validate before queue
+- **Type**: fix (F9 follow-up — robustness, scope expanded 2026-05-31)
+- **Status**: merged (2026-05-31, commit 0ed7044→merge to main)
 - **Branch**: feat/F21 (worktree at construction)
 - **Worktree**: (TBD)
 - **Submodule branch**: — (parent repo: `src/agent/steering/commands.py` + `operator-console/src/mcp-server.ts`)
@@ -16,31 +15,38 @@
 
 ## Problem (observed live)
 A weak console model (GPT-5.5 Fast) filled OPTIONAL fields with placeholder `0.01` and set BOTH
-qty and notional:
-`place_stock_order[symbol=AAPL, side=buy, qty=1, notional=0.01, limit_price=300, stop_price=0.01,
-trail_price=0.01, trail_percent=0.01, take_profit=0.01, stop_loss=0.01, ...]`. Because the market
-was closed, `_v_place_order` **queued it BEFORE structural validation** (`_order_from_place_args`
-runs only after the market-open check), so it reported "주문 접수" — but at next open the drain
-re-runs it and the gate **rejects** (qty+notional both set → "specify either qty or notional";
-trail_* on a non-trailing order → Order validator; `take_profit 0.01 ≤ entry` → price-sanity). Net:
-a misleading "accepted" for an order that will silently fail at open.
+qty and notional on `place_stock_order`. Because the market was closed, `_v_place_order` **queued
+it BEFORE structural validation** (`_order_from_place_args` runs only after the market-open check),
+so it reported "deferred (접수)" — but at next open the gate **rejected** it. Same queue-before-
+validate pattern exists in `_v_close_position` and `_v_close_all`.
 
-## Rough scope (to refine in Requirements)
-1. **Fail-fast: validate structure BEFORE queuing.** Move `_order_from_place_args` + Order
-   construction (FR-7 notional/qty exclusivity, trail/class validity, price-sanity that doesn't
-   need live price) ahead of the market-open/`queue_offhours` branch in `_v_place_order`, so a
-   malformed order is rejected immediately with a reason — never queued as junk.
-2. **Discourage placeholder optionals.** Tighten the zod tool description + field descriptions in
-   `mcp-server.ts` ("omit optional fields entirely if unused; never pass 0/placeholder"). Consider
-   treating `notional`/`trail_*`/`take_profit`/`stop_loss` ≤ 0 (or a tiny epsilon) as unset, and/or
-   rejecting an obviously-degenerate value, so a weak model can't smuggle junk past `.positive()`.
-3. Make the queued-vs-accepted outcome wording honest (deferred ≠ validated-accepted).
+## Scope (expanded 2026-05-31 — user decision)
+All 3 structured MCP tools with off-hours queuing: `place_stock_order`, `close_position`, `close_all_positions`.
+Deterministic shorthand (`/sell`, `/flatten`, etc.) excluded — parser validates syntax.
 
-## Open questions (for Requirements)
-- Sanitize-to-None vs hard-reject on degenerate optionals (0.01 take_profit on a $300 stock)?
-- How much price-sanity can run pre-queue (without a live price when market closed)?
-- Should `qty`+`notional` both-set be a hard reject (current) or prefer one?
+## Policy Decisions (Requirements Analysis, 2026-05-31)
+- **P1**: Degenerate optionals → **Hard-reject + 이유** (not sanitize). 0/0.01 등 명백한 placeholder는 즉시 거부.
+- **P2**: Pre-queue 검증 → **구조 검증만** (live price 불필요한 것). 가격 대비 sanity는 개장 드레인 시.
+- **P3**: qty+notional both-set → **Hard-reject 유지** ("specify either qty or notional, not both").
+- **P4**: L3 `_order_from_place_args`의 FR-7 로직 → **삭제** (L1 zod `.refine()`으로 이동). 가격 계산만 남김.
+- **Architecture**: 3-layer (L1 zod `.refine()` 동기 → L2 `handleStructured` degenerate → L3 daemon 가격만). Alpaca MCP 동기 패턴 채택.
+
+## Extension Configuration
+- **Security Baseline**: Enabled (inherit project-wide). Applicable: SECURITY-15 (fail-closed validation).
+- **Property-Based Testing**: Partial (inherit project-wide). Applicable: PBT-02/03 (structural validation round-trip, degenerate-field rejection invariants).
 
 ## Stage Progress
-- [x] Opened (registry + this record)
-- [ ] Requirements / design / construction — NOT started
+- [x] Workspace Detection — reused (brownfield, existing project)
+- [x] Reverse Engineering — reused (artifacts exist)
+- [x] Requirements Analysis — complete 2026-05-31 (approved). `requirements/requirements.md`
+- [x] User Stories — SKIP (bug fix, no personas, no UX change)
+- [x] Workflow Planning — complete 2026-05-31 (approved). `plans/execution-plan.md`
+- [x] Application Design — SKIP (within existing component boundaries)
+- [x] Units Generation — SKIP (single cohesive unit)
+- [x] Construction:
+  - [x] Functional Design — SKIP (validation rules fully specified in requirements; mechanical translation)
+  - [x] NFR Requirements — SKIP (0 new deps; zod `.refine()` built-in)
+  - [x] NFR Design — SKIP (no new concurrency/security patterns)
+  - [x] Infrastructure Design — SKIP (local daemon, no cloud infra)
+  - [x] Code Generation — complete 2026-05-31. `plans/code-generation-plan.md`
+  - [x] Build and Test — complete 2026-05-31. `build-and-test/build-and-test-summary.md`
