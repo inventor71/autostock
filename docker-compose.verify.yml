@@ -7,6 +7,10 @@
 #   docker compose -f docker-compose.verify.yml run --rm verify typecheck
 #   docker compose -f docker-compose.verify.yml run --rm verify unit
 #   docker compose -f docker-compose.verify.yml run --rm verify smoke
+#
+# F15 — the `attach` service runs the FULL runtime (daemon + console TUI) for a human to watch the
+# live sidebar, on the TEST paper account (prod-identical except the account). Interactive:
+#   docker compose -f docker-compose.verify.yml run --rm -it attach
 services:
   verify:
     build:
@@ -39,5 +43,40 @@ services:
     # mode is passed as the run arg → scripts/verify.sh (ENTRYPOINT). Default when omitted:
     command: ["all"]
 
+  # F15 — full-runtime attach: daemon + console TUI on the TEST paper account, for a human to watch
+  # the live sidebar. Same wiring as prod EXCEPT the account (and no systemd — daemon is a plain bg
+  # process). Run interactively (the -it gives the TUI a terminal):
+  #   docker compose -f docker-compose.verify.yml run --rm -it attach
+  attach:
+    build:
+      context: .
+      dockerfile: Dockerfile.verify
+    working_dir: /app
+    # Interactive: the console TUI needs a real terminal. (`run -it` also sets these; kept explicit.)
+    stdin_open: true
+    tty: true
+    volumes:
+      - .:/app
+      # rw — UNLIKE smoke's :ro. Live LLM turns (the daemon's agent) write session/cache state under
+      # ~/.claude; a :ro mount makes the claude CLI error. This matches how the prod daemon uses it.
+      - ${HOME}/.claude:/root/.claude:rw
+      - verify-node-modules:/app/operator-console/cli/node_modules
+      # Daemon runtime writes → named volumes (NOT the bind mount), so nothing root-owned lands in the
+      # worktree and the host can still `git worktree remove` without sudo. snapshot.json lives in the
+      # steering volume, which the console reads via STEERING_DIR=/app/steering.
+      - attach-steering:/app/steering
+      - attach-workspace:/app/workspace
+      - attach-logs:/app/logs
+    environment:
+      # Same fail-closed isolation as `verify` (preflight asserts these): TEST account only.
+      AUTOSTOCK_ENV_FILE: /app/.env.test
+      PYTHONPATH: /app
+      STEERING_DIR: /app/steering
+      PYTHONDONTWRITEBYTECODE: "1"
+    command: ["attach"]
+
 volumes:
   verify-node-modules:
+  attach-steering:
+  attach-workspace:
+  attach-logs:
