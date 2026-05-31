@@ -124,16 +124,17 @@ class CommandHandler:
         except Exception:
             return False
 
-    def _flatten_symbol(self, sym: str) -> None:
-        opens = self.broker.get_open_orders(sym)
-        if opens:
-            self.executor._cancel_and_wait(sym, opens)  # release qty before close
+    def _flatten_symbol(self, sym: str, *, cancel_first: bool = True) -> None:
+        if cancel_first:
+            opens = self.broker.get_open_orders(sym)
+            if opens:
+                self.executor._cancel_and_wait(sym, opens)  # release qty before close
         self.broker.close_position(sym)
 
-    def _flatten_all_now(self) -> int:
+    def _flatten_all_now(self, *, cancel_orders: bool = True) -> int:
         syms = [p.symbol.upper() for p in self.broker.get_all_positions()]
         for s in syms:
-            self._flatten_symbol(s)
+            self._flatten_symbol(s, cancel_first=cancel_orders)
             self.state.lock_symbol(s)
         return len(syms)
 
@@ -204,7 +205,7 @@ class CommandHandler:
         sym = args.symbol.upper()
         if not self._market_open():
             self.channel.queue_offhours(cmd)
-            self._emit(cmd, "deferred", "market closed; queued for next open")
+            self._emit(cmd, "deferred", "market closed; queued for next open (size/price validated at open)")
             return
         price = self.data_provider.get_latest_price(sym)
         try:
@@ -218,22 +219,35 @@ class CommandHandler:
     def _order_from_place_args(self, args: PlaceOrderArgs, price: float | None) -> Order:
         """Resolve PlaceOrderArgs to a domain Order (notional->shares; legs).
 
-        Raises ValueError (-> structured reject) on FR-7 violations or an
-        unresolvable size. order_type/TIF/class validity beyond this is enforced
-        by the Order validator and the RiskManager capability gate.
+        Raises ValueError (-> structured reject) on an unresolvable size.
+        Structural validation (FR-7 qty/notional exclusivity, notional market+day
+        only, trail_*/class validity, qty-or-notional-required) now lives in L1
+        zod ``.refine()`` — see ``operator-console/src/mcp-server.ts``
+        ``placeOrderValidator``.  This function only does price-based sizing.
+        Defense-in-depth: ``PlaceOrderArgs.model_validate(extra="forbid")`` catches
+        extra keys and type mismatches; the ``Order`` model validator catches
+        invalid trail/class combinations at construction time. L3 does NOT
+        duplicate the qty/notional exclusivity or notional-market+day checks
+        (L1 is the sole gate for those).
         """
-        # FR-7: notional only for market+day; mutually exclusive with qty.
+        # F21: FR-7 structural checks moved to L1 zod .refine(); L3 keeps
+        # price-based sizing + defense-in-depth for L1-bypass scenarios.
+        # Defense-in-depth: L1 is primary gate; these catch direct daemon writes.
+        if args.notional is not None and args.qty is not None:
+            raise ValueError("specify either qty or notional, not both")
+        if args.notional is not None and (args.order_type != "market" or args.time_in_force != "day"):
+            raise ValueError("notional is only allowed for market + day orders")
+        if args.order_class == "oto":
+            raise ValueError("oto order_class is not yet supported")
         if args.notional is not None:
-            if args.qty is not None:
-                raise ValueError("specify either qty or notional, not both")
-            if args.order_type != "market" or args.time_in_force != "day":
-                raise ValueError("notional is only allowed for market + day orders (FR-7)")
             if price is None or price <= 0:
                 raise ValueError(f"no price to size notional for {args.symbol}")
             qty = math.floor(args.notional / price)
         elif args.qty is not None:
             qty = math.floor(args.qty)  # whole shares (Alpaca rejects fractional bracket legs)
         else:
+            # L1 zod .refine() already rejects missing qty+notional; this is a
+            # defense-in-depth safety net.
             raise ValueError("qty or notional required")
         if qty <= 0:
             raise ValueError("size rounds to 0 shares")
@@ -296,10 +310,16 @@ class CommandHandler:
         self._reconcile()
 
     def _v_close_position(self, cmd: SteeringCommand) -> None:
-        sym = str(cmd.args["symbol"]).upper()
+        # F21: validate symbol pre-queue (L1 zod .min(1) is primary gate; this is
+        # defense-in-depth against a missing/empty symbol reaching the daemon).
+        raw = cmd.args.get("symbol")
+        if not raw or not str(raw).strip():
+            self._emit(cmd, "rejected", "symbol required")
+            return
+        sym = str(raw).strip().upper()
         if not self._market_open():
             self.channel.queue_offhours(cmd)
-            self._emit(cmd, "deferred", "market closed; queued for next open")
+            self._emit(cmd, "deferred", "market closed; queued for next open (position checked at open)")
             return
         if self.broker.get_position(sym) is None:
             self._emit(cmd, "no_order", f"no position in {sym}")
@@ -310,11 +330,18 @@ class CommandHandler:
         self._reconcile()
 
     def _v_close_all(self, cmd: SteeringCommand) -> None:
+        # F21: validate cancel_orders type pre-queue (L1 zod .boolean() is primary
+        # gate; this is defense-in-depth).
+        co = cmd.args.get("cancel_orders")
+        if co is not None and not isinstance(co, bool):
+            self._emit(cmd, "rejected", "cancel_orders must be a boolean")
+            return
         if not self._market_open():
             self.channel.queue_offhours(cmd)
             self._emit(cmd, "deferred", "market closed; queued for next open")
             return
-        n = self._flatten_all_now()
+        # F21: honor cancel_orders flag (default True for backward compat)
+        n = self._flatten_all_now(cancel_orders=co if co is not None else True)
         self._emit(cmd, "executed", f"closed {n} positions")
         self._reconcile()
 

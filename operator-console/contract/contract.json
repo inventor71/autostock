@@ -84,8 +84,6 @@
       "trail"
     ],
     "close_position": [
-      "percentage",
-      "qty",
       "symbol"
     ],
     "close_all": [
