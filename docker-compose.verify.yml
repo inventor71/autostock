@@ -73,6 +73,16 @@ services:
       PYTHONPATH: /app
       STEERING_DIR: /app/steering
       PYTHONDONTWRITEBYTECODE: "1"
+      # F18: the opencode console MCP config (operator-console/cli/.opencode/opencode.jsonc)
+      # substitutes {env:AUTOSTOCK_ROOT} (the mcp-server.ts command path) and
+      # {env:STEERING_OPERATOR_TOKEN} (the shared daemon<->console secret, runtime.py honours
+      # os.environ[STEERING_OPERATOR_TOKEN]). Without these the MCP command resolved to
+      # /operator-console/... (not /app/...) so the server never started in-container -> the
+      # console's order tools were absent in `attach`. Host-overridable; the TEST-only default
+      # makes the in-container daemon + console share ONE token (container is the TEST paper
+      # account only — preflight forbids prod .env, so this fixed token is never a prod secret).
+      AUTOSTOCK_ROOT: /app
+      STEERING_OPERATOR_TOKEN: ${STEERING_OPERATOR_TOKEN:-attach-test-token}
     command: ["attach"]
 
 volumes:
