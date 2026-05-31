@@ -28,6 +28,11 @@ services:
     environment:
       AUTOSTOCK_ENV_FILE: /app/.env.test
       PYTHONPATH: /app
+      # Keep the container (runs as root) from writing scratch INTO the bind-mounted worktree —
+      # else pytest/hypothesis/bytecode caches land as root:root and the host can't `git worktree
+      # remove` without sudo. Redirect every writer off /app: no .pyc, hypothesis DB → /tmp.
+      PYTHONDONTWRITEBYTECODE: "1"
+      HYPOTHESIS_STORAGE_DIRECTORY: /tmp/hypothesis
     # mode is passed as the run arg → scripts/verify.sh (ENTRYPOINT). Default when omitted:
     command: ["all"]
 
