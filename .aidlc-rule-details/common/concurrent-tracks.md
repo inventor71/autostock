@@ -62,7 +62,11 @@ A single table is the authority for which tracks exist and where they live:
   only two cross-track edits; serialize them with `git pull --rebase` before committing.
 
 ## MANDATORY worktree gate (repo + submodule)
-**No application code may be generated outside a worktree.** Enforced as a hard, blocking gate:
+**No application code may be generated outside a worktree.** Enforced as a hard, blocking gate.
+
+> **One command does all of this:** `scripts/worktree-setup.sh <track> [--ts] [--py]` creates the
+> worktree, branches the submodule, runs the verification bootstrap (below), and links the main
+> `.env`. Prefer it over the manual steps.
 
 1. **Parent repo.** Before Code Generation **Part 2** (actual coding), the track MUST be on its
    own worktree branch:
@@ -84,6 +88,28 @@ A single table is the authority for which tracks exist and where they live:
 
 3. `/ai-dlc-status` flags a violation: uncommitted code changes in the `main` working tree, or a
    submodule on a detached HEAD with changes.
+
+### Verification bootstrap — make the worktree verifiable in place (don't defer typecheck)
+A fresh worktree's submodule has **no `node_modules` and no `tsgo` binary** (both are gitignored
+build output), so `tsgo`/typecheck silently can't run and verification keeps getting punted to
+"the user's machine". This is **cheap to fix, not a heavy network op**: bun's global cache is warm
+(~2.6G) and bun's default backend is hardlinks, so `bun install --frozen-lockfile` in the worktree
+is a near-offline hardlink farm (seconds, ~no disk). The recurring real blockers were (a) `bun` not
+on PATH in a bare shell (it lives at `~/.bun/bin` — same class as the daemon claude-CLI PATH bug),
+and (b) assuming the install needs the network. So:
+
+- **TS submodule track**: run `scripts/worktree-setup.sh <track> --ts`. It inits the submodule,
+  branches it, ensures `~/.bun/bin` on PATH, runs `bun install --frozen-lockfile`, and verifies
+  `node_modules/.bin/tsgo` exists. Then typecheck **in the worktree**:
+  `(cd .../operator-console/cli && PATH=~/.bun/bin:$PATH bun run typecheck)`. Only defer to the
+  user's machine if `bun` is genuinely unavailable or the lockfile changed and the cache is cold.
+- **Python track**: `scripts/worktree-setup.sh <track> --py` symlinks the main `.env` into the
+  worktree (pydantic loads it). Run live (paper-account, read-only) checks with the main venv
+  python — see the `worktree-live-verification` memory.
+- Quick fallback (caveat): symlinking the main submodule's `node_modules` gives external-dep types
+  but bun's internal workspace symlinks (`node_modules/@opencode-ai/*` → `../packages/...`) resolve
+  into the **main** tree's packages, not the worktree's edits — fine for external-dep-only checks,
+  wrong for verifying edited workspace packages. `bun install` is correct.
 
 ## Track lifecycle
 1. **Create.** Pick next `Fn`. `mkdir aidlc-docs/tracks/<id>`, copy `_TEMPLATE/{state.md,audit.md}`.

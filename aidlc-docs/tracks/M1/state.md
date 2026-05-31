@@ -36,4 +36,8 @@ F7/F8, and again during this very session on `audit.md`).
 - [x] Commands updated: ai-dlc-request, ai-dlc-resume, ai-dlc-status
 - [x] Root `aidlc-state.md` Track Registry + migration note
 - [x] Memory note (process decision) — `[[aidlc-multitrack-partition]]`
+- [x] Verification bootstrap: `scripts/worktree-setup.sh <track> [--ts] [--py]` + concurrent-tracks
+      "Verification bootstrap" section + worktree-live-verification memory TS half. Fixes the
+      recurring "can't tsgo in the worktree" (root cause: bun not on PATH + node_modules absent;
+      install is cheap with warm bun cache + hardlinks, not a network op).
 - [ ] Optional follow-up: also wire refactor/deprecate commands + a track-merge helper (deferred)
