@@ -83,6 +83,11 @@ services:
       # account only — preflight forbids prod .env, so this fixed token is never a prod secret).
       AUTOSTOCK_ROOT: /app
       STEERING_OPERATOR_TOKEN: ${STEERING_OPERATOR_TOKEN:-attach-test-token}
+      # F20: Alpaca MCP stock-only read tools need data API creds (in-process TS calls Alpaca REST v2).
+      # Paper-trading default — point to your test account keys. Override via host env for live.
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
+      ALPACA_PAPER: ${ALPACA_PAPER:-true}
     command: ["attach"]
 
 volumes:
