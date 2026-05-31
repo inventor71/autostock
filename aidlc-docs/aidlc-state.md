@@ -29,6 +29,7 @@
 | F15 | docker-verify `attach` mode (full daemon+TUI runtime, TEST account) | merged | feat/F15 | — | — | 98090fa | 2026-05-31 |
 | F16 | Broker API adapter — trade the sandbox account farm | active | feat/F16 (TBD) | .claude/worktrees/F16 (TBD) | — | cc125e5 | 2026-05-31 |
 | F17 | docker-verify cleanup — sudo-free teardown (ownership handback) | merged | feat/F17 | — | — | f912999 | 2026-05-31 |
+| F18 | docker-verify attach console-MCP env wiring (AUTOSTOCK_ROOT + shared token) | merged | feat/F18 | — | — | 6902612→8f5468c | 2026-05-31 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
