@@ -22,9 +22,12 @@ services:
       - ${HOME}/.claude:/root/.claude:ro
       # Keep node_modules off the bind mount so host/container arch never clash and installs cache.
       - verify-node-modules:/app/operator-console/cli/node_modules
-    # TEST paper account ONLY. `.env.test` must be filled by the user (copy from .env.test.example).
-    env_file:
-      - .env.test
+    # NOTE: we deliberately do NOT use `env_file: [.env.test]`. pydantic-settings already loads
+    # .env.test directly via AUTOSTOCK_ENV_FILE (config.py model_config) and the app reads creds ONLY
+    # through Settings (no raw os.environ['ALPACA_*'] anywhere). Injecting the file as OS env too would
+    # make OS env the authoritative source (pydantic precedence: env > dotenv) — a footgun if a host
+    # ALPACA_* ever leaked in. The dotenv file stays the single source of truth; verify.sh preflight
+    # asserts AUTOSTOCK_ENV_FILE is set + the file exists (else config.py falls back to prod /app/.env).
     environment:
       AUTOSTOCK_ENV_FILE: /app/.env.test
       PYTHONPATH: /app
