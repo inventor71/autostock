@@ -7,6 +7,7 @@
 
 import { FileDrop } from "./filedrop";
 import { ParseError, parseCommand } from "./parser";
+import type { SteeringVerb } from "./schema";
 
 /** Mutating path (buy/sell/flatten/stop/lifecycle/approval/...). Auto-gated by opencode. */
 export function handleSteer(command: string, fd: FileDrop): string {
@@ -22,6 +23,26 @@ export function handleSteer(command: string, fd: FileDrop): string {
   }
   const id = fd.send(draft.verb, draft.args);
   return `OK ${draft.verb} ${id} — ${draft.echo}`;
+}
+
+/** F9: structured Alpaca-shaped order/management path. The MCP tool's zod schema
+ * already validated `args` at the boundary (SECURITY-13); here we strip undefined
+ * keys (so the daemon's PlaceOrderArgs extra="forbid" sees only provided fields,
+ * NFR-3) and file-drop the command. Auto-gated by opencode's permission `ask`
+ * (FR-4) exactly like `steer`; the daemon RiskManager is the final safety. The
+ * token is attached in FileDrop and never returned (SECURITY-03). */
+export function handleStructured(
+  verb: SteeringVerb,
+  args: Record<string, unknown>,
+  fd: FileDrop,
+): string {
+  if (!fd.hasToken()) {
+    return "rejected: operator token missing (STEERING_OPERATOR_TOKEN); write disabled";
+  }
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) if (v !== undefined) clean[k] = v;
+  const id = fd.send(verb, clean);
+  return `OK ${verb} ${id}`;
 }
 
 // F6: deep-monitoring views are served from steering/monitor.json, not the snapshot.

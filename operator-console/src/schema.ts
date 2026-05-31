@@ -8,7 +8,11 @@ export type SteeringVerb =
   | "buy" | "sell" | "flatten" | "flatten_all" | "stop"
   | "pause" | "resume" | "halt_entries" | "allow_entries" | "kill"
   | "approve" | "reject" | "unlock" | "cancel"
-  | "note" | "directive" | "directive_clear" | "answer";
+  | "note" | "directive" | "directive_clear" | "answer"
+  // F9 structured Alpaca-shaped order/management verbs (emitted by the new
+  // structured MCP tools, NOT the deterministic parser).
+  | "place_order" | "cancel_order" | "cancel_all" | "replace_order"
+  | "close_position" | "close_all";
 
 // verbs that mutate the book/lifecycle → require human confirm before write (BR-B1)
 export const TRADE_VERBS = new Set<SteeringVerb>(["buy", "sell", "flatten", "flatten_all", "stop"]);
@@ -48,7 +52,27 @@ export const ALL_VERBS = [
   "pause", "resume", "halt_entries", "allow_entries", "kill",
   "approve", "reject", "unlock", "cancel",
   "note", "directive", "directive_clear", "answer",
+  "place_order", "cancel_order", "cancel_all", "replace_order",
+  "close_position", "close_all",
 ] as const satisfies readonly SteeringVerb[];
+
+// F9 (NFR-3) — per-verb structured arg names, pinned across languages by the
+// golden contract (contract.json `command_args`). Sorted, so a renamed/typed
+// field (e.g. trail_percent vs trail_pct) on either side fails contract.test.ts
+// instead of being caught only at live order time. Must match
+// records.PlaceOrderArgs + the daemon handlers' arg keys.
+export const COMMAND_ARGS = {
+  place_order: [
+    "client_order_id", "extended_hours", "force", "limit_price", "notional",
+    "order_class", "order_type", "qty", "side", "stop_loss", "stop_price",
+    "symbol", "take_profit", "time_in_force", "trail_percent", "trail_price",
+  ],
+  cancel_order: ["order_id"],
+  cancel_all: ["symbol"],
+  replace_order: ["limit_price", "order_id", "qty", "stop_price", "time_in_force", "trail"],
+  close_position: ["percentage", "qty", "symbol"],
+  close_all: ["cancel_orders"],
+} as const;
 
 export const ALL_EVENT_KINDS = [
   "outcome", "fill", "decision", "pending", "agent_question", "lifecycle", "reconcile",

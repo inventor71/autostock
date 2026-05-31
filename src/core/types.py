@@ -19,6 +19,7 @@ class OrderType(str, Enum):
     LIMIT = "limit"
     STOP = "stop"
     STOP_LIMIT = "stop_limit"
+    TRAILING_STOP = "trailing_stop"  # F9: trail_price or trail_percent
 
 
 class OrderClass(str, Enum):
@@ -29,11 +30,15 @@ class OrderClass(str, Enum):
                OCO pair that arms once the entry fills.
     OCO     -- take-profit + stop-loss legs only, attached to an existing
                position (no entry leg). Values mirror Alpaca's order classes.
+    OTO     -- "one-triggers-other": an entry leg that, once filled, submits a
+               single attached protective leg. F9 accepts the value but the
+               human-order gate rejects it in v1 (not yet wired end-to-end).
     """
 
     SIMPLE = "simple"
     BRACKET = "bracket"
     OCO = "oco"
+    OTO = "oto"
 
 
 class TimeFrame(str, Enum):

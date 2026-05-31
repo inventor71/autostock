@@ -97,3 +97,43 @@ class BaseBroker(ABC):
         or None if the order does not exist.
         """
         pass
+
+    # ------------------------------------------------------------------ #
+    # F9: structured order management (Alpaca-shaped). Defaults emulate via
+    # the single-target primitives so simulated/backtest brokers work unchanged;
+    # live brokers (Alpaca) override with native calls.
+    # ------------------------------------------------------------------ #
+    def replace_order(self, order_id: str, changes: dict) -> FilledOrder | None:
+        """Replace (modify) a resting order's qty/limit/stop/trail/TIF in place.
+
+        Default is unsupported (returns None) — only brokers with a native
+        replace endpoint implement it. F9 (Q2=A) restricts replace to SIMPLE
+        resting orders; the daemon rejects a replace targeting a bracket/OCO leg
+        before reaching here. ``changes`` may contain qty/limit_price/stop_price/
+        trail/time_in_force.
+        """
+        return None
+
+    def cancel_all_orders(self, symbol: str | None = None) -> int:
+        """Cancel all resting orders (optionally for one symbol). Returns the
+        count cancelled. Default emulates by looping ``get_open_orders`` +
+        ``cancel_order`` so every broker has the capability."""
+        opens = self.get_open_orders(symbol)
+        n = 0
+        for o in opens:
+            if self.cancel_order(o.order_id):
+                n += 1
+        return n
+
+    def close_all_positions(self, cancel_orders: bool = True) -> list[FilledOrder]:
+        """Close every open position. When ``cancel_orders`` is True, resting
+        orders are cancelled first so their qty is released before the close.
+        Default emulates by looping ``get_all_positions`` + ``close_position``."""
+        if cancel_orders:
+            self.cancel_all_orders()
+        out: list[FilledOrder] = []
+        for pos in self.get_all_positions():
+            filled = self.close_position(pos.symbol)
+            if filled is not None:
+                out.append(filled)
+        return out

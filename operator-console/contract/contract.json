@@ -17,7 +17,13 @@
     "note",
     "directive",
     "directive_clear",
-    "answer"
+    "answer",
+    "place_order",
+    "cancel_order",
+    "cancel_all",
+    "replace_order",
+    "close_position",
+    "close_all"
   ],
   "event_kinds": [
     "outcome",
@@ -43,5 +49,47 @@
     "ts",
     "kind",
     "payload"
-  ]
+  ],
+  "command_args": {
+    "place_order": [
+      "client_order_id",
+      "extended_hours",
+      "force",
+      "limit_price",
+      "notional",
+      "order_class",
+      "order_type",
+      "qty",
+      "side",
+      "stop_loss",
+      "stop_price",
+      "symbol",
+      "take_profit",
+      "time_in_force",
+      "trail_percent",
+      "trail_price"
+    ],
+    "cancel_order": [
+      "order_id"
+    ],
+    "cancel_all": [
+      "symbol"
+    ],
+    "replace_order": [
+      "limit_price",
+      "order_id",
+      "qty",
+      "stop_price",
+      "time_in_force",
+      "trail"
+    ],
+    "close_position": [
+      "percentage",
+      "qty",
+      "symbol"
+    ],
+    "close_all": [
+      "cancel_orders"
+    ]
+  }
 }

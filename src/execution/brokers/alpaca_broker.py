@@ -20,6 +20,8 @@ try:
         LimitOrderRequest,
         StopOrderRequest,
         StopLimitOrderRequest,
+        TrailingStopOrderRequest,
+        ReplaceOrderRequest,
         TakeProfitRequest,
         StopLossRequest,
         GetOrdersRequest,
@@ -128,12 +130,42 @@ class AlpacaBroker(BaseBroker):
         except Exception as e:
             raise BrokerError(f"Order submission failed: {e}") from e
 
+    # F9: supported TIFs are wired explicitly; anything else is rejected (no
+    # silent downgrade to DAY — that was a latent fail-closed violation).
+    _TIF_MAP = {
+        "day": "DAY",
+        "gtc": "GTC",
+        "ioc": "IOC",
+        "fok": "FOK",
+    }
+
+    @classmethod
+    def _tif_value(cls, tif_str: str):
+        key = str(tif_str).lower()
+        try:
+            return getattr(TimeInForce, cls._TIF_MAP[key])
+        except KeyError:
+            raise BrokerError(
+                f"unsupported time_in_force: {tif_str!r} "
+                f"(supported: day/gtc/ioc/fok; opg/cls not wired in F9 v1)"
+            )
+
     def _time_in_force(self, order: Order):
         """Protective legs persist across sessions (GTC); simple orders honour
-        the order's TIF (default DAY)."""
+        the order's TIF. Unsupported TIFs raise (fail-closed) instead of being
+        silently downgraded to DAY (F9 fix)."""
         if order.order_class in (OrderClass.BRACKET, OrderClass.OCO):
             return TimeInForce.GTC
-        return TimeInForce.GTC if str(order.time_in_force).lower() == "gtc" else TimeInForce.DAY
+        return self._tif_value(order.time_in_force)
+
+    def _extras(self, order: Order) -> dict:
+        """extended_hours / client_order_id passthrough for simple-class orders."""
+        kw: dict = {}
+        if order.extended_hours:
+            kw["extended_hours"] = True
+        if order.client_order_id:
+            kw["client_order_id"] = order.client_order_id
+        return kw
 
     def _build_request(self, order: Order, side):
         """Map an Order to the matching Alpaca request, including bracket/OCO."""
@@ -174,25 +206,25 @@ class AlpacaBroker(BaseBroker):
                 stop_loss=stop_loss,
             )
 
+        base = dict(symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif,
+                    **self._extras(order))
         if order.order_type == OrderType.MARKET:
-            return MarketOrderRequest(
-                symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif
-            )
+            return MarketOrderRequest(**base)
         if order.order_type == OrderType.LIMIT:
-            return LimitOrderRequest(
-                symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif,
-                limit_price=order.limit_price,
-            )
+            return LimitOrderRequest(limit_price=order.limit_price, **base)
         if order.order_type == OrderType.STOP:
-            return StopOrderRequest(
-                symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif,
-                stop_price=order.stop_price,
-            )
+            return StopOrderRequest(stop_price=order.stop_price, **base)
         if order.order_type == OrderType.STOP_LIMIT:
             return StopLimitOrderRequest(
-                symbol=order.symbol, qty=order.qty, side=side, time_in_force=tif,
-                limit_price=order.limit_price, stop_price=order.stop_price,
+                limit_price=order.limit_price, stop_price=order.stop_price, **base
             )
+        if order.order_type == OrderType.TRAILING_STOP:
+            trail = (
+                {"trail_price": order.trail_price}
+                if order.trail_price is not None
+                else {"trail_percent": order.trail_percent}
+            )
+            return TrailingStopOrderRequest(**trail, **base)
         raise BrokerError(f"Unsupported order type: {order.order_type}")
 
     def get_position(self, symbol: str) -> Position | None:
@@ -420,6 +452,58 @@ class AlpacaBroker(BaseBroker):
             filled_price=float(o.filled_avg_price or 0),
             filled_at=o.filled_at or datetime.now(),
         )
+
+    # ------------------------------------------------------------------ #
+    # F9: structured order management (native Alpaca)
+    # ------------------------------------------------------------------ #
+    def replace_order(self, order_id: str, changes: dict) -> FilledOrder | None:
+        """Native Alpaca replace of a resting SIMPLE order (Q2=A: the daemon
+        rejects bracket/OCO-leg replaces upstream). ``changes`` may carry
+        qty/limit_price/stop_price/trail/time_in_force. Returns the polled
+        FilledOrder, or None on failure."""
+        try:
+            kwargs: dict = {}
+            if changes.get("qty") is not None:
+                kwargs["qty"] = int(changes["qty"])
+            if changes.get("limit_price") is not None:
+                kwargs["limit_price"] = float(changes["limit_price"])
+            if changes.get("stop_price") is not None:
+                kwargs["stop_price"] = float(changes["stop_price"])
+            if changes.get("trail") is not None:
+                kwargs["trail"] = float(changes["trail"])
+            if changes.get("time_in_force") is not None:
+                kwargs["time_in_force"] = self._tif_value(changes["time_in_force"])
+            result = self._client.replace_order_by_id(order_id, ReplaceOrderRequest(**kwargs))
+            logger.info(f"Order replaced: {order_id} -> {result.id} ({kwargs})")
+            settled = self._poll_for_fill(str(result.id))
+            side = OrderSide.BUY if str(settled.side).split(".")[-1].lower() == "buy" else OrderSide.SELL
+            return FilledOrder(
+                order_id=str(settled.id),
+                symbol=settled.symbol,
+                side=side,
+                qty=float(settled.filled_qty or settled.qty or 0),
+                filled_price=float(settled.filled_avg_price or 0),
+                filled_at=settled.filled_at or datetime.now(),
+            )
+        except BrokerError:
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to replace order {order_id}: {e}")
+            return None
+
+    def cancel_all_orders(self, symbol: str | None = None) -> int:
+        """Cancel all resting orders. No symbol -> native ``cancel_orders`` (one
+        call); a symbol -> loop the base emulation over that symbol's opens."""
+        if symbol is not None:
+            return super().cancel_all_orders(symbol)
+        try:
+            resp = self._client.cancel_orders()
+            n = len(resp) if resp is not None else 0
+            logger.info(f"Cancelled all orders ({n})")
+            return n
+        except Exception as e:
+            logger.warning(f"Failed to cancel all orders: {e}")
+            return 0
 
     def record_trade_ledger(
         self,
