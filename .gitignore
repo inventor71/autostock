@@ -21,6 +21,8 @@ env/
 # Environment variables
 .env
 .env.local
+# F10 verification: TEST paper account creds (keep .env.test.example tracked)
+.env.test
 
 # Data and models
 data/*.csv

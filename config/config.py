@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,11 @@ from pydantic_settings import BaseSettings
 
 CONFIG_DIR = Path(__file__).parent
 PROJECT_ROOT = CONFIG_DIR.parent
+
+# Which dotenv file Settings loads. Defaults to the repo-root `.env` (production), but can be
+# pointed elsewhere via AUTOSTOCK_ENV_FILE — e.g. the containerized verification harness sets it to
+# `.env.test` so it loads the TEST paper account and never the production `.env` (F10).
+ENV_FILE = os.environ.get("AUTOSTOCK_ENV_FILE") or str(PROJECT_ROOT / ".env")
 
 
 class BrokerConfig(BaseModel):
@@ -107,7 +113,7 @@ class Settings(BaseSettings):
     model_config = {
         "env_prefix": "",
         "env_nested_delimiter": "__",
-        "env_file": str(PROJECT_ROOT / ".env"),
+        "env_file": ENV_FILE,
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }

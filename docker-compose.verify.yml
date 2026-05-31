@@ -1,0 +1,35 @@
+# F10 verification harness — runs typecheck / unit / smoke against a TEST paper account,
+# with ZERO production impact. The production systemd daemon, prod `.env`, and prod account are
+# never referenced here: the container loads `.env.test` only (AUTOSTOCK_ENV_FILE override).
+#
+# Run FROM the worktree dir so `.:/app` mounts THIS worktree's code (not main):
+#   docker compose -f docker-compose.verify.yml build
+#   docker compose -f docker-compose.verify.yml run --rm verify typecheck
+#   docker compose -f docker-compose.verify.yml run --rm verify unit
+#   docker compose -f docker-compose.verify.yml run --rm verify smoke
+services:
+  verify:
+    build:
+      context: .
+      dockerfile: Dockerfile.verify
+    working_dir: /app
+    # The actual code under test — bind-mounted so we verify the live worktree, not a baked copy.
+    volumes:
+      - .:/app
+      # Real claude login (subscription) reused read-only — the real-LLM path, no API key, no stub.
+      # If the claude CLI needs to WRITE session/cache state and errors on :ro, see state.md gotcha
+      # (switch to :rw or set CLAUDE_CONFIG_DIR to a writable copy).
+      - ${HOME}/.claude:/root/.claude:ro
+      # Keep node_modules off the bind mount so host/container arch never clash and installs cache.
+      - verify-node-modules:/app/operator-console/cli/node_modules
+    # TEST paper account ONLY. `.env.test` must be filled by the user (copy from .env.test.example).
+    env_file:
+      - .env.test
+    environment:
+      AUTOSTOCK_ENV_FILE: /app/.env.test
+      PYTHONPATH: /app
+    # mode is passed as the run arg → scripts/verify.sh (ENTRYPOINT). Default when omitted:
+    command: ["all"]
+
+volumes:
+  verify-node-modules:

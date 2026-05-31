@@ -110,6 +110,16 @@ and (b) assuming the install needs the network. So:
   but bun's internal workspace symlinks (`node_modules/@opencode-ai/*` → `../packages/...`) resolve
   into the **main** tree's packages, not the worktree's edits — fine for external-dep-only checks,
   wrong for verifying edited workspace packages. `bun install` is correct.
+- **Containerized verification (F10, zero prod impact)**: `scripts/worktree-setup.sh <track>
+  --docker-verify` host-inits the submodule (the container's `git` can't — the worktree `.git` is a
+  pointer **outside** the mounted `/app`) and scaffolds `.env.test`, then prints the
+  `docker compose -f docker-compose.verify.yml run --rm verify {typecheck,unit,smoke}` commands. The
+  image bakes the python/bun/claude toolchain; CODE is bind-mounted so it verifies the live worktree.
+  Isolation is structural: the container sets `AUTOSTOCK_ENV_FILE=/app/.env.test`, so it loads a
+  **TEST paper account** only — the prod `.env`/account/systemd daemon are never referenced. Real LLM
+  is the host `~/.claude` mounted read-only (no stub). Use this when you want a reproducible run
+  decoupled from host toolchain state; the in-place `--ts`/`--py` paths above remain fine for quick
+  local checks.
 
 ## Track lifecycle
 1. **Create.** Pick next `Fn`. `mkdir aidlc-docs/tracks/<id>`, copy `_TEMPLATE/{state.md,audit.md}`.

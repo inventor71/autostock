@@ -11,11 +11,15 @@
 # See .aidlc-rule-details/common/concurrent-tracks.md and the worktree-live-verification memory.
 #
 # Usage:
-#   scripts/worktree-setup.sh <track> [--ts] [--py]
-#     <track>   track id / slug (e.g. F9, console-foo). Worktree = .claude/worktrees/<track>,
-#               parent branch + submodule branch = feat/<track>.
-#     --ts      TS submodule track: init submodule, branch it, bun install, verify tsgo.
-#     --py      Python track: symlink the main .env into the worktree (pydantic loads it).
+#   scripts/worktree-setup.sh <track> [--ts] [--py] [--docker-verify]
+#     <track>          track id / slug (e.g. F9, console-foo). Worktree = .claude/worktrees/<track>,
+#                      parent branch + submodule branch = feat/<track>.
+#     --ts             TS submodule track: init submodule, branch it, bun install, verify tsgo.
+#     --py             Python track: symlink the main .env into the worktree (pydantic loads it).
+#     --docker-verify  Containerized verification (F10): init submodule on the HOST (the container
+#                      can't — worktree .git is outside the mount) + scaffold .env.test, then print
+#                      the `docker compose -f docker-compose.verify.yml` commands. ZERO prod impact:
+#                      the container loads .env.test only (a TEST paper account), never prod .env.
 #
 # Idempotent: re-running reuses an existing worktree/branch and re-checks deps.
 
@@ -30,11 +34,12 @@ note() { echo "  • $*"; }
 
 [ $# -ge 1 ] || die "usage: scripts/worktree-setup.sh <track> [--ts] [--py]"
 TRACK="$1"; shift
-DO_TS=0; DO_PY=0
+DO_TS=0; DO_PY=0; DO_DOCKER_VERIFY=0
 for arg in "$@"; do
   case "$arg" in
     --ts) DO_TS=1 ;;
     --py) DO_PY=1 ;;
+    --docker-verify) DO_DOCKER_VERIFY=1 ;;
     *) die "unknown flag: $arg" ;;
   esac
 done
@@ -97,6 +102,38 @@ if [ "$DO_PY" -eq 1 ]; then
     note "no main .env to link (skipping)"
   fi
   note "run with main venv:  ${MAIN_ROOT}/venv/bin/python  (read-only calls only — see worktree-live-verification)"
+fi
+
+# 4) Docker verification harness (F10): host-side prep the container can't do -----
+if [ "$DO_DOCKER_VERIFY" -eq 1 ]; then
+  echo "▶ Docker verification harness"
+  [ -e "${WT}/docker-compose.verify.yml" ] || die \
+    "docker-compose.verify.yml missing in ${WT} — the harness lives on feat/docker-verify; \
+merge/rebase it into this track first."
+  # Submodule must be initialized on the HOST: the worktree's .git is a pointer OUTSIDE the
+  # mounted /app, so in-container `git submodule update` fails. typecheck needs these files.
+  if [ ! -e "${WT}/${SUBMODULE}/package.json" ]; then
+    note "initializing submodule on host (container can't reach the worktree .git)"
+    git -C "$WT" submodule update --init "$SUBMODULE"
+  else
+    note "submodule already initialized"
+  fi
+  # Scaffold .env.test (TEST paper account). NEVER copy the prod .env here — that's the whole point.
+  if [ ! -e "${WT}/.env.test" ]; then
+    cp "${WT}/.env.test.example" "${WT}/.env.test"
+    note ".env.test scaffolded from example — FILL IN the TEST paper account keys (typecheck/unit"
+    note "  run with dummies; smoke needs real TEST keys). It is gitignored; prod .env is never used."
+  else
+    note ".env.test already present (reusing)"
+  fi
+  cat <<EOF
+  ✔ ready. Run FROM the worktree dir (so .:/app mounts THIS worktree):
+      cd ${WT}
+      docker compose -f docker-compose.verify.yml build
+      docker compose -f docker-compose.verify.yml run --rm verify typecheck
+      docker compose -f docker-compose.verify.yml run --rm verify unit
+      docker compose -f docker-compose.verify.yml run --rm verify smoke   # needs real TEST keys + ~/.claude
+EOF
 fi
 
 echo "✔ '${TRACK}' ready at ${WT}"
