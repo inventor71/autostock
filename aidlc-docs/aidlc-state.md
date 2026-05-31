@@ -17,7 +17,7 @@
 | F5 | Console-native Launcher & Rebrand | merged | — | — | merged→origin | aaf01e2 | 2026-05-30 |
 | F6 | Console Sidebar Upgrade | active | feat/console-sidebar-upgrade | — | — | — | 2026-05-30 |
 | F7 | Trading-native home copy | merged | — | — | merged→main | 631ec6e | 2026-05-31 |
-| F8 | Console Sidebar Status Rich | active | feat/console-sidebar-status-rich | .claude/worktrees/sidebar-status-rich | TBD | — | 2026-05-31 |
+| F8 | Console Sidebar Status Rich | merged | feat/console-sidebar-status-rich | — | merged→fork main 2ac0cda | 9a1d8ef | 2026-05-31 |
 | R1 | New-surface refactor review | active | (TBD) | (TBD) | — | — | 2026-05-31 |
 | M1 | AI-DLC multi-track customization | active | main (rules/docs) | — | — | 631ec6e | 2026-05-31 |
 
@@ -1184,7 +1184,24 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
   - **Deferred-to-FD (resolved):** width-persistence = console XDG ui.json; sourcing = publish_snapshot ext (both); FR-4 =
         steer_read{view} MCP + daemon steering/ read files; drag-handle = thin left-edge │.
 
-## New Feature Track: Console Trading-Native Copy & Tips (F7) — IN PROGRESS (Code Gen Part 1, awaiting approval)
+## New Feature Track: Console Trading-Native Copy & Tips (F7) — ✅ DONE & MERGED TO MAIN 2026-05-31
+> **MERGED 2026-05-31** (user: "개발한걸 main으로 머지하자"): fork `main` FF-merged to `576b63c` + pushed to autostock-cli;
+> parent gitlink re-pinned (parent commit `631ec6e`). `autostock` now runs the trading-native console from main. Branch
+> `feat/console-trading-copy` deleted (merged). Only the gitlink re-pin was committed to parent — `aidlc-state.md` + F7 doc files left
+> uncommitted in the working tree because a **concurrent F8 track** (console-sidebar-status-rich) is editing the shared aidlc-docs.
+> Pre-existing F6 `selectable` tsgo errors (home.tsx/sidebar.tsx) flagged to user, untouched.
+> **Code Generation Part 2 + Build&Test DONE 2026-05-31** on submodule branch `feat/console-trading-copy` (off fork `main`
+> `7d26d49` = F5+F6 base), commit **`576b63c`**. Worked directly in the submodule (change is submodule-only; practical equivalent
+> of "worktree off F5 base"). **Changes:** `home.tsx` — locale-aware `placeholder.normal` (KO shell-locale helper → 한글 steering
+> 예시, else English; shell examples unchanged); `tips-view.tsx` — TIPS rebuilt to trading-first pool (9 steering tips + 7 useful
+> generic: sidebar/palette/interrupt/`/new`/`/sessions`/`/themes`/`/compact`; dropped ~90 coding/dev/config/github tips from home
+> rotation), `NO_MODELS_TIP` rebranded. Copy-only; tips English-single (share rotation w/ retained English tips). **Verification:**
+> tsgo **no NEW errors** (2 pre-existing F6 `selectable` drag-resize errors confirmed on clean base — unrelated); no test depends on
+> changed copy; `{highlight}` balanced 17/17; TUI app-lifecycle **9/9 green**; locale detection verified (ko→true, en→false, LC_ALL
+> precedence). **Remaining (user-gated, outward):** push fork branch to autostock-cli + parent re-pin + merge to main; live visual
+> check. **Decisions evolved in-session:** locale→placeholder-only (tips would interleave ko/en jarringly w/ ~100 retained EN tips);
+> tips→trading-first curated pool (random 1-of-pool render → keep trading dominant); safety tips→capability-framed, not mechanism.
+> ── (Part-1 history below) ──
 > **Stage Progress (F7):** Requirements **APPROVED** ("승인 & 계속") → User Stories **SKIP** → Workflow Planning **COMPLETE**
 > (`inception/plans/f7-execution-plan.md`: all construction stages SKIP except Code Generation + Build&Test; single small unit,
 > worktree off F5 base; no F5/F6 file overlap) → Functional/NFR/Infra **SKIP** → **Code Generation Part 1 plan written, awaiting approval**
@@ -1220,3 +1237,39 @@ H-2 (dev-env: single venv + ruff), H-3 (repo hygiene). See `code-quality-assessm
   console) — F7 is copy-only (tips/placeholders), no overlap with F6's sidebar/index.tsx resize logic.
 - **Extensions**: project default (Security Baseline; PBT N/A for copy). **Next action on resume**: Requirements Analysis
   (likely minimal — propose placeholder/tip copy, get user approval, apply; single small unit, worktree off the F5 base).
+
+## New Feature Track: Console Sidebar — status.py-rich Data & Color (F8)
+- **Started**: 2026-05-31. **Stage**: INCEPTION → Workflow Planning (awaiting approval).
+- **Goal (user)**: 사이드바 정보가 부족 + 색 가독성 필요 → `scripts/status.py`의 풍부한 4블록을 operator-console 사이드바(`autostock.tsx`)로 이식하고 status.py식 손익 green/red+▲▼ 색 적용.
+- **Built on**: F6 사이드바(merged main). 콘솔은 `snapshot.json`만 읽는 읽기전용(NFR-1) 불변; 데몬 `publish_snapshot` 발행만 확장.
+- **Grounding (read 2026-05-31)**: `runtime.publish_snapshot` positions=`{qty,avg_entry_price}`(현재가/손익 없음), open_orders=`{symbol,order_id,stop_price,limit_price}`(side/역할/가격/Δ 없음), `_account_block`={equity,cash,open_pnl,position_count}(invested 없음), `fills`=일시적 새-체결(웨이크용, 최근체결목록 아님). 사이드바 폴링 1.5s, 발행 5s, round_trip 45s, monitor 10s. 서브모듈 `operator-console/cli` @ `7d26d49`(checked out).
+- **Decisions (concretizing 2026-05-31)**: D1 4블록 전부 / D2 1줄압축(무손실)+드래그 word-wrap+최소폭 floor / D3 손익 green·red+▲▼ / D4 보유 current_price 재사용 + 미보유 주문심볼만 보충 fetch.
+- **Cadence LOCKED (기본값 유지)**: 폴링 1.5s, 발행 5s(보유가격·주문필드 추가비용 0); 미보유 주문심볼 가격 슬로우잡 ~10–15s+캐시; recent_fills ~45s. ms 불가/불요.
+- **Extensions (F8)**: 프로젝트 기본 — Security Baseline Enabled(SECURITY-03/15 적용, 대부분 N/A), PBT Partial(평가손익%/Δ%/역할/recent_fills 정렬).
+- **Requirements doc**: `aidlc-docs/inception/requirements/console-sidebar-status-rich.md`.
+- **Execution plan**: `aidlc-docs/inception/plans/f8-execution-plan.md`.
+- **Stage Progress (F8)**:
+  - [x] Workspace Detection — reused (brownfield).
+  - [x] Reverse Engineering — reused (artifacts exist).
+  - [x] Requirements Analysis — **APPROVED** 2026-05-31 ("일단은 유지. 승인 계속가자"). Cadence locked.
+  - [~] Workflow Planning — **COMPLETE** 2026-05-31 (awaiting approval). Single unit `console-sidebar-status-rich`;
+        User Stories SKIP, Application Design SKIP(→FD), Units Generation SKIP, Infra Design SKIP; Functional Design (light) /
+        NFR Requirements (minimal, 0 deps) / NFR Design / Code Gen / Build&Test EXECUTE. worktree off main + 서브모듈.
+  - [x] Workflow Planning — **APPROVED** 2026-05-31 ("계속 진행").
+  - **CONSTRUCTION — Unit `console-sidebar-status-rich`:**
+    - [x] Functional Design — **COMPLETE (light)** 2026-05-31 (awaiting approval; ran autonomously per [[feedback-autonomy-construction]]).
+          Artifacts: `construction/console-sidebar-status-rich/functional-design/{domain-entities,business-logic-model,business-rules,frontend-components}.md`.
+          Grounded vs status.py + runtime.publish_snapshot. **Entities:** E1 PositionRow(+current_price/market_value/unrealized_pnl)
+          · E2 OrderRow(+side/order_type/current_price → role/Δ 파생) · E3 RecentFill(신규 recent_fills, get_fills top-8, 일시적 fills와 별개)
+          · E4 AccountSummary(+invested) · E5 PriceBook(데몬 내부, 미보유 주문심볼 캐시, status.py _latest_prices). 역할/색/Δ/pnl%는 콘솔 순수파생.
+    - [x] NFR Requirements — **COMPLETE (minimal)** 2026-05-31. 0 new runtime deps (Python: portfolio/orders/get_fills/equity_log/
+          StockHistoricalDataClient 재사용; TS: OpenTUI/wrapMode/stdlib). Artifacts: nfr-requirements/{nfr-requirements,tech-stack-decisions}.md.
+    - [x] NFR Design — **COMPLETE** 2026-05-31. P1 가산 스냅샷 확장(추가콜 0) · P2 PriceBook 12s 슬로우잡+30s TTL 캐시 · P3 recent_fills
+          45s 슬로우잡(round_trip과 get_fills 공유 검토) · P4 단일 워커(신규 프리미티브 0) · P5 콘솔 순수파생 · P6 width floor 24→36 · P7 SECURITY-03/15.
+          Artifacts: nfr-design/{nfr-design-patterns,logical-components}.md.
+    - [x] Infrastructure Design — **SKIP** (로컬 데몬/TUI).
+    - [~] Code Generation **Part 1 (plan)** — created 2026-05-31, **awaiting approval to enter Part 2.** Plan:
+          `construction/plans/f8-code-generation-plan.md` (Step0 worktree → 1 헬퍼/필드확인 → 2 publish_snapshot 가산확장 → 3 PriceBook 12s →
+          4 recent_fills 45s → 5 TS 스키마/contract → 6 autostock.tsx 렌더+색+레이아웃 → 7 width floor 24→36 → 8 PBT/bun → 9 라이브/핀).
+          0 new deps. On approval, Part 2 first action = `git worktree add … -b feat/console-sidebar-status-rich main`; no code/worktree yet.
+          **NOTE:** tool env intermittently lagged this session — exact TS lines / Python field names re-verified at Part 2 entry. **Gate: approve Part 1 plan to start coding.**
