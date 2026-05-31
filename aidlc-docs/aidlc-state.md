@@ -17,7 +17,7 @@
 | F5 | Console-native Launcher & Rebrand | merged | — | — | merged→origin | aaf01e2 | 2026-05-30 |
 | F6 | Console Sidebar Upgrade | active | feat/console-sidebar-upgrade | — | — | — | 2026-05-30 |
 | F7 | Trading-native home copy | merged | — | — | merged→main | 631ec6e | 2026-05-31 |
-| F8 | Console Sidebar Status Rich | merged | feat/console-sidebar-status-rich | — | merged→fork main 2ac0cda | 9a1d8ef | 2026-05-31 |
+| F8 | Console Sidebar Status Rich | merged | feat/console-sidebar-status-rich | — | merged→fork main 2ac0cda | 77d5ed9 | 2026-05-31 |
 | R1 | New-surface refactor review | active | (TBD) | (TBD) | — | — | 2026-05-31 |
 | M1 | AI-DLC multi-track customization | active | main (rules/docs) | — | — | 631ec6e | 2026-05-31 |
 

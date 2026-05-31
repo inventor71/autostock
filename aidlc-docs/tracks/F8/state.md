@@ -63,7 +63,7 @@ Docs: requirements `aidlc-docs/inception/requirements/console-sidebar-status-ric
 - [x] Build & Test — **COMPLETE** 2026-05-31. Docs `aidlc-docs/construction/build-and-test/console-sidebar-status-rich/build-and-test-summary.md`.
   Python full **371 passed / 0 failed**, bun **6 pass / 0 fail**, 0 new deps. Security SECURITY-03/-15/-11 met. tsgo + live R1-3 + merge = pending (user gate).
 - [ ] Operations — placeholder (no work).
-- [x] **MERGED to main 2026-05-31** — parent `9a1d8ef`, submodule fork main `2ac0cda` (both pushed). Post-merge Python 371 green.
+- [x] **MERGED to main 2026-05-31** — parent `77d5ed9`, submodule fork main `2ac0cda` (both pushed). Post-merge Python 371 green.
 
 ## Verification status
 - **Daemon side LIVE-VERIFIED in-worktree 2026-05-31** (paper account, read-only, main .env via dotenv):
