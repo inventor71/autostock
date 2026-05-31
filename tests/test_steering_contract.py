@@ -52,7 +52,7 @@ def _compute() -> dict:
             "cancel_all": ["symbol"],
             "replace_order": ["limit_price", "order_id", "qty", "stop_price",
                               "time_in_force", "trail"],
-            "close_position": ["percentage", "qty", "symbol"],
+            "close_position": ["symbol"],
             "close_all": ["cancel_orders"],
         },
     }

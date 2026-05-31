@@ -226,3 +226,60 @@ def test_cancel_unknown_target_is_no_order(tmp_path):
     h, _, _, channel, _ = _setup(tmp_path)
     h.handle(_cmd("cancel", target="ZZZZ"))  # no queued match, no resting orders
     assert _last_event(channel).payload["outcome"] == "no_order"
+
+
+# --- F21: pre-queue arg validation + simplified _order_from_place_args ------------- #
+
+def test_close_position_rejects_empty_symbol_even_offhours(tmp_path, monkeypatch):
+    h, broker, _, channel, _ = _setup(tmp_path)
+    monkeypatch.setattr(broker, "is_market_open", lambda: False)
+    h.handle(_cmd("close_position", symbol=""))
+    ev = _last_event(channel)
+    assert ev.payload["outcome"] == "rejected"
+    assert "symbol" in ev.payload["detail"].lower()
+    assert channel.list_offhours() == []  # not queued
+
+
+def test_close_position_rejects_missing_symbol_even_offhours(tmp_path, monkeypatch):
+    h, broker, _, channel, _ = _setup(tmp_path)
+    monkeypatch.setattr(broker, "is_market_open", lambda: False)
+    h.handle(_cmd("close_position"))
+    ev = _last_event(channel)
+    assert ev.payload["outcome"] == "rejected"
+    assert channel.list_offhours() == []
+
+
+def test_close_all_rejects_non_bool_cancel_orders_pre_queue(tmp_path, monkeypatch):
+    h, broker, _, channel, _ = _setup(tmp_path)
+    monkeypatch.setattr(broker, "is_market_open", lambda: False)
+    h.handle(_cmd("close_all", cancel_orders="yes"))
+    ev = _last_event(channel)
+    assert ev.payload["outcome"] == "rejected"
+    assert "boolean" in ev.payload["detail"].lower()
+    assert channel.list_offhours() == []
+
+
+def test_place_order_valid_args_pass_simplified_order_from_args(tmp_path):
+    """Valid args (qty-only, no FR-7 violations) produce a correct Order post-F21."""
+    h, _, _, channel, _ = _setup(tmp_path)
+    h.handle(_cmd("place_order", symbol="AAPL", side="buy", qty=10, order_type="market"))
+    ev = _last_event(channel)
+    assert ev.payload["outcome"] == "executed"
+
+
+def test_place_order_notional_sizing_still_works(tmp_path):
+    """Notional→qty conversion still works after FR-7 removals (price=100 → 5 shares)."""
+    h, _, _, channel, _ = _setup(tmp_path)  # price=100
+    h.handle(_cmd("place_order", symbol="AAPL", side="buy", notional=500, order_type="market",
+                   time_in_force="day"))
+    ev = _last_event(channel)
+    assert ev.payload["outcome"] == "executed"
+
+
+def test_place_order_deferred_wording_updated(tmp_path, monkeypatch):
+    h, broker, _, channel, _ = _setup(tmp_path)
+    monkeypatch.setattr(broker, "is_market_open", lambda: False)
+    h.handle(_cmd("place_order", symbol="AAPL", side="buy", qty=10, order_type="market"))
+    ev = _last_event(channel)
+    assert ev.payload["outcome"] == "deferred"
+    assert "size/price validated at open" in ev.payload["detail"]

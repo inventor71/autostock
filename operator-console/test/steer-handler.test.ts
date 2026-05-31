@@ -115,3 +115,28 @@ test("handleStructured: replace_order forwards only provided change keys", () =>
   expect(r.verb).toBe("replace_order");
   expect(r.args).toEqual({ order_id: "o1", qty: 5 });
 });
+
+// ---- F21 L2 degenerate check in handleStructured ----------------------------- #
+
+test("handleStructured: place_order rejects degenerate take_profit before file-drop", () => {
+  const out = handleStructured("place_order",
+    { symbol: "AAPL", side: "buy", qty: 10, take_profit: 0.01 }, fd);
+  expect(out).toContain("rejected");
+  expect(out).toContain("take_profit 0.01 looks like a placeholder");
+  expect(records()).toEqual([]); // nothing written
+});
+
+test("handleStructured: replace_order rejects degenerate limit_price before file-drop", () => {
+  const out = handleStructured("replace_order",
+    { order_id: "abc", limit_price: 0.01 }, fd);
+  expect(out).toContain("rejected");
+  expect(out).toContain("limit_price 0.01 looks like a placeholder");
+  expect(records()).toEqual([]);
+});
+
+test("handleStructured: close_position with symbol only writes (qty/percentage removed, critic fix)", () => {
+  const out = handleStructured("close_position",
+    { symbol: "AAPL" }, fd);
+  expect(out).toContain("OK close_position");
+  expect(records()).toHaveLength(1);
+});

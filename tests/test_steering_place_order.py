@@ -89,7 +89,10 @@ def test_place_order_notional_resolves_shares(tmp_path):
     assert broker.get_position("AAPL").qty == 5
 
 
-def test_place_order_notional_non_market_rejected(tmp_path):
+def test_place_order_notional_non_market_rejected_defense_in_depth(tmp_path):
+    # F21: notional market+day-only check lives at L1 (zod .refine()); L3 keeps
+    # defense-in-depth for L1-bypass scenarios. A direct daemon write with
+    # notional+limit should still be rejected.
     h, broker, state, channel, rm = _setup(tmp_path)
     h.handle(_cmd("place_order", symbol="AAPL", side="buy", notional=550,
                   order_type="limit", limit_price=99))
