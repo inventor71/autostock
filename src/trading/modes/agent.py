@@ -82,6 +82,7 @@ class AgentTradingMode:
         root = self.executor.journal.root
         bar_cache = BarCache(self.executor.data_provider,
                              bars_ttl=cfg.bars_cache_seconds, price_ttl=cfg.price_cache_seconds)
+        self._bar_cache = bar_cache  # F14: kept so the agent_prefetch job can warm it
         self._watch = WatchStore(root)
         self._brief_assembler = BriefAssembler(
             bar_cache, state=self.steering.state, watch_store=self._watch)
@@ -103,6 +104,16 @@ class AgentTradingMode:
         from src.agent.intraday.util import held_and_watched
         snap = self.steering.last_snapshot if self.steering else None
         return held_and_watched(snap, self._watch)
+
+    def _prefetch_intraday(self) -> None:
+        """F14: warm the BarCache for held+watched symbols on its OWN scheduler
+        job, so the 5s WakeDetector tick only ever READS the cache (peek_*) and
+        never blocks on a market-data fetch. Best-effort; the underlying get_* are
+        HTTP-timeout-bounded (F14-A) so a slow symbol can't wedge this thread."""
+        try:
+            self._bar_cache.prefetch(self._intraday_symbols())
+        except Exception as e:  # never kill the scheduler (NFR-4)
+            logger.error("intraday prefetch failed (continuing): {}", e)
 
     def _brief(self, *, include_news: bool) -> str:
         snap = self.steering.last_snapshot if self.steering else None
@@ -269,6 +280,11 @@ class AgentTradingMode:
                 self.steering.refresh_recent_fills, 45, "steering_recent_fills")
             # F3: event-driven wake detector (reads cached snapshot/bars only) + the
             # daily watch fired-set sweep + the background news poller.
+            # F14: warm the bar/price cache off the detect thread so detect_wakes
+            # only reads (peek_*) — registered BEFORE agent_wake so the cache fills
+            # first. price every tick, bars gated by bars_ttl inside prefetch.
+            self.scheduler.add_seconds_job(
+                self._prefetch_intraday, self.intraday_config.prefetch_seconds, "agent_prefetch")
             self.scheduler.add_seconds_job(
                 self._wake.detect_wakes, self.intraday_config.wake_detect_seconds, "agent_wake")
             self.scheduler.add_daily_job(

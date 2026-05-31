@@ -8,6 +8,7 @@ from loguru import logger
 from src.core.exceptions import DataProviderError
 from src.core.types import TimeFrame
 from src.data.base import BaseDataProvider
+from src.execution.brokers.session_timeout import install_session_timeout
 
 try:
     from alpaca.data.historical import StockHistoricalDataClient
@@ -33,10 +34,21 @@ TIMEFRAME_MAP = {
 class AlpacaDataProvider(BaseDataProvider):
     """Data provider using Alpaca API for real-time and historical data."""
 
-    def __init__(self, api_key: str, secret_key: str):
+    def __init__(
+        self,
+        api_key: str,
+        secret_key: str,
+        http_connect_timeout: float = 3.0,
+        http_read_timeout: float = 5.0,
+    ):
         if StockHistoricalDataClient is None:
             raise DataProviderError("alpaca-py not installed")
         self._client = StockHistoricalDataClient(api_key, secret_key)
+        # F14: bound every market-data HTTP call (prefetch/brief) so a stalled
+        # socket can't overrun the scheduler tick and wedge the daemon.
+        install_session_timeout(
+            self._client, connect=http_connect_timeout, read=http_read_timeout
+        )
 
     def get_bars(
         self,

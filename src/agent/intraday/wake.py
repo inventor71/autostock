@@ -119,19 +119,25 @@ class WakeDetector:
     def _abnormal_events(self, snap) -> list[WakeEvent]:
         out = []
         for sym in self._symbols(snap):
-            price = self._bars.get_price(sym)
-            bars = self._bars.get_bars(sym)
+            # F14: cache-only reads (peek) — never fetch on the scheduler thread.
+            price = self._bars.peek_price(sym)
+            bars = self._bars.peek_bars(sym)
             ref = session_open(bars)  # session open, not the rolling-window oldest bar (review #4)
             sig = detect_abnormal(sym, price, ref, bars, self._cfg)
-            if sig is None:
-                self._abnormal_fired.discard(sym)  # episode cleared -> re-armable
-                continue
-            if sym in self._abnormal_fired:
-                continue  # already woke for this ongoing episode
-            self._abnormal_fired.add(sym)
-            upward = sig.kind == "price" and price is not None and ref is not None and price > ref
-            out.append(WakeEvent(kind="abnormal_move", symbol=sym, reason=sig.reason,
-                                 payload=sig.model_dump(mode="json"), entry_inducing=upward))
+            if sig is not None:
+                if sym in self._abnormal_fired:
+                    continue  # already woke for this ongoing episode
+                self._abnormal_fired.add(sym)
+                upward = sig.kind == "price" and price is not None and ref is not None and price > ref
+                out.append(WakeEvent(kind="abnormal_move", symbol=sym, reason=sig.reason,
+                                     payload=sig.model_dump(mode="json"), entry_inducing=upward))
+            elif price is not None and bars is not None and len(bars) > 0:
+                # Detect-first (F14 critic R3): re-arm ONLY when data was sufficient
+                # AND no signal (a real episode clear). A peek cache-miss (price or
+                # bars None) is "undecided" — keep the latch so we don't re-arm and
+                # double-wake the same episode; also don't drop a volume-only signal
+                # that fires with price=None.
+                self._abnormal_fired.discard(sym)
         return out
 
     def _watch_events(self, snap) -> list[WakeEvent]:
@@ -154,12 +160,12 @@ class WakeDetector:
 
     def _watch_met(self, t) -> bool:
         if t.condition in ("price_above", "price_below"):
-            price = self._bars.get_price(t.symbol)
+            price = self._bars.peek_price(t.symbol)  # F14: cache-only (no fetch)
             if price is None:
                 return False
             return price > t.level if t.condition == "price_above" else price < t.level
         # close_above / close_below: use the last completed bar's close
-        bars = self._bars.get_bars(t.symbol)
+        bars = self._bars.peek_bars(t.symbol)  # F14: cache-only (no fetch)
         if bars is None or len(bars) == 0:
             return False
         try:

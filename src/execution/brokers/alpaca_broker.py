@@ -12,6 +12,7 @@ from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.execution.base import BaseBroker
+from src.execution.brokers.session_timeout import install_session_timeout
 
 try:
     from alpaca.trading.client import TradingClient
@@ -68,10 +69,18 @@ class AlpacaBroker(BaseBroker):
         paper: bool = True,
         fill_poll_timeout: float = 5.0,
         fill_poll_interval: float = 0.2,
+        http_connect_timeout: float = 3.0,
+        http_read_timeout: float = 5.0,
     ):
         if TradingClient is None:
             raise BrokerError("alpaca-py not installed")
         self._client = TradingClient(api_key, secret_key, paper=paper)
+        # F14: bound every HTTP call so a half-open socket can't wedge the daemon.
+        self._http_connect_timeout = http_connect_timeout
+        self._http_read_timeout = http_read_timeout
+        install_session_timeout(
+            self._client, connect=http_connect_timeout, read=http_read_timeout
+        )
         self._paper = paper
         self._fill_poll_timeout = fill_poll_timeout
         self._fill_poll_interval = fill_poll_interval
@@ -363,6 +372,12 @@ class AlpacaBroker(BaseBroker):
             if self._data_client is None:
                 from alpaca.data.historical import StockHistoricalDataClient
                 self._data_client = StockHistoricalDataClient(self._api_key, self._secret_key)
+                # F14: ctor timeout hook can't reach this lazily-built client — apply here.
+                install_session_timeout(
+                    self._data_client,
+                    connect=self._http_connect_timeout,
+                    read=self._http_read_timeout,
+                )
             from alpaca.data.requests import StockLatestTradeRequest
             trades = self._data_client.get_stock_latest_trade(
                 StockLatestTradeRequest(symbol_or_symbols=syms)

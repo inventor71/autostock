@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
+
+# F14: APScheduler's default ThreadPoolExecutor is 10 workers. With the F3/F6/F8
+# steering seconds-jobs (poll/snapshot/questions/monitor/order_prices/roundtrip/
+# recent_fills) + agent_wake + the new agent_prefetch, plus cron jobs that can fire
+# concurrently, 10 leaves almost no headroom — a few blocked HTTP calls could starve
+# the pool. Raise it so a slow (now HTTP-timeout-bounded) job can't starve the rest.
+_MAX_WORKERS = 16
 
 # Make the serialization assumptions explicit rather than relying on APScheduler
 # defaults (critic #3): a job never self-overlaps (max_instances=1) and a missed
@@ -19,7 +27,9 @@ class TradingScheduler:
     """APScheduler-based scheduler for trading operations."""
 
     def __init__(self):
-        self._scheduler = BackgroundScheduler()
+        self._scheduler = BackgroundScheduler(
+            executors={"default": ThreadPoolExecutor(_MAX_WORKERS)}
+        )
         self._running = False
 
     def add_batch_job(
