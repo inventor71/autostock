@@ -117,6 +117,12 @@ def wake_prompt(brief: str | None, reasons: list[str] | None = None) -> str:
         "protective fill. Append any decision (incl. ADJUST_STOP) to "
         "decisions.jsonl. If the events need no action, do nothing — do not churn."
     )
+    lines.append(
+        "TIME CONSTRAINT — this is a short, out-of-band wake turn. Check ONLY the "
+        "specific symbol(s) named in the trigger(s) above. Do NOT re-read every "
+        "thesis file or do a full portfolio review. If you need more depth, defer "
+        "it to the next scheduled intraday turn."
+    )
     lines.append(_ADVISOR_REMINDER)
     return "\n".join(lines)
 

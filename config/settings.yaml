@@ -223,7 +223,7 @@ intraday:
     atr_period: 14
   wake:
     detect_seconds: 5   # cadence of the (cache-only) wake detector
-    timeout: 120.0      # turn-level execution bound for a wake turn (lock-hold cap)
+    timeout: 300.0      # turn-level execution bound for a wake turn (lock-hold cap)
   news:
     ttl_minutes: 15.0   # news poll cadence (provider caches ~15min anyway)
   bars:

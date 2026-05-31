@@ -75,6 +75,11 @@ class WakeDetector:
                 return
             with self._lock:
                 self._buffer.extend(events)
+            # Summarize what triggered this wake tick.
+            kinds = ", ".join(f"{k}={c}" for k, c in
+                              __import__("collections").Counter(e.kind for e in events).items())
+            symbols = sorted({e.symbol for e in events})
+            logger.info("wake tick: {} event(s) ({}) for {}", len(events), kinds, symbols)
             self._worker.trigger(self._fire_wake, kind="wake", timeout=self._wake_timeout)
         except Exception as e:  # best-effort: never kill the scheduler (NFR-4)
             logger.error("wake detection failed (continuing): {}", e)
@@ -85,6 +90,9 @@ class WakeDetector:
             self._buffer = []
         if not events:
             return None
+        # Log each event's reason so the journal shows WHY the wake turn fired.
+        for ev in events:
+            logger.info("wake fire: kind={} symbol={} reason={}", ev.kind, ev.symbol, ev.reason)
         # Mark watch triggers fired ONLY now, when their turn actually runs — not
         # at detect time, so a timed-out/never-run wake doesn't silently consume a
         # watch for the day (review #2). They were held in _pending_watch meanwhile.
@@ -107,9 +115,11 @@ class WakeDetector:
                 self._seen_fill_ids.add(fid)
             sell = str(f.get("side")) == "sell"
             kind = "protective_reassess" if sell else "new_fill"
+            symbol = str(f.get("symbol", ""))
+            reason = f"{f.get('side')} {f.get('qty')} {symbol} @ {f.get('price')}"
+            logger.info("wake registered: kind={} symbol={} reason={}", kind, symbol, reason)
             out.append(WakeEvent(
-                kind=kind, symbol=str(f.get("symbol", "")),
-                reason=f"{f.get('side')} {f.get('qty')} {f.get('symbol')} @ {f.get('price')}",
+                kind=kind, symbol=symbol, reason=reason,
                 payload=dict(f), entry_inducing=False))
         return out
 
@@ -129,6 +139,7 @@ class WakeDetector:
                     continue  # already woke for this ongoing episode
                 self._abnormal_fired.add(sym)
                 upward = sig.kind == "price" and price is not None and ref is not None and price > ref
+                logger.info("wake registered: kind=abnormal_move symbol={} reason={}", sym, sig.reason)
                 out.append(WakeEvent(kind="abnormal_move", symbol=sym, reason=sig.reason,
                                      payload=sig.model_dump(mode="json"), entry_inducing=upward))
             elif price is not None and bars is not None and len(bars) > 0:
@@ -150,9 +161,10 @@ class WakeDetector:
             if not self._watch_met(t):
                 continue
             self._pending_watch.add(t.id)  # mark_fired deferred to _fire_wake
+            reason = f"{t.symbol} {t.condition} {t.level} met (intent: {t.intent or 'n/a'})"
+            logger.info("wake registered: kind=watch_trigger symbol={} reason={}", t.symbol, reason)
             out.append(WakeEvent(
-                kind="watch_trigger", symbol=t.symbol,
-                reason=f"{t.symbol} {t.condition} {t.level} met (intent: {t.intent or 'n/a'})",
+                kind="watch_trigger", symbol=t.symbol, reason=reason,
                 payload={"id": t.id, "condition": t.condition, "level": t.level,
                          "intent": t.intent},
                 entry_inducing=classify_watch_entry_inducing(t)))
