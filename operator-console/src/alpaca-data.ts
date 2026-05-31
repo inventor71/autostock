@@ -1,7 +1,7 @@
 // F20 — Alpaca MCP stock-only read tools. Console in-process TS calls Alpaca REST API v2
 // directly (Q2=A). No daemon round-trip, no new FileDrop channel.
 //
-// Fail-fast (Q1=B, intentional): if ALPACA_API_KEY / ALPACA_API_SECRET are missing at module
+// Fail-fast (Q1=B, intentional): if ALPACA_API_KEY / ALPACA_SECRET_KEY are missing at module
 // load time, this kills the entire bun process — steer/steer_read/F9 order tools become
 // unavailable too. This is a deliberate tradeoff: an MCP server with 16 dead-weight read tools
 // is worse than forcing the operator to fix the env immediately.
@@ -26,11 +26,11 @@ const REQUEST_TIMEOUT_MS = 10_000; // 10 s — F14 pattern (daemon connect=3s + 
 // ---------------------------------------------------------------------------
 
 const ALPACA_API_KEY = process.env.ALPACA_API_KEY;
-const ALPACA_API_SECRET = process.env.ALPACA_API_SECRET;
+const ALPACA_SECRET_KEY = process.env.ALPACA_SECRET_KEY;
 
-if (!ALPACA_API_KEY || !ALPACA_API_SECRET) {
+if (!ALPACA_API_KEY || !ALPACA_SECRET_KEY) {
   process.stderr.write(
-    "[autostock] ALPACA_API_KEY and ALPACA_API_SECRET must be set\n",
+    "[autostock] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set\n",
   );
   process.exit(1);
 }
@@ -44,7 +44,7 @@ const DATA_BASE = "https://data.alpaca.markets"; // same for paper & live
 
 const AUTH_HEADERS = {
   "APCA-API-KEY-ID": ALPACA_API_KEY,
-  "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+  "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
 };
 
 // ---------------------------------------------------------------------------
@@ -139,7 +139,7 @@ async function apiGet(
   // HTTP error → formatted message (BR-2)
   if (!resp.ok) {
     if (resp.status === 401) {
-      return "Authentication failed — check ALPACA_API_KEY and ALPACA_API_SECRET";
+      return "Authentication failed — check ALPACA_API_KEY and ALPACA_SECRET_KEY";
     }
     if (resp.status === 403) {
       return "Access denied — your API key may not have permission for this endpoint";

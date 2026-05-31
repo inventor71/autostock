@@ -15,7 +15,7 @@ beforeEach(() => {
   originalFetch = globalThis.fetch;
   originalEnv = { ...process.env };
   process.env.ALPACA_API_KEY = "test-key";
-  process.env.ALPACA_API_SECRET = "test-secret";
+  process.env.ALPACA_SECRET_KEY = "test-secret";
   process.env.ALPACA_PAPER = "true";
 });
 
@@ -33,11 +33,11 @@ function mockFetch(status: number, body: unknown) {
 // ---------------------------------------------------------------------------
 // Constructor: fail-fast (Q1=B)
 // NOTE: fail-fast runs at MODULE LOAD time (not per-instance). The env vars
-// ALPACA_API_KEY/ALPACA_API_SECRET are read once during import, so the check
+// ALPACA_API_KEY/ALPACA_SECRET_KEY are read once during import, so the check
 // happens before any test setup can manipulate process.env. In production, if
 // these are missing, `bun run mcp-server.ts` will exit(1) before registering
 // any tools. Verified via manual test: unset ALPACA_API_KEY → `[autostock]
-// ALPACA_API_KEY and ALPACA_API_SECRET must be set` + exit 1.
+// ALPACA_API_KEY and ALPACA_SECRET_KEY must be set` + exit 1.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ function mockFetch(status: number, body: unknown) {
 // ---------------------------------------------------------------------------
 
 test("getAccountInfo: 401 → auth error message", async () => {
-  process.env.ALPACA_API_KEY = "bad"; process.env.ALPACA_API_SECRET = "bad";
+  process.env.ALPACA_API_KEY = "bad"; process.env.ALPACA_SECRET_KEY = "bad";
   mockFetch(401, {});
   const client = new AlpacaDataClient();
   const result = await client.getAccountInfo();
