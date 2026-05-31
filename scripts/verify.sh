@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # F10 verification harness entrypoint. Runs inside the verify container (see docker-compose.verify.yml).
-# Modes:  all | typecheck | unit | smoke   (passed as the run arg; default `all`).
+# Modes:  all | typecheck | unit | smoke | attach   (passed as the run arg; default `all`).
 #
 #   typecheck — operator-console (bun) typecheck against the mounted submodule source.
 #   unit      — deterministic offline pytest (in-test doubles; never calls the real LLM/Alpaca).
 #   smoke     — REAL claude + read-only Alpaca on the TEST account; asserts it is NOT prod. No orders.
 #   all       — typecheck + unit  (smoke is opt-in: it needs real test keys + the claude mount).
+#   attach    — F15: FULL runtime for a human to watch. Runs the daemon (main.py --mode agent
+#               --steering) in the background + the operator console TUI in the foreground, both on
+#               the TEST paper account. Same wiring as prod EXCEPT the account (and no systemd — the
+#               daemon is a plain bg process here). REAL claude + REAL Alpaca paper TEST endpoint;
+#               the daemon may place PAPER orders on the TEST account. Use the `attach` compose
+#               service (it adds tty + ~/.claude:rw + runtime volumes):
+#                 docker compose -f docker-compose.verify.yml run --rm -it attach
 #
 # Hard rule (zero prod impact): everything here loads `.env.test` via AUTOSTOCK_ENV_FILE. The
 # preflight() below FAILS CLOSED rather than trusting that convention — it refuses to run if the
@@ -129,12 +136,59 @@ PY
   log "TODO next iteration: full agent/command-surface smoke (e.g. AAPL limit-buy via console)."
 }
 
+# F15 — attach: full runtime (daemon + console TUI) for a human to watch the live sidebar.
+# Same as prod except the account is the TEST paper account. Requires the `attach` compose
+# service (tty + ~/.claude:rw + steering/workspace/logs volumes). The daemon writes its runtime
+# state ONLY into those named volumes (/app/steering, /app/workspace, /app/logs), so nothing
+# root-owned lands in the bind-mounted worktree.
+run_attach() {
+  [ -f "$CONSOLE_DIR/package.json" ] || fail \
+    "submodule not initialized: $CONSOLE_DIR/package.json missing — init it on the HOST first
+     (scripts/worktree-setup.sh <track> --docker-verify)."
+  claude --version >/dev/null 2>&1 || fail \
+    "claude CLI not reachable — the daemon's LLM turns need the host ~/.claude mounted (rw)."
+
+  : "${STEERING_DIR:=/app/steering}"; export STEERING_DIR
+  mkdir -p "$STEERING_DIR" /app/logs
+
+  log "installing console deps (bun) — first run only, cached in the node_modules volume"
+  ( cd "$CONSOLE_DIR" && bun install --frozen-lockfile )
+
+  log "starting daemon: main.py --mode agent --steering  (TEST paper account; logs → /app/logs/daemon.attach.log)"
+  ( cd /app && PYTHONPATH=/app exec python -u main.py --mode agent --steering ) \
+      > /app/logs/daemon.attach.log 2>&1 &
+  DAEMON_PID=$!
+  # Stop the daemon (and clear root-owned JS build scratch via cleanup) whenever this exits —
+  # normal console quit, Ctrl-C, or error. Overrides the bare `trap cleanup EXIT` set above.
+  trap 'log "stopping daemon (pid $DAEMON_PID)"; kill "$DAEMON_PID" 2>/dev/null || true; \
+        wait "$DAEMON_PID" 2>/dev/null || true; cleanup' EXIT INT TERM
+
+  log "waiting for the first snapshot ($STEERING_DIR/snapshot.json) — up to 180s (a startup LLM turn can be slow)…"
+  for i in $(seq 1 180); do
+    [ -f "$STEERING_DIR/snapshot.json" ] && { log "snapshot published after ${i}s"; break; }
+    if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
+      log "daemon exited before publishing a snapshot — last 40 log lines:"
+      tail -n 40 /app/logs/daemon.attach.log 2>/dev/null || true
+      fail "daemon failed to start (see above). Usual causes: bad/empty TEST keys in .env.test, or claude not logged in."
+    fi
+    sleep 1
+  done
+  if [ ! -f "$STEERING_DIR/snapshot.json" ]; then
+    log "no snapshot after 180s — last 40 daemon log lines:"; tail -n 40 /app/logs/daemon.attach.log 2>/dev/null || true
+    fail "daemon never published a snapshot (wedged?). Inspect /app/logs/daemon.attach.log."
+  fi
+
+  log "launching the operator console TUI — the live sidebar is below. Quit (or Ctrl-C) stops the daemon too."
+  ( cd "$CONSOLE_DIR/packages/opencode" && exec bun run dev )
+}
+
 preflight
 case "$MODE" in
   typecheck) run_typecheck ;;
   unit)      run_unit ;;
   smoke)     run_smoke ;;
+  attach)    run_attach ;;
   all)       run_typecheck; run_unit
              log "‘all’ done (typecheck+unit). Run mode 'smoke' separately for the real-LLM/account check." ;;
-  *)         fail "unknown mode '$MODE' (use: all | typecheck | unit | smoke)" ;;
+  *)         fail "unknown mode '$MODE' (use: all | typecheck | unit | smoke | attach)" ;;
 esac
