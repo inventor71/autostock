@@ -1,0 +1,148 @@
+#!/usr/bin/env python
+"""Broker API (sandbox) account farm — create / list simulated trading accounts.
+
+This is intentionally *separate* from the bot's Trading API integration:
+  - Trading API  (TradingClient)  → APCA-API-KEY-ID / SECRET, one "my" account.
+  - Broker  API  (BrokerClient)   → Basic auth (broker key:secret), N accounts
+                                     addressed by account_id, sandbox = all simulated.
+
+Sandbox is free and needs no business agreement, so an individual can spin up as
+many simulated ("paper-equivalent") accounts as they like.
+
+Usage:
+  venv/bin/python scripts/broker_create_accounts.py --count 3
+  venv/bin/python scripts/broker_create_accounts.py --list
+
+Reads BROKER_API_KEY / BROKER_API_SECRET from the environment (.env). Grab those
+from the Broker dashboard's *sandbox* API key section — they are NOT your Trading
+API keys.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import time
+from datetime import datetime, timezone
+
+from dotenv import load_dotenv
+
+from alpaca.broker.client import BrokerClient
+from alpaca.broker.requests import CreateAccountRequest
+from alpaca.broker.models import Contact, Identity, Disclosures, Agreement
+from alpaca.broker.enums import AgreementType, TaxIdType, FundingSource
+
+
+def _client() -> BrokerClient:
+    load_dotenv()
+    key = os.getenv("BROKER_API_KEY")
+    secret = os.getenv("BROKER_API_SECRET")
+    if not key or not secret:
+        sys.exit(
+            "Missing BROKER_API_KEY / BROKER_API_SECRET in env.\n"
+            "Add your *sandbox* broker keys to .env (see .env.example)."
+        )
+    # sandbox=True → broker-api.sandbox.alpaca.markets, everything simulated.
+    return BrokerClient(api_key=key, secret_key=secret, sandbox=True)
+
+
+def _dummy_account(email: str, seed: int) -> CreateAccountRequest:
+    """Minimal KYC fixture that the sandbox auto-approves.
+
+    `seed` makes the SSN unique per account. SSN rules the sandbox enforces:
+    area != 000/666 and not 900-999, group != 00, serial != 0000.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    ip = "127.0.0.1"
+    serial = seed % 9999 + 1          # 0001-9999, never 0000
+    tax_id = f"234-56-{serial:04d}"   # area 234 / group 56 are always valid
+    return CreateAccountRequest(
+        contact=Contact(
+            email_address=email,
+            phone_number="+15556667788",
+            street_address=["20 N San Mateo Dr"],
+            city="San Mateo",
+            state="CA",
+            postal_code="94401",
+            country="USA",
+        ),
+        identity=Identity(
+            given_name="Auto",
+            family_name="Stock",
+            date_of_birth="1990-01-01",
+            tax_id=tax_id,
+            tax_id_type=TaxIdType.USA_SSN,
+            country_of_citizenship="USA",
+            country_of_birth="USA",
+            country_of_tax_residence="USA",
+            funding_source=[FundingSource.EMPLOYMENT_INCOME],
+        ),
+        disclosures=Disclosures(
+            is_control_person=False,
+            is_affiliated_exchange_or_finra=False,
+            is_politically_exposed=False,
+            immediate_family_exposed=False,
+        ),
+        agreements=[
+            Agreement(
+                agreement=AgreementType.CUSTOMER,
+                signed_at=now,
+                ip_address=ip,
+            ),
+            Agreement(
+                agreement=AgreementType.ACCOUNT,
+                signed_at=now,
+                ip_address=ip,
+            ),
+        ],
+    )
+
+
+def cmd_create(client: BrokerClient, count: int, prefix: str) -> None:
+    stamp = int(time.time())
+    created = []
+    for i in range(count):
+        # Unique email per account; sandbox rejects duplicates with 409.
+        email = f"{prefix}+{stamp}-{i}@example.com"
+        try:
+            acct = client.create_account(_dummy_account(email, stamp + i))
+        except Exception as e:  # noqa: BLE001 — surface the API error verbatim
+            print(f"  ✗ {email}: {e}")
+            continue
+        created.append(acct)
+        print(f"  ✓ {email}")
+        print(f"      account_id = {acct.id}")
+        print(f"      number     = {acct.account_number}   status = {acct.status}")
+    print(f"\nCreated {len(created)}/{count} sandbox accounts.")
+    if created:
+        print("Trade against them via BrokerClient + account_id "
+              "(e.g. submit_order_for_account / get_trade_account_by_id).")
+
+
+def cmd_list(client: BrokerClient) -> None:
+    accounts = client.list_accounts()
+    if not accounts:
+        print("No accounts in this sandbox.")
+        return
+    print(f"{len(accounts)} account(s):")
+    for a in accounts:
+        print(f"  {a.id}  {a.account_number}  {a.status}  {getattr(a, 'email', '')}")
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description="Alpaca Broker sandbox account farm")
+    p.add_argument("--count", type=int, default=1, help="how many accounts to create")
+    p.add_argument("--prefix", default="autostock", help="email local-part prefix")
+    p.add_argument("--list", action="store_true", help="list existing accounts and exit")
+    args = p.parse_args()
+
+    client = _client()
+    if args.list:
+        cmd_list(client)
+    else:
+        cmd_create(client, args.count, args.prefix)
+
+
+if __name__ == "__main__":
+    main()
