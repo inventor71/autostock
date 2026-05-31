@@ -31,6 +31,8 @@
 | F17 | docker-verify cleanup — sudo-free teardown (ownership handback) | merged | feat/F17 | — | — | f912999 | 2026-05-31 |
 | F18 | docker-verify attach console-MCP env wiring (AUTOSTOCK_ROOT + shared token) | merged | feat/F18 | — | — | 6902612→8f5468c | 2026-05-31 |
 | F19 | F9 follow-up: 6 structured-tool opencode permission keys in fork config | merged | feat/F19 | — | merged→fork main bc82b71 | 2f13a7a→a1851e0 | 2026-05-31 |
+| F20 | Alpaca-shaped read tools (arbitrary-symbol quote/orders) — fix console read limit | active | feat/F20 (TBD) | (TBD) | yes (fork perm keys, like F19) | 79df84a | 2026-05-31 |
+| F21 | place_stock_order arg robustness (fail-fast pre-queue validation + omit-optional guidance) | active | feat/F21 (TBD) | (TBD) | — (parent: commands.py + mcp-server.ts) | 79df84a | 2026-05-31 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
