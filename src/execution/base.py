@@ -35,6 +35,13 @@ class BaseBroker(ABC):
         (Alpaca) override it. Read-only — never places orders (advisor-only)."""
         return []
 
+    def get_latest_prices(self, symbols: list[str]) -> dict[str, float]:
+        """Latest trade price per symbol (F8 sidebar: current price + Δ-to-trigger
+        for resting orders on symbols we don't hold). Default {} for brokers
+        without a market-data feed (simulated/backtest); Alpaca overrides it.
+        Read-only, best-effort — callers tolerate missing symbols (NFR-4)."""
+        return {}
+
     def record_trade_ledger(
         self,
         path: str | Path,

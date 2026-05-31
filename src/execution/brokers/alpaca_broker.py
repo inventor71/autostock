@@ -73,6 +73,11 @@ class AlpacaBroker(BaseBroker):
         self._paper = paper
         self._fill_poll_timeout = fill_poll_timeout
         self._fill_poll_interval = fill_poll_interval
+        # F8: keep keys to lazily build a market-data client for get_latest_prices
+        # (current price of resting-order symbols we don't hold). Built on first use.
+        self._api_key = api_key
+        self._secret_key = secret_key
+        self._data_client = None
         logger.info(f"AlpacaBroker initialized (paper={paper})")
 
     def _poll_for_fill(self, order_id: str):
@@ -314,6 +319,26 @@ class AlpacaBroker(BaseBroker):
         except Exception as e:
             logger.warning(f"skipping unparseable activity {a!r}: {e}")
             return None
+
+    def get_latest_prices(self, symbols: list[str]) -> dict[str, float]:
+        """F8: latest trade price per symbol via Alpaca market data (read-only,
+        best-effort). Used to show current price + Δ-to-trigger for resting orders
+        on symbols not currently held. Mirrors scripts/status.py. Failure → {}."""
+        syms = [s for s in dict.fromkeys(symbols) if s]
+        if not syms:
+            return {}
+        try:
+            if self._data_client is None:
+                from alpaca.data.historical import StockHistoricalDataClient
+                self._data_client = StockHistoricalDataClient(self._api_key, self._secret_key)
+            from alpaca.data.requests import StockLatestTradeRequest
+            trades = self._data_client.get_stock_latest_trade(
+                StockLatestTradeRequest(symbol_or_symbols=syms)
+            )
+            return {sym: float(tr.price) for sym, tr in trades.items()}
+        except Exception as e:  # never kill the caller (NFR-4)
+            logger.warning(f"get_latest_prices failed: {e}")
+            return {}
 
     def get_all_positions(self) -> list[Position]:
         try:

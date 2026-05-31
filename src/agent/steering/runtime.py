@@ -73,6 +73,12 @@ class SteeringRuntime:
         # by publish_snapshot — keeping snapshot.json single-writer while the network
         # fills call runs far less often than the 5s snapshot publish.
         self._round_trip: dict = {}
+        # F8: sidebar enrichment caches, filled by slow-cadence worker jobs and
+        # folded into the snapshot by publish_snapshot (keeps snapshot.json a
+        # single writer, NFR-2). PriceBook = current price of resting-order
+        # symbols we don't hold (held symbols reuse position.current_price).
+        self._price_book: dict[str, tuple[float, datetime]] = {}
+        self._recent_fills: list[dict] = []
 
     def _load_fills_cursor(self) -> str:
         try:
@@ -130,10 +136,21 @@ class SteeringRuntime:
             broker = self.executor.broker
             try:
                 ps = broker.get_portfolio_state()
-                positions = {s: {"qty": p.qty, "avg_entry_price": p.avg_entry_price}
+                positions = {s: {"qty": p.qty, "avg_entry_price": p.avg_entry_price,
+                                 "current_price": p.current_price,
+                                 "market_value": p.market_value,
+                                 "unrealized_pnl": p.unrealized_pnl}
                              for s, p in ps.positions.items()}
+                # F8: current price per resting order. Held symbols reuse the
+                # position price (no extra call); order-only symbols come from the
+                # PriceBook cache (slow job). Missing -> None (sidebar blanks Δ).
+                held_prices = {s: p.current_price for s, p in ps.positions.items()}
                 opens = [{"symbol": o.symbol, "order_id": o.order_id,
-                          "stop_price": o.stop_price, "limit_price": o.limit_price}
+                          "stop_price": o.stop_price, "limit_price": o.limit_price,
+                          "side": getattr(o.side, "value", o.side),
+                          "order_type": getattr(o.order_type, "value", o.order_type),
+                          "current_price": held_prices.get(o.symbol)
+                          or self._price_book_get(o.symbol)}
                          for o in broker.get_open_orders()]
                 market_open = broker.is_market_open()
             except Exception as e:
@@ -156,6 +173,7 @@ class SteeringRuntime:
                 "market_open": market_open,
                 "account": self._account_block(ps),  # F6 FR-2 (reuses equity_log.snapshot)
                 "round_trip": self._round_trip,       # F6 FR-3 (cached, slow-cadence refresh)
+                "recent_fills": self._recent_fills,   # F8 FR-3 (cached, slow-cadence refresh)
             }
             self.last_snapshot = snapshot
             self.channel.publish_snapshot(snapshot)
@@ -227,7 +245,7 @@ class SteeringRuntime:
         so the sidebar and the equity track record never diverge."""
         from src.agent.equity_log import snapshot as equity_snapshot
         full = equity_snapshot(ps)
-        return {k: full[k] for k in ("equity", "cash", "open_pnl", "position_count")}
+        return {k: full[k] for k in ("equity", "cash", "invested", "open_pnl", "position_count")}
 
     def refresh_round_trip(self, *, since: str | None = None) -> None:
         """F6 FR-3: refresh today's round-trip summary from the broker's live fills
@@ -247,6 +265,56 @@ class SteeringRuntime:
                 self._round_trip = summarize_today_round_trips(dicts, now_et=datetime.now(_ET))
             except Exception as e:
                 logger.warning("round-trip refresh failed (skipping): {}", e)
+        self.bus.submit(_build)
+
+    # ---- F8: sidebar price / recent-fills enrichment (slow-cadence jobs) --- #
+    _PRICE_TTL_SEC = 30
+    _RECENT_FILLS = 8
+
+    def _price_book_get(self, symbol: str) -> float | None:
+        """Fresh cached price for an order-only symbol, else None (Δ blank)."""
+        entry = self._price_book.get(symbol)
+        if not entry:
+            return None
+        price, fetched_at = entry
+        if (datetime.now(timezone.utc) - fetched_at).total_seconds() > self._PRICE_TTL_SEC:
+            return None
+        return price
+
+    def refresh_order_prices(self) -> None:
+        """F8 FR-2: fill in current prices for resting-order symbols we don't
+        hold (held symbols already carry current_price). Worker job, best-effort
+        (NFR-4); only fetches symbols missing/stale in the cache."""
+        def _build():
+            try:
+                broker = self.executor.broker
+                ps = broker.get_portfolio_state()
+                held = set(ps.positions)
+                order_syms = {o.symbol for o in broker.get_open_orders()}
+                missing = [s for s in order_syms - held if self._price_book_get(s) is None]
+                if not missing:
+                    return
+                now = datetime.now(timezone.utc)
+                for sym, px in broker.get_latest_prices(missing).items():
+                    self._price_book[sym] = (px, now)
+            except Exception as e:
+                logger.warning("order-price refresh failed (skipping): {}", e)
+        self.bus.submit(_build)
+
+    def refresh_recent_fills(self) -> None:
+        """F8 FR-3: cache the most recent fills (what was bought/sold) for the
+        sidebar. Reuses get_fills (F3/F6 FillEvent stream). Worker job, best-effort."""
+        def _build():
+            try:
+                fills = self.executor.broker.get_fills()
+                fills = sorted(fills, key=lambda f: f.ts, reverse=True)[: self._RECENT_FILLS]
+                self._recent_fills = [
+                    {"ts": f.ts.isoformat(), "side": f.side, "qty": f.qty,
+                     "symbol": f.symbol, "price": f.price}
+                    for f in fills
+                ]
+            except Exception as e:
+                logger.warning("recent-fills refresh failed (skipping): {}", e)
         self.bus.submit(_build)
 
     def publish_monitor(self) -> None:

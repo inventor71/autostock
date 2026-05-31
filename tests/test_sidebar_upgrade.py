@@ -93,7 +93,7 @@ def test_get_fills_noop_default():
 def test_account_block_reuses_equity_log():
     ps = SimulatedBroker(initial_capital=100_000.0).get_portfolio_state()
     acc = SteeringRuntime._account_block(ps)
-    assert set(acc) == {"equity", "cash", "open_pnl", "position_count"}
+    assert set(acc) == {"equity", "cash", "invested", "open_pnl", "position_count"}  # F8 +invested
     assert acc["cash"] == 100_000.0
     assert acc["position_count"] == 0
 
@@ -140,7 +140,7 @@ def test_snapshot_includes_account_and_round_trip(tmp_path):
         rt.publish_snapshot()
         assert _wait(lambda: rt.channel.snapshot_file.exists())
         snap = json.loads(rt.channel.snapshot_file.read_text())
-        assert set(snap["account"]) == {"equity", "cash", "open_pnl", "position_count"}
+        assert set(snap["account"]) == {"equity", "cash", "invested", "open_pnl", "position_count"}  # F8 +invested
         assert snap["round_trip"]["closed_count"] == 2
     finally:
         rt.stop()
