@@ -7,18 +7,26 @@
 //   "mcp": { "autostock": { "type": "local",
 //            "command": ["bun","run","<abs>/operator-console/src/mcp-server.ts"],
 //            "environment": { "STEERING_DIR": "...", "STEERING_OPERATOR_TOKEN": "..." } } },
-//   "permission": { "autostock_steer": "ask", "autostock_steer_read": "allow" }
+//   "permission": { "autostock_steer": "ask", "autostock_steer_read": "allow",
+//     "autostock_place_stock_order": "ask", "autostock_cancel_order_by_id": "ask",
+//     "autostock_cancel_all_orders": "ask", "autostock_replace_order_by_id": "ask",
+//     "autostock_close_position": "ask", "autostock_close_all_positions": "ask" }
 // The deterministic parse + token + file-drop write live in src/steer-handler (tested);
 // the daemon RiskManager gate is the final safety regardless.
+//
+// F9: `steer` remains the deterministic slash-shorthand path; the tools below are the
+// structured Alpaca-shaped surface (names mirror Alpaca MCP 1:1, Q6=A). Both file-drop
+// a SteeringCommand the daemon runs through RiskManager→Broker.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { FileDrop } from "./filedrop";
-import { handleSteer, handleSteerRead } from "./steer-handler";
+import { handleSteer, handleSteerRead, handleStructured } from "./steer-handler";
 
 const fd = new FileDrop(process.env.STEERING_DIR ?? "./steering");
 const server = new McpServer({ name: "autostock", version: "0.0.0" });
+const txt = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 
 server.registerTool(
   "steer",
@@ -54,6 +62,101 @@ server.registerTool(
     inputSchema: { command: z.string().describe("a read command, e.g. /status or /turns") },
   },
   async ({ command }) => ({ content: [{ type: "text", text: handleSteerRead(command, fd) }] }),
+);
+
+// ---- F9 structured Alpaca-shaped order tools (MUTATING, opencode `ask`-gated) ---- #
+
+server.registerTool(
+  "place_stock_order",
+  {
+    description:
+      "Place a stock order through the gated daemon (MUTATING; opencode asks the human to " +
+      "confirm). RiskManager validates/clamps size, auto-attaches protection, and may reject " +
+      "with a suggestion — you propose, you cannot place autonomously. Use `notional` only for " +
+      "market+day; otherwise an integer `qty`. Set `force: true` to override budget/pool/breaker " +
+      "limits (price-sanity and auto-protection are NOT overridable). opg/cls TIF and oto class " +
+      "are not yet supported (rejected).",
+    inputSchema: {
+      symbol: z.string(),
+      side: z.enum(["buy", "sell"]),
+      qty: z.number().positive().optional(),
+      notional: z.number().positive().optional().describe("$ amount; market+day only (FR-7)"),
+      order_type: z.enum(["market", "limit", "stop", "stop_limit", "trailing_stop"]).default("market"),
+      time_in_force: z.enum(["day", "gtc", "ioc", "fok", "opg", "cls"]).default("day"),
+      limit_price: z.number().positive().optional(),
+      stop_price: z.number().positive().optional(),
+      trail_price: z.number().positive().optional(),
+      trail_percent: z.number().positive().optional(),
+      extended_hours: z.boolean().optional(),
+      client_order_id: z.string().optional(),
+      order_class: z.enum(["simple", "bracket", "oco", "oto"]).default("simple"),
+      take_profit: z.number().positive().optional(),
+      stop_loss: z.number().positive().optional(),
+      force: z.boolean().optional(),
+    },
+  },
+  async (args) => txt(handleStructured("place_order", args, fd)),
+);
+
+server.registerTool(
+  "cancel_order_by_id",
+  {
+    description: "Cancel a specific resting broker order by its id (MUTATING, confirm).",
+    inputSchema: { order_id: z.string() },
+  },
+  async ({ order_id }) => txt(handleStructured("cancel_order", { order_id }, fd)),
+);
+
+server.registerTool(
+  "cancel_all_orders",
+  {
+    description: "Cancel all resting orders, or all for one symbol (MUTATING, confirm).",
+    inputSchema: { symbol: z.string().optional() },
+  },
+  async ({ symbol }) => txt(handleStructured("cancel_all", { symbol }, fd)),
+);
+
+server.registerTool(
+  "replace_order_by_id",
+  {
+    description:
+      "Modify a resting SIMPLE order in place (qty/limit/stop/trail/TIF). Bracket/OCO legs " +
+      "cannot be replaced — cancel and re-place instead (MUTATING, confirm).",
+    inputSchema: {
+      order_id: z.string(),
+      qty: z.number().int().positive().optional(),
+      limit_price: z.number().positive().optional(),
+      stop_price: z.number().positive().optional(),
+      trail: z.number().positive().optional(),
+      time_in_force: z.enum(["day", "gtc", "ioc", "fok"]).optional(),
+    },
+  },
+  async ({ order_id, qty, limit_price, stop_price, trail, time_in_force }) =>
+    txt(handleStructured("replace_order",
+      { order_id, qty, limit_price, stop_price, trail, time_in_force }, fd)),
+);
+
+server.registerTool(
+  "close_position",
+  {
+    description: "Close (flatten) a position, fully or partially (MUTATING, confirm).",
+    inputSchema: {
+      symbol: z.string(),
+      qty: z.number().positive().optional(),
+      percentage: z.number().positive().max(100).optional(),
+    },
+  },
+  async ({ symbol, qty, percentage }) =>
+    txt(handleStructured("close_position", { symbol, qty, percentage }, fd)),
+);
+
+server.registerTool(
+  "close_all_positions",
+  {
+    description: "Close every open position; optionally cancel resting orders first (MUTATING, confirm).",
+    inputSchema: { cancel_orders: z.boolean().optional() },
+  },
+  async ({ cancel_orders }) => txt(handleStructured("close_all", { cancel_orders }, fd)),
 );
 
 await server.connect(new StdioServerTransport());

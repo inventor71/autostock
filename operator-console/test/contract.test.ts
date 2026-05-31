@@ -10,7 +10,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { readFileSync } from "node:fs"
-import { ALL_EVENT_KINDS, ALL_VERBS, COMMAND_FIELDS, EVENT_FIELDS } from "../src/schema"
+import { ALL_EVENT_KINDS, ALL_VERBS, COMMAND_ARGS, COMMAND_FIELDS, EVENT_FIELDS } from "../src/schema"
 import { FileDrop } from "../src/filedrop"
 
 const golden = JSON.parse(
@@ -20,6 +20,7 @@ const golden = JSON.parse(
   event_kinds: string[]
   command_fields: string[]
   event_fields: string[]
+  command_args: Record<string, string[]>
 }
 
 const sorted = (a: readonly string[]) => [...a].sort()
@@ -39,6 +40,15 @@ describe("cross-language steering contract (TS mirror vs Unit A pydantic golden)
 
   test("event envelope fields match", () => {
     expect(sorted(EVENT_FIELDS)).toEqual(sorted(golden.event_fields))
+  })
+
+  // F9 (NFR-3): per-verb structured args must match across languages so a renamed/
+  // retyped field is caught here, not only at live order time.
+  test("per-verb command args match the authoritative contract", () => {
+    expect(Object.keys(COMMAND_ARGS).sort()).toEqual(Object.keys(golden.command_args).sort())
+    for (const verb of Object.keys(COMMAND_ARGS) as (keyof typeof COMMAND_ARGS)[]) {
+      expect(sorted(COMMAND_ARGS[verb])).toEqual(sorted(golden.command_args[verb]))
+    }
   })
 
   test("FileDrop.build emits exactly the contract command envelope", () => {
