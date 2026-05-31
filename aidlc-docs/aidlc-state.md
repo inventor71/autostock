@@ -24,7 +24,7 @@
 | F10 | Containerized verification harness (zero prod impact) | merged | feat/docker-verify | — | — | 8ff59c0 | 2026-05-31 |
 | F11 | Verify-harness ergonomics (clean worktree + reuse main .env.test) | merged | feat/verify-ergonomics | — | — | 24dc367 | 2026-05-31 |
 | F12 | Verify-harness hardening (critic: account pin + fail-closed preflight) | merged | feat/verify-hardening | — | — | 715723e | 2026-05-31 |
-| F13 | Sidebar fills date + blank line between sections | active | feat/F13 | .claude/worktrees/F13 | feat/F13 | e8d99a6 | 2026-05-31 |
+| F13 | Sidebar fills date + blank line between sections | merged | feat/F13 | — | merged→fork main aa984da | a7a9ea1 | 2026-05-31 |
 | F14 | Daemon wedge self-heal + WakeDetector market-data fetch rigidity | active | feat/F14 (TBD) | .claude/worktrees/F14 (TBD) | feat/F14 (TBD) | e8d99a6 | 2026-05-31 |
 | F15 | docker-verify `attach` mode (full daemon+TUI runtime, TEST account) | merged | feat/F15 | — | — | 98090fa | 2026-05-31 |
 

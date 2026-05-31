@@ -8,7 +8,7 @@
 - **Track ID**: F13
 - **Title**: Sidebar fills date + blank line between sections
 - **Type**: feature
-- **Status**: active
+- **Status**: merged (submodule feat/F13 → fork main `aa984da`, pushed; parent gitlink `a7a9ea1`; 2026-05-31)
 - **Branch**: feat/F13
 - **Worktree**: .claude/worktrees/F13
 - **Submodule branch**: feat/F13 (operator-console/cli is touched)
