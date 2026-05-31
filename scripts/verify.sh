@@ -62,6 +62,16 @@ cleanup() {
   find "/app/${CONSOLE_DIR}" -name '*.tsbuildinfo' -type f -exec rm -f {} + 2>/dev/null || true
   find /app/src /app/tests /app/config -name __pycache__ -type d \
     -exec rm -rf {} + 2>/dev/null || true
+  # F17 — catch-all so teardown never needs sudo. The rm sweeps above enumerate KNOWN scratch, but
+  # each new tool adds a new root-owned path (F11 python caches → F12 turbo/tsgo → F15 attach's
+  # `.opencode/`, 3674 files). Instead of chasing them, hand EVERYTHING we wrote into the bind mount
+  # back to the host user: the container runs as root, so this trap (also root) can chown freely.
+  # /app's own numeric owner == the host user (bind mounts preserve uid) → discover it with stat, no
+  # env needed. `-xdev` stays on the bind mount, skipping the node_modules/steering/… named volumes
+  # (separate fs, not part of the worktree, and irrelevant to `git worktree remove`).
+  local host_owner
+  host_owner="$(stat -c '%u:%g' /app 2>/dev/null || echo 0:0)"
+  find /app -xdev -exec chown "$host_owner" {} + 2>/dev/null || true
 }
 trap cleanup EXIT
 
