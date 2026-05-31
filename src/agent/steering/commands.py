@@ -19,7 +19,7 @@ from loguru import logger
 from src.agent.executor import DecisionExecutor
 from src.agent.journal import Decision
 from src.agent.steering.channel import SteeringChannel
-from src.agent.steering.records import InterventionRecord, SteeringCommand
+from src.agent.steering.records import InterventionRecord, PlaceOrderArgs, SteeringCommand
 from src.agent.steering.state import SteeringState
 from src.agent.steering.turns import ReconcileWorker
 from src.core.models import Order
@@ -31,6 +31,9 @@ _KIND = {
     "allow_entries": "lifecycle", "kill": "lifecycle",
     "approve": "approval", "reject": "approval", "unlock": "lock", "cancel": "lifecycle",
     "note": "note", "directive": "directive", "directive_clear": "directive", "answer": "directive",
+    # F9 structured verbs
+    "place_order": "trade", "cancel_order": "lifecycle", "cancel_all": "lifecycle",
+    "replace_order": "trade", "close_position": "trade", "close_all": "trade",
 }
 
 
@@ -160,10 +163,159 @@ class CommandHandler:
         if order is None:
             self._emit(cmd, "no_order", "size rounds to 0 shares or no price")
             return
-        filled = self.broker.submit_order(order)
+        # F9 (critic fix): the shorthand BUY now passes the SAME human-order gate
+        # as place_order — budget/pool/breaker were previously bypassed here.
+        self._submit_gated(cmd, sym, order, price, atr, bool(cmd.args.get("force", False)))
+
+    # ---- F9 structured order verbs --------------------------------------- #
+    def _reject_detail(self, decision) -> str:
+        """One-line reject string for an OrderDecision (token-free, SECURITY-03)."""
+        bits = [decision.reason_code or "rejected"]
+        if decision.message:
+            bits.append(decision.message)
+        if decision.suggestion:
+            bits.append(f"try {decision.suggestion}")
+        return " — ".join(bits)
+
+    def _submit_gated(self, cmd: SteeringCommand, sym: str, order: Order,
+                      price: float | None, atr: float | None, force: bool) -> None:
+        """Run an Order through RiskManager.receive_human_order, then submit or
+        emit a structured reject. Shared by /buy shorthand and place_order."""
+        decision = self.risk_manager.receive_human_order(
+            order, self.broker.get_portfolio_state(), price, atr=atr, force=force)
+        if not decision.accepted:
+            self._emit(cmd, "rejected", self._reject_detail(decision))
+            return
+        out = decision.order
+        self.broker.submit_order(out)
         self.state.lock_symbol(sym)
-        bracket = " (bracket)" if order.order_class == OrderClass.BRACKET else ""
-        self._emit(cmd, "executed", f"BUY {order.qty} {sym}{bracket}")
+        bracket = " (bracket)" if out.order_class == OrderClass.BRACKET else ""
+        tag = f" [{decision.reason_code}]" if decision.reason_code else ""
+        self._emit(cmd, "executed",
+                   f"{out.side.value.upper()} {out.qty:g} {sym}{bracket}{tag}")
+        self._reconcile()
+
+    def _v_place_order(self, cmd: SteeringCommand) -> None:
+        try:
+            args = PlaceOrderArgs.model_validate(cmd.args)
+        except Exception as e:
+            self._emit(cmd, "rejected", f"bad place_order args: {e}")
+            return
+        sym = args.symbol.upper()
+        if not self._market_open():
+            self.channel.queue_offhours(cmd)
+            self._emit(cmd, "deferred", "market closed; queued for next open")
+            return
+        price = self.data_provider.get_latest_price(sym)
+        try:
+            order = self._order_from_place_args(args, price)
+        except ValueError as e:
+            self._emit(cmd, "rejected", str(e))
+            return
+        atr = self.executor._atr(sym)
+        self._submit_gated(cmd, sym, order, price, atr, args.force)
+
+    def _order_from_place_args(self, args: PlaceOrderArgs, price: float | None) -> Order:
+        """Resolve PlaceOrderArgs to a domain Order (notional->shares; legs).
+
+        Raises ValueError (-> structured reject) on FR-7 violations or an
+        unresolvable size. order_type/TIF/class validity beyond this is enforced
+        by the Order validator and the RiskManager capability gate.
+        """
+        # FR-7: notional only for market+day; mutually exclusive with qty.
+        if args.notional is not None:
+            if args.qty is not None:
+                raise ValueError("specify either qty or notional, not both")
+            if args.order_type != "market" or args.time_in_force != "day":
+                raise ValueError("notional is only allowed for market + day orders (FR-7)")
+            if price is None or price <= 0:
+                raise ValueError(f"no price to size notional for {args.symbol}")
+            qty = math.floor(args.notional / price)
+        elif args.qty is not None:
+            qty = math.floor(args.qty)  # whole shares (Alpaca rejects fractional bracket legs)
+        else:
+            raise ValueError("qty or notional required")
+        if qty <= 0:
+            raise ValueError("size rounds to 0 shares")
+
+        order_class = OrderClass(args.order_class)
+        # take_profit/stop_loss imply a bracket when class left simple (Alpaca semantics).
+        if order_class == OrderClass.SIMPLE and (args.take_profit is not None or args.stop_loss is not None):
+            order_class = OrderClass.BRACKET
+
+        return Order(
+            symbol=args.symbol.upper(),
+            side=OrderSide(args.side),
+            qty=float(qty),
+            order_type=OrderType(args.order_type),
+            limit_price=args.limit_price,
+            stop_price=args.stop_price,
+            trail_price=args.trail_price,
+            trail_percent=args.trail_percent,
+            time_in_force=args.time_in_force,
+            extended_hours=args.extended_hours,
+            client_order_id=args.client_order_id,
+            order_class=order_class,
+            take_profit_price=args.take_profit,
+            stop_loss_price=args.stop_loss,
+        )
+
+    def _v_cancel_order(self, cmd: SteeringCommand) -> None:
+        oid = str(cmd.args.get("order_id", "")).strip()
+        if not oid:
+            self._emit(cmd, "no_order", "order_id required")
+            return
+        ok = self.broker.cancel_order(oid)
+        self._emit(cmd, "applied" if ok else "no_order",
+                   f"cancel order {oid}" if ok else f"could not cancel {oid}")
+
+    def _v_cancel_all(self, cmd: SteeringCommand) -> None:
+        sym = cmd.args.get("symbol")
+        sym = str(sym).upper() if sym else None
+        n = self.broker.cancel_all_orders(sym)
+        scope = f" for {sym}" if sym else ""
+        self._emit(cmd, "applied", f"cancelled {n} orders{scope}")
+
+    def _v_replace_order(self, cmd: SteeringCommand) -> None:
+        oid = str(cmd.args.get("order_id", "")).strip()
+        if not oid:
+            self._emit(cmd, "no_order", "order_id required")
+            return
+        changes = {k: cmd.args[k] for k in
+                   ("qty", "limit_price", "stop_price", "trail", "time_in_force")
+                   if cmd.args.get(k) is not None}
+        # Q2=A: leg-aware replace is deferred; the broker (Alpaca) rejects a
+        # bracket/OCO-leg replace, which surfaces here as a failure with guidance.
+        filled = self.broker.replace_order(oid, changes)
+        if filled is None:
+            self._emit(cmd, "no_order",
+                       f"replace failed for {oid} (bracket/OCO legs can't be replaced — "
+                       f"cancel and re-place instead)")
+            return
+        self._emit(cmd, "applied", f"replaced {oid} -> {filled.order_id}")
+        self._reconcile()
+
+    def _v_close_position(self, cmd: SteeringCommand) -> None:
+        sym = str(cmd.args["symbol"]).upper()
+        if not self._market_open():
+            self.channel.queue_offhours(cmd)
+            self._emit(cmd, "deferred", "market closed; queued for next open")
+            return
+        if self.broker.get_position(sym) is None:
+            self._emit(cmd, "no_order", f"no position in {sym}")
+            return
+        self._flatten_symbol(sym)
+        self.state.lock_symbol(sym)
+        self._emit(cmd, "executed", f"closed {sym}")
+        self._reconcile()
+
+    def _v_close_all(self, cmd: SteeringCommand) -> None:
+        if not self._market_open():
+            self.channel.queue_offhours(cmd)
+            self._emit(cmd, "deferred", "market closed; queued for next open")
+            return
+        n = self._flatten_all_now()
+        self._emit(cmd, "executed", f"closed {n} positions")
         self._reconcile()
 
     def _v_sell(self, cmd: SteeringCommand) -> None:

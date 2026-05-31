@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.agent.steering.records import (  # noqa: E402
     EventKind,
+    PlaceOrderArgs,
     SteeringCommand,
     SteeringEvent,
     SteeringVerb,
@@ -31,13 +32,29 @@ from src.agent.steering.records import (  # noqa: E402
 CONTRACT = Path(__file__).resolve().parents[1] / "operator-console" / "contract" / "contract.json"
 
 
-def _compute() -> dict[str, list[str]]:
-    """The contract derived from the LIVE pydantic models (single source of truth)."""
+def _compute() -> dict:
+    """The contract derived from the LIVE pydantic models (single source of truth).
+
+    ``command_args`` (F9, NFR-3) pins the per-verb structured arg shape across
+    languages so a renamed/typed field (e.g. trail_percent vs trail_pct) fails a
+    test instead of being caught only at live order time. place_order is the rich
+    one; the smaller management verbs use fixed arg lists kept in lockstep with
+    operator-console's zod schemas.
+    """
     return {
         "verbs": list(typing.get_args(SteeringVerb)),
         "event_kinds": list(typing.get_args(EventKind)),
         "command_fields": list(SteeringCommand.model_fields.keys()),
         "event_fields": list(SteeringEvent.model_fields.keys()),
+        "command_args": {
+            "place_order": sorted(PlaceOrderArgs.model_fields.keys()),
+            "cancel_order": ["order_id"],
+            "cancel_all": ["symbol"],
+            "replace_order": ["limit_price", "order_id", "qty", "stop_price",
+                              "time_in_force", "trail"],
+            "close_position": ["percentage", "qty", "symbol"],
+            "close_all": ["cancel_orders"],
+        },
     }
 
 
