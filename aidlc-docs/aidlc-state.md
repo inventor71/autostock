@@ -28,7 +28,7 @@
 | F14 | Daemon wedge self-heal + WakeDetector market-data fetch rigidity | active | feat/F14 (TBD) | .claude/worktrees/F14 (TBD) | feat/F14 (TBD) | e8d99a6 | 2026-05-31 |
 | F15 | docker-verify `attach` mode (full daemon+TUI runtime, TEST account) | merged | feat/F15 | — | — | 98090fa | 2026-05-31 |
 | F16 | Broker API adapter — trade the sandbox account farm | active | feat/F16 (TBD) | .claude/worktrees/F16 (TBD) | — | cc125e5 | 2026-05-31 |
-| F17 | docker-verify cleanup — sudo-free teardown (ownership handback) | active | feat/F17 | .claude/worktrees/F17 | — | cc125e5 | 2026-05-31 |
+| F17 | docker-verify cleanup — sudo-free teardown (ownership handback) | merged | feat/F17 | — | — | f912999 | 2026-05-31 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
