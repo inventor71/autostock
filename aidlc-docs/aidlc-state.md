@@ -20,13 +20,15 @@
 | F8 | Console Sidebar Status Rich | merged | feat/console-sidebar-status-rich | — | merged→fork main 2ac0cda | 77d5ed9 | 2026-05-31 |
 | R1 | New-surface refactor review | active | (TBD) | (TBD) | — | — | 2026-05-31 |
 | M1 | AI-DLC multi-track customization | active | main (rules/docs) | — | — | 631ec6e | 2026-05-31 |
-| F9 | Alpaca-format console orders (limit/stop/TIF) via risk gate | active | feat/console-alpaca-orders | (TBD) | feat/console-alpaca-orders | a0b882d | 2026-05-31 |
+| F9 | Alpaca-format console orders (limit/stop/TIF) via risk gate | merged | feat/F9 | — | — (parent-repo only; opencode perm keys = follow-up) | e8d99a6→8948e24 | 2026-05-31 |
 | F10 | Containerized verification harness (zero prod impact) | merged | feat/docker-verify | — | — | 8ff59c0 | 2026-05-31 |
 | F11 | Verify-harness ergonomics (clean worktree + reuse main .env.test) | merged | feat/verify-ergonomics | — | — | 24dc367 | 2026-05-31 |
 | F12 | Verify-harness hardening (critic: account pin + fail-closed preflight) | merged | feat/verify-hardening | — | — | 715723e | 2026-05-31 |
 | F13 | Sidebar fills date + blank line between sections | merged | feat/F13 | — | merged→fork main aa984da | a7a9ea1 | 2026-05-31 |
 | F14 | Daemon wedge self-heal + WakeDetector market-data fetch rigidity | active | feat/F14 (TBD) | .claude/worktrees/F14 (TBD) | feat/F14 (TBD) | e8d99a6 | 2026-05-31 |
 | F15 | docker-verify `attach` mode (full daemon+TUI runtime, TEST account) | merged | feat/F15 | — | — | 98090fa | 2026-05-31 |
+| F16 | Broker API adapter — trade the sandbox account farm | active | feat/F16 (TBD) | .claude/worktrees/F16 (TBD) | — | cc125e5 | 2026-05-31 |
+| F17 | docker-verify cleanup — sudo-free teardown (ownership handback) | active | feat/F17 | .claude/worktrees/F17 | — | cc125e5 | 2026-05-31 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
