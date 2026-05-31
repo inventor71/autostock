@@ -1,0 +1,35 @@
+# F10 verification-harness image — python + bun + claude CLI toolchain.
+# The project CODE is bind-mounted at runtime (see docker-compose.verify.yml), NOT copied in, so we
+# always verify the actual worktree. This image only carries the toolchain + third-party deps.
+FROM python:3.12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1 \
+    BUN_INSTALL=/usr/local/bun \
+    PATH=/usr/local/bun/bin:$PATH
+
+# System deps: git (metadata only; code is mounted), curl/unzip (bun), node (claude CLI),
+# build-essential (make/g++ for node-gyp — the console pulls native tree-sitter addons).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl unzip ca-certificates xz-utils build-essential \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI — the real-LLM path. Auth comes from the host ~/.claude mounted read-only at run.
+RUN npm install -g @anthropic-ai/claude-code && claude --version
+
+# bun — for the operator-console submodule typecheck.
+RUN curl -fsSL https://bun.sh/install | bash && bun --version
+
+# Python deps only (NOT the package — code is bind-mounted; PYTHONPATH=/app makes the worktree win).
+# CPU-only torch keeps the image lean (~hundreds of MB vs multi-GB CUDA). Deps are read straight from
+# pyproject.toml so there is no duplicated list; this layer rebuilds only when pyproject changes.
+WORKDIR /app
+COPY pyproject.toml ./
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install $(python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); \
+print(' '.join(d['project']['dependencies'] + d['project']['optional-dependencies']['dev']))")
+
+ENTRYPOINT ["bash", "scripts/verify.sh"]
