@@ -45,6 +45,7 @@
 | F28 | Normal-mode UI self-explanation — 에이전트가 자기 TUI 요소(타임라인 `$6.01`·마커·사이드바)의 의미를 설명 (rides F26 allowlist) | active | feat/F28 (TBD) | .claude/worktrees/F28 (TBD) | feat/F28 (opencode) | a4b1732 | 2026-06-01 |
 | F30 | KIS OpenAPI 브로커 확장 — 한국투자증권 API를 통한 미국/한국주식 페이퍼트레이딩 | active | feat/F30 (TBD) | .claude/worktrees/F30 (TBD) | — | b4fa955 | 2026-06-01 |
 | F31 | TUI Sidebar Orders 색상 깜박임 버그 수정 | merged | feat/F31 | — | feat/F31 (opencode) | 1746d6a→TBD | 2026-06-02 |
+| F32 | Timeline Markers 사라짐 버그 수정 | merged | feat/F32 | — | — | a3e67ee | 2026-06-02 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
