@@ -2,28 +2,54 @@
 # with ZERO production impact. The production systemd daemon, prod `.env`, and prod account are
 # never referenced here: the container loads `.env.test` only (AUTOSTOCK_ENV_FILE override).
 #
-# Run FROM the worktree dir so `.:/app` mounts THIS worktree's code (not main):
-#   docker compose -f docker-compose.verify.yml build
-#   docker compose -f docker-compose.verify.yml run --rm verify typecheck
-#   docker compose -f docker-compose.verify.yml run --rm verify unit
-#   docker compose -f docker-compose.verify.yml run --rm verify smoke
+# F27 — ALWAYS invoke via scripts/verify-run.sh (NOT raw `docker compose`): it exports the host
+# DOCKER_UID/DOCKER_GID the `user:` keys below require (they fail-loud if unset) and runs the
+# one-shot `init-perms` volume chown. Run FROM the worktree dir so `.:/app` mounts THIS worktree:
+#   scripts/verify-run.sh build
+#   scripts/verify-run.sh run --rm verify typecheck
+#   scripts/verify-run.sh run --rm verify unit
+#   scripts/verify-run.sh run --rm verify smoke
 #
 # F15 — the `attach` service runs the FULL runtime (daemon + console TUI) for a human to watch the
 # live sidebar, on the TEST paper account (prod-identical except the account). Interactive:
-#   docker compose -f docker-compose.verify.yml run --rm -it attach
+#   scripts/verify-run.sh run --rm -it attach
 services:
+  # F27 (G-7): named volumes are created owned root:root, so the non-root verify/attach containers
+  # can't write into them (bun install → EACCES). This one-shot helper is the ONLY service without
+  # `user:` (so it runs as root) and chowns the volume mountpoints to the host UID:GID before the
+  # real run. verify-run.sh invokes it for run/up. It mounts the volumes at neutral /v/* paths (no
+  # /app bind), so the chown is deterministic and not shadowed by the bind mount.
+  init-perms:
+    build:
+      context: .
+      dockerfile: Dockerfile.verify
+    volumes:
+      - verify-node-modules:/v/cli-node-modules
+      - mcp-node-modules:/v/mcp-node-modules
+      - attach-steering:/v/steering
+      - attach-workspace:/v/workspace
+      - attach-logs:/v/logs
+    entrypoint: ["sh", "-c", "chown ${DOCKER_UID:-0}:${DOCKER_GID:-0} /v/cli-node-modules /v/mcp-node-modules /v/steering /v/workspace /v/logs"]
+    command: []
+
   verify:
     build:
       context: .
       dockerfile: Dockerfile.verify
     working_dir: /app
+    # F27: run as the HOST user so bind-mount writes are host-owned (no sudo to `git worktree
+    # remove`). fail-loud (`:?`) — a raw `docker compose` bypassing verify-run.sh errors clearly
+    # instead of silently falling back to a wrong UID that can't read the 0600 ~/.claude creds.
+    user: "${DOCKER_UID:?run via scripts/verify-run.sh}:${DOCKER_GID:?run via scripts/verify-run.sh}"
     # The actual code under test — bind-mounted so we verify the live worktree, not a baked copy.
     volumes:
       - .:/app
       # Real claude login (subscription) reused read-only — the real-LLM path, no API key, no stub.
-      # If the claude CLI needs to WRITE session/cache state and errors on :ro, see state.md gotcha
-      # (switch to :rw or set CLAUDE_CONFIG_DIR to a writable copy).
-      - ${HOME}/.claude:/root/.claude:ro
+      # F27: mounted at /tmp/.claude (HOME=/tmp below) because an arbitrary host UID has no passwd
+      # entry → ~ would be / (unwritable). NOTE: ~/.claude.json (auth state) lives at HOME ROOT and
+      # is NOT mounted — same as the prior /root setup; if attach's real LLM turns fail auth, also
+      # mount ${HOME}/.claude.json or set CLAUDE_CONFIG_DIR (see infra-design.md G-1).
+      - ${HOME}/.claude:/tmp/.claude:ro
       # Keep node_modules off the bind mount so host/container arch never clash and installs cache.
       - verify-node-modules:/app/operator-console/cli/node_modules
       # F22: mcp-server.ts lives at operator-console/src/ and imports from
@@ -40,9 +66,11 @@ services:
     environment:
       AUTOSTOCK_ENV_FILE: /app/.env.test
       PYTHONPATH: /app
-      # Keep the container (runs as root) from writing scratch INTO the bind-mounted worktree —
-      # else pytest/hypothesis/bytecode caches land as root:root and the host can't `git worktree
-      # remove` without sudo. Redirect every writer off /app: no .pyc, hypothesis DB → /tmp.
+      # F27: arbitrary host UID has no passwd entry, so set HOME explicitly to a world-writable dir
+      # (/tmp is 1777) — claude reads /tmp/.claude (mounted above) and bun caches under /tmp/.bun.
+      HOME: /tmp
+      # Belt-and-suspenders: keep scratch off the bind mount anyway (smaller diff for the host).
+      # No .pyc; hypothesis DB → /tmp. (Host-owned now, but tidiness still helps.)
       PYTHONDONTWRITEBYTECODE: "1"
       HYPOTHESIS_STORAGE_DIRECTORY: /tmp/hypothesis
     # mode is passed as the run arg → scripts/verify.sh (ENTRYPOINT). Default when omitted:
@@ -57,6 +85,8 @@ services:
       context: .
       dockerfile: Dockerfile.verify
     working_dir: /app
+    # F27: run as the HOST user (see verify service). fail-loud if DOCKER_UID/GID unset.
+    user: "${DOCKER_UID:?run via scripts/verify-run.sh}:${DOCKER_GID:?run via scripts/verify-run.sh}"
     # Interactive: the console TUI needs a real terminal. (`run -it` also sets these; kept explicit.)
     stdin_open: true
     tty: true
@@ -64,7 +94,10 @@ services:
       - .:/app
       # rw — UNLIKE smoke's :ro. Live LLM turns (the daemon's agent) write session/cache state under
       # ~/.claude; a :ro mount makes the claude CLI error. This matches how the prod daemon uses it.
-      - ${HOME}/.claude:/root/.claude:rw
+      # F27: /tmp/.claude (HOME=/tmp). ~/.claude.json (auth) is NOT mounted (pre-existing); if the
+      # daemon's LLM turns fail to authenticate, add `- ${HOME}/.claude.json:/tmp/.claude.json:rw`
+      # here (note :rw would let the container mutate your host claude config) — see infra-design G-1.
+      - ${HOME}/.claude:/tmp/.claude:rw
       - verify-node-modules:/app/operator-console/cli/node_modules
       # F22: mcp-server.ts lives at operator-console/src/ and imports from
       # @modelcontextprotocol/sdk (declared in operator-console/package.json).
@@ -86,6 +119,9 @@ services:
       # Same fail-closed isolation as `verify` (preflight asserts these): TEST account only.
       AUTOSTOCK_ENV_FILE: /app/.env.test
       PYTHONPATH: /app
+      # F27: HOME for the non-root user (claude/bun writes). The daemon spawns `claude` inheriting
+      # this HOME (src/strategy/llm/client.py runs subprocess with no env override).
+      HOME: /tmp
       STEERING_DIR: /app/steering
       # F25: Bun (the TUI runtime) reads the TZ env var, NOT /etc/localtime, and
       # ships its own tzdata — so an IANA name here makes the timeline show the
@@ -121,11 +157,15 @@ services:
       context: .
       dockerfile: Dockerfile.verify
     working_dir: /app
+    # F27: host user so the seeded workspace volume files are host-owned (init-perms chowns the
+    # volume first). fail-loud if run outside verify-run.sh.
+    user: "${DOCKER_UID:?run via scripts/verify-run.sh}:${DOCKER_GID:?run via scripts/verify-run.sh}"
     volumes:
       - .:/app
       - attach-workspace:/app/workspace
     environment:
       PYTHONPATH: /app
+      HOME: /tmp
       PYTHONDONTWRITEBYTECODE: "1"
     entrypoint: ["python", "-u", "scripts/gen_test_timeline.py", "--workspace", "/app/workspace"]
     command: []

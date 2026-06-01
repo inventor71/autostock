@@ -47,33 +47,11 @@ preflight() {
   fi
 }
 
-# cleanup — the container runs as root, so any build/test scratch it writes into the bind-mounted
-# worktree lands root:root and the host then can't `git worktree remove` without sudo. The compose
-# env knobs stop the python writers; this trap also clears the JS toolchain's root-owned output
-# (turbo cache, nested workspace node_modules) plus a defensive sweep. Runs as root → deletes fine.
-cleanup() {
-  rm -rf /app/.pytest_cache /app/.hypothesis 2>/dev/null || true
-  # turbo writes a `.turbo` dir in EVERY package; bun writes per-package node_modules onto the bind
-  # mount (the top-level node_modules is the masking volume = empty host mountpoint, host-removable).
-  # Both are root-owned build output → clear so `git worktree remove` needs no sudo.
-  find "/app/${CONSOLE_DIR}" -name .turbo -type d -prune -exec rm -rf {} + 2>/dev/null || true
-  find "/app/${CONSOLE_DIR}/packages" -name node_modules -type d -prune -exec rm -rf {} + 2>/dev/null || true
-  # tsgo/tsc incremental build info, written per-package, root-owned.
-  find "/app/${CONSOLE_DIR}" -name '*.tsbuildinfo' -type f -exec rm -f {} + 2>/dev/null || true
-  find /app/src /app/tests /app/config -name __pycache__ -type d \
-    -exec rm -rf {} + 2>/dev/null || true
-  # F17 — catch-all so teardown never needs sudo. The rm sweeps above enumerate KNOWN scratch, but
-  # each new tool adds a new root-owned path (F11 python caches → F12 turbo/tsgo → F15 attach's
-  # `.opencode/`, 3674 files). Instead of chasing them, hand EVERYTHING we wrote into the bind mount
-  # back to the host user: the container runs as root, so this trap (also root) can chown freely.
-  # /app's own numeric owner == the host user (bind mounts preserve uid) → discover it with stat, no
-  # env needed. `-xdev` stays on the bind mount, skipping the node_modules/steering/… named volumes
-  # (separate fs, not part of the worktree, and irrelevant to `git worktree remove`).
-  local host_owner
-  host_owner="$(stat -c '%u:%g' /app 2>/dev/null || echo 0:0)"
-  find /app -xdev -exec chown "$host_owner" {} + 2>/dev/null || true
-}
-trap cleanup EXIT
+# F27 — no cleanup/chown-handback. The container now runs as the HOST user (compose `user:`,
+# injected by scripts/verify-run.sh), so every file it writes into the bind-mounted worktree is
+# host-owned from the start: `git worktree remove` needs no sudo, and there is nothing root-owned
+# to sweep or chown back. (The old F17 cleanup() that ran on EXIT was deleted with this change.)
+# Build scratch (.pyc, hypothesis DB) is still kept off /app via the compose env knobs for tidiness.
 
 run_typecheck() {
   log "operator-console typecheck (bun)"
@@ -169,33 +147,17 @@ run_attach() {
   cp /app/.env.test /app/.env
   log "copied .env.test → .env (daemon + MCP server both read .env)"
 
-  # The worktree submodule .git can be a pointer (gitdir:) that escapes the /app bind
-  # mount, breaking in-container git. Swap in a throwaway standalone repo for the
-  # container — but NON-DESTRUCTIVELY: the bind mount is the HOST worktree, so a plain
-  # `rm .git` here clobbers the host submodule's git metadata (F22 + F25 both got bitten:
-  # branch reset to an empty `master`, history lost). Move the host .git aside and restore
-  # it in the EXIT trap. (A self-contained standalone .git dir passes rev-parse and is left
-  # untouched.)
-  # First, tell the container's git (running as root) to TRUST the host-owned
-  # mounted repos. Without this, git 2.36+ flags "dubious ownership" and every
-  # `git` call fails — which would trip the standalone-repo case below into the
-  # mv-aside path needlessly (and that path's restore is best-effort: a killed
-  # container leaves the host .git as a root-owned `master` snapshot). With the
-  # repo trusted, a self-contained standalone .git just works and is left alone.
-  git config --global --add safe.directory '*' 2>/dev/null || true
-
-  CONSOLE_GIT="${CONSOLE_DIR}/.git"
-  CONSOLE_GIT_RESTORE=0
-  # ONLY act when .git is a FILE (a worktree gitdir: pointer that escapes the /app
-  # mount). A standalone .git DIRECTORY is a real self-contained repo — never touch
-  # it, even if rev-parse hiccups, so we can't clobber it into a `master` snapshot
-  # (the recurring F22/F25 data-loss bug). [-f] not [-e] is the load-bearing guard.
-  if [ -f "$CONSOLE_GIT" ] && ! git -C "${CONSOLE_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
-    log "fixing submodule .git for container (non-destructive — host .git restored on exit)"
-    mv "$CONSOLE_GIT" "${CONSOLE_GIT}.hostbak"
-    ( cd "${CONSOLE_DIR}" && git init -q && git add -A && git commit -q -m "container snapshot" --allow-empty ) 2>/dev/null || true
-    CONSOLE_GIT_RESTORE=1
-  fi
+  # F27 — removed: the `git config --global --add safe.directory '*'` + the .git mv-aside/restore
+  # workaround. Two things drove that code, only one of which still exists:
+  #   * dubious-ownership: gone. The container runs as the HOST user now, so git no longer flags
+  #     the host-owned mounted repo. No safe.directory needed.
+  #   * gitdir: pointer escaping /app: this was a PATH problem (the submodule .git file points at
+  #     <main>/.git/.../modules/…, outside the /app mount), unrelated to ownership. It is NOT fixed
+  #     by running non-root. We remove the mv-aside because the attach DAEMON path needs no
+  #     in-container submodule git. If the opencode TUI below turns out to call git in
+  #     operator-console/cli (verify at Build&Test), reintroduce a HOST-OWNED, non-destructive
+  #     handler — and KEEP the `[ -f ]` (not `[ -e ]`) guard that protected a standalone .git dir
+  #     from being clobbered into an empty `master` (the F22/F25 data-loss bug). NEVER `rm .git`.
 
   log "installing console deps (bun) — first run only, cached in the node_modules volume"
   ( cd "$CONSOLE_DIR" && bun install --frozen-lockfile )
@@ -209,12 +171,10 @@ run_attach() {
   ( cd /app && unset AUTOSTOCK_ENV_FILE && PYTHONPATH=/app exec python -u main.py --mode agent --steering ) \
       > /app/logs/daemon.attach.log 2>&1 &
   DAEMON_PID=$!
-  # Stop the daemon, restore the host submodule .git, and clear root-owned scratch on ANY
-  # exit (normal quit, Ctrl-C, error). Overrides the bare `trap cleanup EXIT` set above.
+  # F27: stop the daemon on ANY exit (normal quit, Ctrl-C, error). No .git restore and no cleanup
+  # chown sweep anymore — the container is the host user, so there is nothing root-owned to undo.
   trap 'log "stopping daemon (pid $DAEMON_PID)"; kill "$DAEMON_PID" 2>/dev/null || true; \
-        wait "$DAEMON_PID" 2>/dev/null || true; \
-        [ "${CONSOLE_GIT_RESTORE:-0}" = 1 ] && { rm -rf "$CONSOLE_GIT"; mv "${CONSOLE_GIT}.hostbak" "$CONSOLE_GIT"; }; \
-        cleanup' EXIT INT TERM
+        wait "$DAEMON_PID" 2>/dev/null || true' EXIT INT TERM
 
   log "waiting for the first snapshot ($STEERING_DIR/snapshot.json) — up to 180s (a startup LLM turn can be slow)…"
   for i in $(seq 1 180); do
