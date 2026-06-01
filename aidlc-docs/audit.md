@@ -1519,3 +1519,9 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 **Merge commit**: 927627a
 **Summary**: Multi-agent research (Mode B sequential debate + Mode C parallel sub-agents), 5 new signal tools (earnings/insider/analyst_upgrades/institutional/macro), structured lessons.jsonl, configurable via MultiAgentConfig + research.signals. 51 new tests, 482 total, 0 new deps.
 
+
+---
+## F25 Merged
+**Timestamp**: 2026-06-01T09:30:00Z
+**Merge commit**: 02f46cb (parent) / 4c21687 (submodule main)
+**Summary**: AI-collaborative timeline bar — market-aware 12h view (KST local, IANA-tz DST), 3 market regions + phase badge (● PRE-MARKET/REGULAR/AFTER/CLOSED), date navigation, human intervention markers + overlay, flicker-free monitor polling. Unit A (daemon: et_date sessions, market rule + interventions in monitor.json). verify.sh: re-applied lost F22 fixes (.env copy + operator-console install → fixes MCP -32000) + pointer-only git guard. docker-compose: TZ for correct local time in attach TUI. 556 Python + 21 TS tests, critic 6 findings (2 HIGH + 1 MED applied). Note: submodule git was repeatedly clobbered by docker verify.sh running as root (recovered each time from working tree) → F27 opened to fix root-cause.
