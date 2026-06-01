@@ -126,6 +126,66 @@ class TestInterventionsTail:
         out = _interventions_tail(p)
         assert len(out) == 1 and out[0]["verb"] == "buy"
 
+    def test_et_date_filter_finds_trades_beyond_150_line_window(self, tmp_path):
+        """F32: when many non-trade lines push trade entries beyond the old 150-line
+        window, the ET-date filter still finds them."""
+        p = tmp_path / "human_directives.jsonl"
+        lines = []
+        # 200 non-trade lines (pause/note) that would push a trade out of the
+        # old 150-line window
+        for i in range(200):
+            lines.append({"ts": "2026-06-01T09:00:00-04:00", "command": "note",
+                          "args": {}, "outcome": "applied"})
+        # Then a buy trade at the end
+        lines.append({"ts": "2026-06-01T10:00:00-04:00", "command": "buy",
+                      "args": {"symbol": "AAPL"}, "outcome": "executed"})
+        self._write(p, lines)
+        # Without et_date (legacy): trade is found because it's in the last 150 lines
+        out_legacy = _interventions_tail(p)
+        assert len(out_legacy) == 1
+        assert out_legacy[0]["verb"] == "buy"
+        # With et_date filter: also found (and it scans the whole file)
+        out_filtered = _interventions_tail(p, et_date="2026-06-01")
+        assert len(out_filtered) == 1
+        assert out_filtered[0]["verb"] == "buy"
+        assert out_filtered[0]["symbol"] == "AAPL"
+
+    def test_et_date_filter_excludes_other_dates(self, tmp_path):
+        """F32: ET-date filter only returns entries matching the target date."""
+        p = tmp_path / "human_directives.jsonl"
+        self._write(p, [
+            {"ts": "2026-05-30T10:00:00-04:00", "command": "buy",
+             "args": {"symbol": "OLD"}, "outcome": "executed"},
+            {"ts": "2026-06-01T10:00:00-04:00", "command": "buy",
+             "args": {"symbol": "TODAY"}, "outcome": "executed"},
+            {"ts": "2026-06-01T10:01:00-04:00", "command": "sell",
+             "args": {"symbol": "TODAY2"}, "outcome": "executed"},
+        ])
+        out = _interventions_tail(p, et_date="2026-06-01")
+        verbs = [o["verb"] for o in out]
+        assert verbs == ["buy", "sell"]
+        assert out[0]["symbol"] == "TODAY"
+        assert out[1]["symbol"] == "TODAY2"
+
+    def test_et_date_filter_stops_at_date_boundary(self, tmp_path):
+        """F32: scanning backwards stops collecting at the first entry from a
+        different date (optimization; files are roughly chronological)."""
+        p = tmp_path / "human_directives.jsonl"
+        self._write(p, [
+            {"ts": "2026-05-30T10:00:00-04:00", "command": "buy",
+             "args": {"symbol": "OLD"}, "outcome": "executed"},
+            {"ts": "2026-05-30T10:01:00-04:00", "command": "buy",
+             "args": {"symbol": "OLD2"}, "outcome": "executed"},
+            {"ts": "2026-06-01T10:00:00-04:00", "command": "buy",
+             "args": {"symbol": "TODAY"}, "outcome": "executed"},
+            {"ts": "2026-06-01T10:01:00-04:00", "command": "sell",
+             "args": {"symbol": "TODAY2"}, "outcome": "executed"},
+        ])
+        out = _interventions_tail(p, et_date="2026-06-01")
+        # Only today's entries; OLD/Old2 from 05-30 are excluded
+        assert len(out) == 2
+        assert all(o["et_date"] == "2026-06-01" for o in out)
+
 
 class TestTurnsSummarySession:
     def test_filters_by_et_session(self, tmp_path):

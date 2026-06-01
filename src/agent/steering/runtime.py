@@ -373,7 +373,8 @@ class SteeringRuntime:
                 "turns": _turns_summary(root / "turns.jsonl"),
                 "decisions": _decisions_tail(root / "decisions.jsonl",
                                              root / "turns.jsonl"),
-                "interventions": _interventions_tail(root / "human_directives.jsonl"),
+                "interventions": _interventions_tail(root / "human_directives.jsonl",
+                                                    self._session_et_date()),
                 "log": _log_tail(_REPO_ROOT / "logs" / "autostock.log"),
             }
             atomic_write_text(self.steering_dir / "monitor.json", json.dumps(payload, default=str))
@@ -459,9 +460,15 @@ _TRADE_VERBS = {
 _MONITOR_INTERVENTIONS = 50
 
 
-def _interventions_tail(path: Path) -> list[dict]:
+def _interventions_tail(path: Path, et_date: str | None = None) -> list[dict]:
     """F25 FR-3: trade-only human interventions for the timeline, read from
-    human_directives.jsonl (InterventionRecord). Read-only; no broker access."""
+    human_directives.jsonl (InterventionRecord). Read-only; no broker access.
+
+    When *et_date* is given, scans backwards from the end, collecting up to
+    _MONITOR_INTERVENTIONS entries that match the date and stopping at the
+    first entry from a different date (lines are roughly chronological).
+    This replaces the old fixed 150-line window that silently dropped older
+    same-day interventions as the file grew (F32 bugfix)."""
     from src.agent.turn_log import compute_et_date
     if not path.exists():
         return []
@@ -471,7 +478,38 @@ def _interventions_tail(path: Path) -> list[dict]:
     except OSError as e:
         logger.warning("interventions read failed (skipping): {}", e)
         return []
-    for line in lines[-_MONITOR_INTERVENTIONS * 3:]:  # scan extra; many are non-trade
+    # F32: when a target ET date is given, scan backwards until we have enough
+    # matches or hit a different date. Otherwise keep the legacy full-scan cap.
+    if et_date is not None:
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            verb = str(r.get("command") or "")
+            if verb not in _TRADE_VERBS:
+                continue
+            ts = r.get("ts")
+            entry_et = compute_et_date(ts)
+            if entry_et != et_date:
+                continue
+            out.append({
+                "ts": _iso(ts),
+                "et_date": entry_et,
+                "verb": verb,
+                "symbol": _intervention_symbol(verb, r.get("args") or {}),
+                "outcome": _mask_secrets(str(r.get("outcome", ""))),
+                "detail": _mask_secrets(str(r.get("detail", ""))),
+            })
+            if len(out) >= _MONITOR_INTERVENTIONS:
+                break
+        out.reverse()  # restore chronological order
+        return out
+    # Legacy: no target date — scan last _MONITOR_INTERVENTIONS*3 lines.
+    for line in lines[-_MONITOR_INTERVENTIONS * 3:]:
         line = line.strip()
         if not line:
             continue
