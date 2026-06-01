@@ -354,8 +354,8 @@ class SteeringRuntime:
 # File-only, defensive, read-only. Build the deep-monitoring view (turn telemetry /
 # recent decisions / agent log tail) the operator pulls on demand via steer_read{view}.
 
-_MONITOR_TURNS = 8
-_MONITOR_DECISIONS = 10
+_MONITOR_TURNS = 50
+_MONITOR_DECISIONS = 20
 _MONITOR_LOG = 30
 # Redact obvious secrets from the log tail (SECURITY-03): the value after a
 # token/key/secret key, and any long opaque hex/base64 run.
