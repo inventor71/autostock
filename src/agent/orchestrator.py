@@ -57,6 +57,9 @@ class AgentTradingLoop:
         self.last_new_decisions: list[Decision] = []
         self.last_kept: list[Decision] = []
         self.last_rejected: list[Decision] = []
+        self.last_turn_id: str = ""
+        self._on_turn_start: Callable[[str, str], None] | None = None
+        self._on_turn_end: Callable[[], None] | None = None
 
     # ------------------------------------------------------------------ #
     def held_symbols(self) -> list[str]:
@@ -72,30 +75,58 @@ class AgentTradingLoop:
     def _run(
         self, prompt: str, turn_type: str, model: str | None = None, timeout: float | None = None
     ) -> AgentTurnResult:
+        from src.agent.turn_log import build_turn_summary, generate_turn_id, record_turn
+
+        from datetime import datetime as _dt
+
+        turns_path = self.journal.root / "turns.jsonl"
+        turn_id = generate_turn_id(turns_path, turn_type)
+        started_at = _dt.now().isoformat(timespec="seconds")
+        self.last_turn_id = turn_id
+
+        if self._on_turn_start:
+            self._on_turn_start(turn_id, turn_type)
+
         before = len(self.journal.read_decisions())
-        result = self.session.run_turn(prompt, model=model, timeout=timeout)
-        self.last_new_decisions = self.journal.read_decisions()[before:]
-        self.last_kept, self.last_rejected = filter_in_universe(
-            self.last_new_decisions, self.universe
-        )
-        for d in self.last_rejected:
-            logger.warning(
-                f"Out-of-universe decision will be rejected at execution: "
-                f"{d.symbol} {d.action}"
+        result = None
+        error = False
+        try:
+            result = self.session.run_turn(prompt, model=model, timeout=timeout)
+        except Exception:
+            error = True
+            raise
+        finally:
+            self.last_new_decisions = self.journal.read_decisions()[before:]
+            for d in self.last_new_decisions:
+                d.turn_id = turn_id
+            self.last_kept, self.last_rejected = filter_in_universe(
+                self.last_new_decisions, self.universe
             )
-        logger.info(
-            "Turn produced {} decision(s); {} in-universe, {} rejected",
-            len(self.last_new_decisions), len(self.last_kept), len(self.last_rejected),
-        )
-        # Capture the turn's cost/activity (ephemeral CLI telemetry).
-        from src.agent.turn_log import record_turn
-        record_turn(
-            self.journal.root / "turns.jsonl",
-            turn_type=turn_type,
-            model=model or getattr(self.session, "model", "unknown"),
-            num_decisions=len(self.last_new_decisions),
-            raw=result.raw,
-        )
+            for d in self.last_rejected:
+                logger.warning(
+                    f"Out-of-universe decision will be rejected at execution: "
+                    f"{d.symbol} {d.action}"
+                )
+            logger.info(
+                "Turn [{}] produced {} decision(s); {} in-universe, {} rejected",
+                turn_id,
+                len(self.last_new_decisions), len(self.last_kept), len(self.last_rejected),
+            )
+            summary = build_turn_summary(turn_type, self.last_new_decisions)
+            raw = result.raw if result is not None else None
+            record_turn(
+                turns_path,
+                turn_type=turn_type,
+                model=model or getattr(self.session, "model", "unknown"),
+                num_decisions=len(self.last_new_decisions),
+                raw=raw,
+                turn_id=turn_id,
+                summary=summary,
+                error=error,
+                started_at=started_at,
+            )
+            if self._on_turn_end:
+                self._on_turn_end()
         return result
 
     # ------------------------------------------------------------------ #

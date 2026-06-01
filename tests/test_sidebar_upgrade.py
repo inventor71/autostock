@@ -178,7 +178,7 @@ def test_publish_monitor_writes_file_and_masks_secrets(tmp_path):
     rt.publish_monitor()
     mon = json.loads((rt.steering_dir / "monitor.json").read_text())
     assert mon["turns"]["today_count"] == 1
-    assert any("AAPL" in d for d in mon["decisions"])
+    assert any(d.get("symbol") == "AAPL" for d in mon["decisions"])
     assert "turns" in mon and "log" in mon
 
 

@@ -67,6 +67,8 @@ class AgentTradingMode:
         self._watch = None
         if self.steering is not None:
             self._setup_intraday()
+            self.orchestrator._on_turn_start = self.steering.set_current_turn
+            self.orchestrator._on_turn_end = self.steering.clear_current_turn
 
     # ------------------------------------------------------------------ #
     # F3 intraday redesign (only constructed when steering is enabled)

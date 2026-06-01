@@ -1,10 +1,10 @@
 // F20 — Alpaca MCP stock-only read tools. Console in-process TS calls Alpaca REST API v2
 // directly (Q2=A). No daemon round-trip, no new FileDrop channel.
 //
-// Fail-fast (Q1=B, intentional): if ALPACA_API_KEY / ALPACA_SECRET_KEY are missing at module
-// load time, this kills the entire bun process — steer/steer_read/F9 order tools become
-// unavailable too. This is a deliberate tradeoff: an MCP server with 16 dead-weight read tools
-// is worse than forcing the operator to fix the env immediately.
+// Credential resolution (F22): try OS env first, then fall back to reading AUTOSTOCK_ROOT/.env.
+// This keeps the Docker attach harness working without OS-env Alpaca vars (which would conflict
+// with pydantic-settings OS-env > dotenv precedence), while still failing fast when keys are
+// genuinely absent — steer/steer_read/F9 order tools are unaffected either way.
 //
 // HTTP timeout (critic H1): REQUEST_TIMEOUT_MS = 10s. F14 fixed the same class of wedge on the
 // Python side (alpaca_broker.py:72-73, connect=3s + read=5s). TS uses a single 10s AbortSignal.
@@ -22,11 +22,36 @@
 const REQUEST_TIMEOUT_MS = 10_000; // 10 s — F14 pattern (daemon connect=3s + read=5s)
 
 // ---------------------------------------------------------------------------
-// Fail-fast: credential validation (Q1=B)
+// Credential resolution: OS env first, then AUTOSTOCK_ROOT/.env fallback (F22)
 // ---------------------------------------------------------------------------
 
-const ALPACA_API_KEY = process.env.ALPACA_API_KEY;
-const ALPACA_SECRET_KEY = process.env.ALPACA_SECRET_KEY;
+function readEnvOrDotenv(key: string): string {
+  const val = process.env[key];
+  if (val) return val;
+  // Fallback: read from the daemon's .env file (needed when running in Docker
+  // attach mode where ALPACA_* vars aren't injected as OS env to avoid clashing
+  // with pydantic-settings OS-env > dotenv precedence).
+  const root = process.env.AUTOSTOCK_ROOT || process.cwd();
+  try {
+    const fs = require("node:fs");
+    const content = fs.readFileSync(`${root}/.env`, "utf-8") as string;
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq === -1) continue;
+      const k = trimmed.slice(0, eq).trim();
+      const v = trimmed.slice(eq + 1).trim();
+      if (k === key) return v;
+    }
+  } catch {
+    // File not found or unreadable — caller will handle the empty result.
+  }
+  return "";
+}
+
+const ALPACA_API_KEY = readEnvOrDotenv("ALPACA_API_KEY");
+const ALPACA_SECRET_KEY = readEnvOrDotenv("ALPACA_SECRET_KEY");
 
 if (!ALPACA_API_KEY || !ALPACA_SECRET_KEY) {
   process.stderr.write(

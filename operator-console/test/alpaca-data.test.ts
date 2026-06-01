@@ -31,13 +31,12 @@ function mockFetch(status: number, body: unknown) {
 }
 
 // ---------------------------------------------------------------------------
-// Constructor: fail-fast (Q1=B)
-// NOTE: fail-fast runs at MODULE LOAD time (not per-instance). The env vars
-// ALPACA_API_KEY/ALPACA_SECRET_KEY are read once during import, so the check
-// happens before any test setup can manipulate process.env. In production, if
-// these are missing, `bun run mcp-server.ts` will exit(1) before registering
-// any tools. Verified via manual test: unset ALPACA_API_KEY → `[autostock]
-// ALPACA_API_KEY and ALPACA_SECRET_KEY must be set` + exit 1.
+// Credential resolution (F22): try OS env first, then AUTOSTOCK_ROOT/.env.
+// Module-level check still fails fast when keys are genuinely absent — the
+// test `beforeEach` hook sets process.env before each new AlpacaDataClient()
+// import, which the old module-level check would have missed (env vars are read
+// once at import time). The F22 dotenv fallback is transparent to these tests
+// since env vars are always set in beforeEach.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

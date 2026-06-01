@@ -68,6 +68,10 @@ class SteeringRuntime:
         self._fills_cursor_file = Path(executor.journal.root) / ".fills.cursor"
         self._fills_cursor = self._load_fills_cursor()
         self._seen_fill_ids: set[str] = set()
+        # F22: current in-flight turn (set by modes/agent before the LLM call,
+        # cleared in the finally block). Published in monitor.json so the TUI
+        # can show "turn in progress" state.
+        self._current_turn: dict | None = None
         # F6: latest today's-round-trip summary, refreshed on a slow cadence by
         # refresh_round_trip() (one broker get_fills call) and folded into the snapshot
         # by publish_snapshot — keeping snapshot.json single-writer while the network
@@ -317,15 +321,28 @@ class SteeringRuntime:
                 logger.warning("recent-fills refresh failed (skipping): {}", e)
         self.bus.submit(_build)
 
+    def set_current_turn(self, turn_id: str, turn_type: str) -> None:
+        self._current_turn = {
+            "id": turn_id, "type": turn_type,
+            "started_at": datetime.now().strftime("%H:%M"),
+        }
+
+    def clear_current_turn(self) -> None:
+        self._current_turn = None
+
     def publish_monitor(self) -> None:
-        """F6 FR-4: publish compact turns / decisions / agent-log summaries to
-        steering/monitor.json (read-only, served on demand by steer_read{view}).
-        Files only — no broker access. Best-effort; secrets masked in the log tail."""
+        """F6 FR-4 / F22: publish structured turns / decisions / agent-log
+        summaries to steering/monitor.json. F22 changes: turns.recent and
+        decisions are now structured objects (not strings), and current_turn
+        shows the in-flight turn. Files only — no broker access."""
         try:
             payload = {
                 "ts": datetime.now().isoformat(timespec="seconds"),
+                "current_turn": self._current_turn,
+                "workspace_root": str(self.executor.journal.root),
                 "turns": _turns_summary(self.executor.journal.root / "turns.jsonl"),
-                "decisions": _decisions_tail(self.executor.journal.root / "decisions.jsonl"),
+                "decisions": _decisions_tail(self.executor.journal.root / "decisions.jsonl",
+                                             self.executor.journal.root / "turns.jsonl"),
                 "log": _log_tail(_REPO_ROOT / "logs" / "autostock.log"),
             }
             atomic_write_text(self.steering_dir / "monitor.json", json.dumps(payload, default=str))
@@ -356,41 +373,78 @@ def _hhmm(ts) -> str:
 
 
 def _turns_summary(path: Path) -> dict:
-    """Today's turn count + total cost + the last few turns, compact."""
+    """Today's turn count + total cost + the last few turns as structured objects."""
     from src.agent.turn_log import read_turns
     rows = read_turns(path)
     today = datetime.now().date().isoformat()
     todays = [r for r in rows if str(r.get("date", "")) == today]
     cost = round(sum(float(r.get("cost_usd") or 0) for r in todays), 4)
-    recent = [
-        f"{_hhmm(r.get('ts'))} {r.get('turn_type', '?')} "
-        f"${float(r.get('cost_usd') or 0):.2f} {r.get('num_decisions', 0)}dec"
-        for r in rows[-_MONITOR_TURNS:]
-    ]
+    recent = []
+    for r in rows[-_MONITOR_TURNS:]:
+        recent.append({
+            "id": r.get("turn_id", ""),
+            "type": r.get("turn_type", "?"),
+            "ts": _hhmm(r.get("ts")),
+            "cost_usd": round(float(r.get("cost_usd") or 0), 4),
+            "num_decisions": r.get("num_decisions", 0),
+            "duration_ms": r.get("duration_ms"),
+            "summary": r.get("summary", ""),
+            "health": r.get("health", "ok"),
+        })
     return {"today_count": len(todays), "today_cost_usd": cost, "recent": recent}
 
 
-def _decisions_tail(path: Path) -> list[str]:
-    """Last N decisions as compact one-liners."""
+def _decisions_tail(path: Path, turns_path: Path | None = None) -> list[dict]:
+    """Last N decisions as structured objects with turn_id correlation."""
     from src.agent.steering.jsonl import read_complete_lines
     try:
         lines, _ = read_complete_lines(path, 0)
     except Exception:
         return []
-    out: list[str] = []
+
+    turn_index = _build_turn_index(turns_path) if turns_path else []
+
+    out: list[dict] = []
     for line in lines[-_MONITOR_DECISIONS:]:
         try:
             d = json.loads(line)
         except json.JSONDecodeError:
             continue
         reason = str(d.get("reason") or "")
-        if len(reason) > 60:
-            reason = reason[:59] + "…"
-        out.append(
-            f"{_hhmm(d.get('ts'))} {d.get('symbol', '?')} {d.get('action', '?')} "
-            f"{d.get('confidence', '')} {reason}".rstrip()
-        )
+        # F22: don't truncate — the TUI overlay constrains display via maxHeight
+        turn_id = d.get("turn_id") or _correlate_turn(d.get("ts"), turn_index)
+        out.append({
+            "turn_id": turn_id,
+            "ts": _hhmm(d.get("ts")),
+            "symbol": d.get("symbol", "?"),
+            "action": d.get("action", "?"),
+            "confidence": d.get("confidence"),
+            "reason": reason,
+            "source": d.get("source", "agent"),
+        })
     return out
+
+
+def _build_turn_index(turns_path: Path | None) -> list[tuple[str, str, str]]:
+    """Build [(started_at, ts_end, turn_id), ...] for timestamp correlation."""
+    if not turns_path:
+        return []
+    from src.agent.turn_log import read_turns
+    return [
+        (r.get("started_at", ""), r.get("ts", ""), r.get("turn_id", ""))
+        for r in read_turns(turns_path)
+    ]
+
+
+def _correlate_turn(decision_ts, turn_index: list[tuple[str, str, str]]) -> str | None:
+    """Find the turn_id whose [started_at, ts_end] window contains the decision."""
+    if not decision_ts or not turn_index:
+        return None
+    ds = str(decision_ts)
+    for started, ended, tid in reversed(turn_index):
+        if started and started <= ds:
+            return tid
+    return None
 
 
 def _mask_secrets(line: str) -> str:
