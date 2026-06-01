@@ -194,13 +194,19 @@ class AgentTradingMode:
 
     def _save_quality_report(self) -> None:
         """EOD: persist decision quality report to workspace/quality/<date>.json.
-        JSON only; no prompt injection (LLM shouldn't see small-sample metrics)."""
+        JSON only; no prompt injection (LLM shouldn't see small-sample metrics).
+        Fetches fills from the broker for round-trip matching (MAE/MFE/R:R)."""
         try:
             from src.agent.quality.collector import collect_outcomes
             from src.agent.quality.aggregate import summary
 
             logger.info("Saving decision quality report")
-            outcomes = collect_outcomes(self.executor.journal)
+            fills = []
+            try:
+                fills = self.executor.broker.get_fills()
+            except Exception:
+                pass
+            outcomes = collect_outcomes(self.executor.journal, fills=fills)
             if not outcomes:
                 logger.info("No decision outcomes to report")
                 return
@@ -226,6 +232,7 @@ class AgentTradingMode:
             outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
             self._scheduled_turn(lambda: self.orchestrator.run_eod_review(outcomes=outcomes))
             self._funnel(self.executor.execute_pending)
+            self._save_quality_report()
 
         # Daily marks for the track record. record_trade_ledger() is a no-op on
         # brokers that don't reconstruct closed round-trips (e.g. simulated);
@@ -282,7 +289,6 @@ class AgentTradingMode:
             self._intraday, interval_minutes=self.intraday_minutes, job_id="agent_intraday"
         )
         self.scheduler.add_market_close_job(self._eod, job_id="agent_eod")
-        self.scheduler.add_market_close_job(self._save_quality_report, job_id="agent_quality_report")
         if self.steering is not None:
             self.scheduler.add_seconds_job(self.steering.poll_commands, 2, "steering_poll")
             self.scheduler.add_seconds_job(self.steering.publish_snapshot, 5, "steering_snapshot")

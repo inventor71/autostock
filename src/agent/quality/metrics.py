@@ -148,7 +148,11 @@ def benchmark_excess(
 
     for bench_name, bench_path in [("vs_spy", spy_path), ("vs_qqq", qqq_path)]:
         if bench_path and len(bench_path) >= 2:
-            bench_return = (bench_path[-1]["close"] / bench_path[0]["close"]) - 1
+            start_close = bench_path[0].close if hasattr(bench_path[0], "close") else bench_path[0]["close"]
+            end_close = bench_path[-1].close if hasattr(bench_path[-1], "close") else bench_path[-1]["close"]
+            if start_close <= 0:
+                continue
+            bench_return = (end_close / start_close) - 1
             result[bench_name] = stock_return - bench_return
     return result
 

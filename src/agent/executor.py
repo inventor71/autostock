@@ -90,22 +90,17 @@ class DecisionExecutor:
     # ------------------------------------------------------------------ #
     # Execution log (F24: durable decision→fill link for quality metrics)
     # ------------------------------------------------------------------ #
-    def _log_execution(self, d: Decision, filled) -> None:
+    def _log_execution(self, d: Decision, filled, *, decision_index: int = -1) -> None:
         log_file = self.journal.root / "execution_log.jsonl"
         try:
-            decisions = self.journal.read_decisions()
-            idx = next(
-                (i for i, dec in enumerate(decisions) if dec.ts == d.ts and dec.symbol == d.symbol),
-                -1,
-            )
             entry = json.dumps({
-                "decision_index": idx,
+                "decision_index": decision_index,
                 "symbol": d.symbol,
                 "action": d.action,
                 "order_id": filled.order_id,
                 "filled_qty": float(filled.qty),
                 "filled_price": float(filled.filled_price),
-                "ts": datetime.now().isoformat(),
+                "ts": d.ts.isoformat(),
             })
             log_file.parent.mkdir(parents=True, exist_ok=True)
             with log_file.open("a", encoding="utf-8") as fh:
@@ -132,25 +127,26 @@ class DecisionExecutor:
         # Collapse multiple decisions for the same symbol in this batch to the
         # latest one — a later call supersedes earlier ones. This prevents e.g.
         # two HOLDs for one name placing a protective order and then immediately
-        # trying to replace it within a single cycle.
-        latest_by_symbol: dict[str, Decision] = {}
-        for d in pending:
-            latest_by_symbol[d.symbol] = d
-        batch = list(latest_by_symbol.values())
+        # trying to replace it within a single cycle. Track the original index
+        # for the execution log (F24: decision→fill linkage).
+        latest_by_symbol: dict[str, tuple[int, Decision]] = {}
+        for i, d in enumerate(pending):
+            latest_by_symbol[d.symbol] = (cursor + i, d)
+        batch: list[tuple[int, Decision]] = list(latest_by_symbol.values())
 
         self._update_market_halt()
 
         outcomes: list[ExecutionOutcome] = []
-        for d in batch:
+        for idx, d in batch:
             try:
-                outcomes.append(self.execute_decision(d))
+                outcomes.append(self.execute_decision(d, decision_index=idx))
             except Exception as e:
                 logger.error(f"Execution error for {d.symbol} {d.action}: {e}")
                 outcomes.append(ExecutionOutcome(d, "error", str(e)))
         self._save_cursor(len(decisions))
         return outcomes
 
-    def execute_decision(self, d: Decision) -> ExecutionOutcome:
+    def execute_decision(self, d: Decision, *, decision_index: int = -1) -> ExecutionOutcome:
         """Run ONE decision through the gate (universe/expiry/HOLD/ADJUST_STOP or
         RiskManager->Broker). Cursor-free and reads no journal file, so it is the
         single-decision entry point shared by ``execute_pending`` (agent batch),
@@ -200,7 +196,7 @@ class DecisionExecutor:
             f"{order.side.value} {order.qty} {d.symbol} ({order.order_class.value})",
             order_id=filled.order_id,
         )
-        self._log_execution(d, filled)
+        self._log_execution(d, filled, decision_index=decision_index)
         return outcome
 
     def _to_signal(self, d: Decision) -> TradeSignal:

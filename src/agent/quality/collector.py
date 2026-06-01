@@ -17,6 +17,7 @@ from src.agent.quality.models import (
     OHLC,
     RoundTrip,
 )
+from src.agent.steering.jsonl import read_complete_lines
 from src.core.trades import match_round_trips
 
 
@@ -25,13 +26,19 @@ def _load_execution_log(journal_root: Path) -> list[ExecutionRecord]:
     if not log_file.exists():
         return []
     records = []
-    for line in log_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
+    try:
+        lines, _ = read_complete_lines(log_file, 0)
+    except Exception as exc:
+        logger.warning(f"Failed to read execution log: {exc}")
+        return []
+    for line in lines:
+        line = line.strip() if isinstance(line, str) else line.decode("utf-8", errors="replace").strip()
         if not line:
             continue
         try:
             records.append(ExecutionRecord.model_validate_json(line))
         except Exception:
+            logger.debug(f"Skipping unparseable execution log line")
             continue
     return records
 
@@ -74,6 +81,21 @@ def _fetch_daily_ohlc(
     return cache
 
 
+def _to_naive_ts(ts_str: str) -> pd.Timestamp | None:
+    """Parse a timestamp string and return a naive (tz-stripped) Timestamp normalized to midnight.
+
+    Handles both aware (UTC, offset) and naive strings. Returns None on parse failure.
+    """
+    try:
+        ts = pd.Timestamp(ts_str)
+    except Exception:
+        return None
+    # Convert to naive UTC-equivalent, then normalize to midnight
+    if ts.tz is not None:
+        ts = ts.tz_convert(None)
+    return ts.normalize()
+
+
 def _slice_price_path(
     ohlc_cache: dict[str, pd.DataFrame],
     symbol: str,
@@ -83,10 +105,9 @@ def _slice_price_path(
     df = ohlc_cache.get(symbol)
     if df is None or df.empty:
         return []
-    try:
-        start = pd.Timestamp(opened_at).tz_localize(None)
-        end = pd.Timestamp(closed_at).tz_localize(None)
-    except Exception:
+    start = _to_naive_ts(opened_at)
+    end = _to_naive_ts(closed_at)
+    if start is None or end is None:
         return []
     mask = (df.index >= start) & (df.index <= end)
     sliced = df.loc[mask]
@@ -113,25 +134,53 @@ def _match_decision_to_execution(
     return None
 
 
+def _parse_exec_ts(ts_str: str) -> float | None:
+    """Parse execution record timestamp to a UTC epoch float for comparison."""
+    try:
+        dt = datetime.fromisoformat(ts_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
 def _heuristic_match(
     d: Decision,
     exec_records: list[ExecutionRecord],
 ) -> ExecutionRecord | None:
-    """Fallback: match by symbol + action + closest timestamp."""
+    """Fallback: match by symbol + action + closest timestamp (UTC-normalized)."""
     candidates = [
         er for er in exec_records
         if er.symbol == d.symbol and er.action == d.action
     ]
     if not candidates:
         return None
-    try:
-        d_ts = d.ts.timestamp() if hasattr(d.ts, "timestamp") else 0
-        return min(
-            candidates,
-            key=lambda er: abs(datetime.fromisoformat(er.ts).timestamp() - d_ts),
-        )
-    except Exception:
-        return candidates[0] if candidates else None
+
+    # Use UTC-normalized epoch for comparison
+    if hasattr(d.ts, "timestamp"):
+        d_ts = d.ts.timestamp()
+    else:
+        d_ts = 0.0
+
+    best: ExecutionRecord | None = None
+    best_delta = float("inf")
+    for candidate in candidates:
+        er_ts = _parse_exec_ts(candidate.ts)
+        if er_ts is None:
+            continue
+        delta = abs(er_ts - d_ts)
+        if delta < best_delta:
+            best_delta = delta
+            best = candidate
+
+    if best is not None:
+        return best
+    logger.debug(
+        f"Could not find heuristic match for {d.symbol} {d.action}: "
+        f"{len(candidates)} candidates, none with parseable timestamps"
+    )
+    return None
 
 
 def _match_to_round_trip(
@@ -139,15 +188,72 @@ def _match_to_round_trip(
     exec_record: ExecutionRecord | None,
     round_trips: list[dict],
 ) -> RoundTrip | None:
-    """Find the round-trip that contains this execution's entry."""
+    """Find the round-trip that contains this execution's entry.
+
+    Matches by symbol + price proximity (relative 0.1% tolerance) AND temporal containment
+    (execution timestamp must fall within the round-trip's [opened_at, closed_at] window).
+    """
     if exec_record is None:
         return None
+
+    er_ts = _parse_exec_ts(exec_record.ts)
+
     for rt in round_trips:
         if rt["symbol"] != symbol:
             continue
-        if abs(rt["entry_price"] - exec_record.filled_price) < 0.02:
-            return RoundTrip(**rt)
+        entry_price = rt["entry_price"]
+        filled_price = exec_record.filled_price
+        if entry_price <= 0 or filled_price <= 0:
+            continue
+        # Relative tolerance: 0.1% = $0.10 on $100, $1.00 on $1000
+        if abs(entry_price - filled_price) / entry_price >= 0.001:
+            continue
+        # Temporal containment check
+        if er_ts is not None:
+            rt_open = _parse_exec_ts(rt["opened_at"])
+            rt_close = _parse_exec_ts(rt["closed_at"])
+            if rt_open is not None and rt_close is not None:
+                if not (rt_open <= er_ts <= rt_close):
+                    continue
+        return RoundTrip(**rt)
     return None
+
+
+def _extract_benchmark_paths(
+    ohlc_cache: dict[str, pd.DataFrame],
+    outcomes: list[DecisionOutcome],
+) -> tuple[list[dict] | None, list[dict] | None]:
+    """Extract SPY/QQQ price paths as list[dict] for benchmark comparison."""
+    spy_path = None
+    qqq_path = None
+
+    if not outcomes:
+        return None, None
+
+    earliest = min(o.price_path[0].date for o in outcomes if o.price_path)
+    latest = max(o.price_path[-1].date for o in outcomes if o.price_path)
+
+    for bench, name in [("SPY", "vs_spy"), ("QQQ", "vs_qqq")]:
+        df = ohlc_cache.get(bench)
+        if df is None or df.empty:
+            continue
+        try:
+            mask = (df.index >= pd.Timestamp(earliest)) & (df.index <= pd.Timestamp(latest))
+            sliced = df.loc[mask]
+            path = [
+                {"date": str(getattr(row, "Index", pd.NaT)),
+                 "open": float(row.Open), "high": float(row.High),
+                 "low": float(row.Low), "close": float(row.Close)}
+                for row in sliced.itertuples()
+            ]
+            if name == "vs_spy":
+                spy_path = path
+            else:
+                qqq_path = path
+        except Exception as exc:
+            logger.debug(f"Benchmark path extraction failed for {bench}: {exc}")
+
+    return spy_path, qqq_path
 
 
 def collect_outcomes(
@@ -161,6 +267,10 @@ def collect_outcomes(
         journal: Journal instance (for decisions + execution_log).
         fills: Pre-fetched fills (FillEvent or dict). If None, skips fill-based matching.
         lookback_days: Extra days of price data to fetch after the last decision.
+
+    Returns:
+        List of DecisionOutcome records. The caller should also use the returned
+        benchmark paths from _extract_benchmark_paths if needed.
     """
     decisions = journal.read_decisions()
     buy_sell = [
@@ -184,7 +294,7 @@ def collect_outcomes(
         end=latest + timedelta(days=lookback_days),
     )
 
-    # Benchmark data
+    # Benchmark data — fetch alongside stock symbols (batched, not separate calls)
     for bench in ("SPY", "QQQ"):
         if bench not in ohlc_cache:
             ohlc_cache.update(
@@ -206,12 +316,11 @@ def collect_outcomes(
             method = "heuristic" if er is not None else "unmatched"
 
         if er is not None:
-            er_id = id(er)
-            if er_id in used_exec:
+            if er.decision_index in used_exec:
                 er = None
                 method = "unmatched"
             else:
-                used_exec.add(er_id)
+                used_exec.add(er.decision_index)
 
         rt = _match_to_round_trip(d.symbol, er, round_trips)
 
