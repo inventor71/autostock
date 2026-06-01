@@ -176,9 +176,19 @@ run_attach() {
   # branch reset to an empty `master`, history lost). Move the host .git aside and restore
   # it in the EXIT trap. (A self-contained standalone .git dir passes rev-parse and is left
   # untouched.)
+  # First, tell the container's git (running as root) to TRUST the host-owned
+  # mounted repos. Without this, git 2.36+ flags "dubious ownership" and every
+  # `git` call fails — which would trip the standalone-repo case below into the
+  # mv-aside path needlessly (and that path's restore is best-effort: a killed
+  # container leaves the host .git as a root-owned `master` snapshot). With the
+  # repo trusted, a self-contained standalone .git just works and is left alone.
+  git config --global --add safe.directory '*' 2>/dev/null || true
+
   CONSOLE_GIT="${CONSOLE_DIR}/.git"
   CONSOLE_GIT_RESTORE=0
   if [ -e "$CONSOLE_GIT" ] && ! git -C "${CONSOLE_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
+    # Only reached for a worktree-pointer .git (gitdir: escapes the mount), never
+    # for a standalone .git dir (now trusted). Back up + restore non-destructively.
     log "fixing submodule .git for container (non-destructive — host .git restored on exit)"
     mv "$CONSOLE_GIT" "${CONSOLE_GIT}.hostbak"
     ( cd "${CONSOLE_DIR}" && git init -q && git add -A && git commit -q -m "container snapshot" --allow-empty ) 2>/dev/null || true
