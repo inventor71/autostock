@@ -41,7 +41,9 @@ class TestGenerateTurnId:
         assert generate_turn_id(turns_file, "wake") == "W1"
 
     def test_ignores_other_dates(self, turns_file):
-        rec = {"turn_id": "R5", "date": "2020-01-01", "turn_type": "research"}
+        # F25: sessions are keyed by et_date, so a prior session's turn doesn't
+        # bump today's sequence.
+        rec = {"turn_id": "R5", "et_date": "2020-01-01", "turn_type": "research"}
         turns_file.parent.mkdir(parents=True, exist_ok=True)
         with turns_file.open("a") as f:
             f.write(json.dumps(rec) + "\n")

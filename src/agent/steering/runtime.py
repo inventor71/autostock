@@ -15,6 +15,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 
@@ -34,6 +35,16 @@ from src.agent.steering.turns import ReconcileWorker, TurnCoordinator
 # repo root: src/agent/steering/runtime.py -> parents[3]
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STEERING_DIR = _REPO_ROOT / "steering"
+
+# F25: US equity market-session rule (wall-clock ET). DST is resolved by the TUI
+# using the IANA tz, so only fixed wall times live here.
+_DEFAULT_MARKET_RULE = {
+    "tz": "America/New_York",
+    "pre_open": "04:00",
+    "regular_open": "09:30",
+    "regular_close": "16:00",
+    "after_close": "20:00",
+}
 
 
 class SteeringRuntime:
@@ -83,6 +94,10 @@ class SteeringRuntime:
         # symbols we don't hold (held symbols reuse position.current_price).
         self._price_book: dict[str, tuple[float, datetime]] = {}
         self._recent_fills: list[dict] = []
+        # F25: market-session rule published in monitor.json so the TUI renders a
+        # market-aware 12h timeline. Wall-clock ET times (DST handled by the TUI's
+        # IANA tz conversion). Overridable via set_market_rule() from settings.
+        self._market_rule: dict = dict(_DEFAULT_MARKET_RULE)
 
     def _load_fills_cursor(self) -> str:
         try:
@@ -324,11 +339,22 @@ class SteeringRuntime:
     def set_current_turn(self, turn_id: str, turn_type: str) -> None:
         self._current_turn = {
             "id": turn_id, "type": turn_type,
-            "started_at": datetime.now().strftime("%H:%M"),
+            # F25: tz-aware ISO so the TUI localizes (was %H:%M, losing date/tz).
+            "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         }
 
     def clear_current_turn(self) -> None:
         self._current_turn = None
+
+    def set_market_rule(self, rule: dict | None) -> None:
+        """F25: override the published market-session rule (from settings)."""
+        if rule:
+            self._market_rule = {**_DEFAULT_MARKET_RULE, **rule}
+
+    def _session_et_date(self) -> str:
+        """F25: the ET trading date the timeline should default to — the live
+        session during extended hours on a weekday, else the next weekday."""
+        return _resolve_session_et_date(self._market_rule)
 
     def publish_monitor(self) -> None:
         """F6 FR-4 / F22: publish structured turns / decisions / agent-log
@@ -336,13 +362,18 @@ class SteeringRuntime:
         decisions are now structured objects (not strings), and current_turn
         shows the in-flight turn. Files only — no broker access."""
         try:
+            root = self.executor.journal.root
             payload = {
-                "ts": datetime.now().isoformat(timespec="seconds"),
+                "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
                 "current_turn": self._current_turn,
-                "workspace_root": str(self.executor.journal.root),
-                "turns": _turns_summary(self.executor.journal.root / "turns.jsonl"),
-                "decisions": _decisions_tail(self.executor.journal.root / "decisions.jsonl",
-                                             self.executor.journal.root / "turns.jsonl"),
+                "workspace_root": str(root),
+                # F25: market-aware timeline metadata.
+                "market": self._market_rule,
+                "session_et_date": self._session_et_date(),
+                "turns": _turns_summary(root / "turns.jsonl"),
+                "decisions": _decisions_tail(root / "decisions.jsonl",
+                                             root / "turns.jsonl"),
+                "interventions": _interventions_tail(root / "human_directives.jsonl"),
                 "log": _log_tail(_REPO_ROOT / "logs" / "autostock.log"),
             }
             atomic_write_text(self.steering_dir / "monitor.json", json.dumps(payload, default=str))
@@ -372,21 +403,130 @@ def _hhmm(ts) -> str:
         return str(ts)[11:16]
 
 
-def _turns_summary(path: Path) -> dict:
-    """Today's turn count + total cost + the last few turns as structured objects."""
-    from src.agent.turn_log import read_turns
+def _iso(ts) -> str:
+    """F25: forward a full tz-aware ISO timestamp. A naive value is localized so
+    the TUI can convert to the operator's timezone."""
+    if not ts:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(ts))
+    except (ValueError, TypeError):
+        return str(ts)
+    if dt.tzinfo is None:
+        dt = dt.astimezone()
+    return dt.isoformat(timespec="seconds")
+
+
+# F25: ET market timezone for session-date resolution (matches turn_log).
+_MARKET_TZ = ZoneInfo("America/New_York")
+
+
+def _resolve_session_et_date(rule: dict | None = None) -> str:
+    """The ET trading date the timeline defaults to: the live session during
+    extended hours on a weekday, otherwise the next weekday (Q8=A — holidays
+    just render an empty bar, so a plain weekday roll is sufficient)."""
+    rule = rule or _DEFAULT_MARKET_RULE
+    now_et = datetime.now(_MARKET_TZ)
+    pre = _parse_hhmm(rule.get("pre_open", "04:00"))
+    after = _parse_hhmm(rule.get("after_close", "20:00"))
+    in_session = (now_et.weekday() < 5) and (pre <= (now_et.hour * 60 + now_et.minute) < after)
+    if in_session:
+        return now_et.date().isoformat()
+    d = now_et.date()
+    # roll forward to the next weekday session (today if still upcoming pre-open)
+    if now_et.weekday() < 5 and (now_et.hour * 60 + now_et.minute) < pre:
+        return d.isoformat()
+    while True:
+        d = d.fromordinal(d.toordinal() + 1)
+        if d.weekday() < 5:
+            return d.isoformat()
+
+
+def _parse_hhmm(s: str) -> int:
+    try:
+        h, m = str(s).split(":")
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return 0
+
+
+# F25: human steering verbs that count as trade interventions (Q5=A). Lifecycle/
+# note/approval verbs are excluded from the timeline.
+_TRADE_VERBS = {
+    "buy", "sell", "flatten", "flatten_all", "place_order",
+    "cancel", "cancel_order", "cancel_all", "close_position", "close_all",
+}
+_MONITOR_INTERVENTIONS = 50
+
+
+def _interventions_tail(path: Path) -> list[dict]:
+    """F25 FR-3: trade-only human interventions for the timeline, read from
+    human_directives.jsonl (InterventionRecord). Read-only; no broker access."""
+    from src.agent.turn_log import compute_et_date
+    if not path.exists():
+        return []
+    out: list[dict] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        logger.warning("interventions read failed (skipping): {}", e)
+        return []
+    for line in lines[-_MONITOR_INTERVENTIONS * 3:]:  # scan extra; many are non-trade
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        verb = str(r.get("command") or "")
+        if verb not in _TRADE_VERBS:
+            continue
+        ts = r.get("ts")
+        out.append({
+            "ts": _iso(ts),
+            "et_date": compute_et_date(ts),
+            "verb": verb,
+            "symbol": _intervention_symbol(verb, r.get("args") or {}),
+            # SECURITY-03: outcome/detail are free-form (built from broker echoes
+            # and exception strings) so mask secrets just like the log tail does.
+            "outcome": _mask_secrets(str(r.get("outcome", ""))),
+            "detail": _mask_secrets(str(r.get("detail", ""))),
+        })
+    return out[-_MONITOR_INTERVENTIONS:]
+
+
+def _intervention_symbol(verb: str, args: dict) -> str | None:
+    """Best-effort symbol extraction from an InterventionRecord's args."""
+    sym = args.get("symbol")
+    if sym:
+        return str(sym).upper()
+    return None
+
+
+def _turns_summary(path: Path, session: str | None = None) -> dict:
+    """Current ET-session turn count + cost + recent turns as structured objects.
+
+    F25: turns are keyed by ET trading date (a session crosses local midnight),
+    and ``ts`` is forwarded as a full tz-aware ISO string so the TUI localizes it.
+    ``session`` (ET date) defaults to the live/upcoming session; the TUI reads
+    turns.jsonl directly for other dates.
+    """
+    from src.agent.turn_log import compute_et_date, read_turns
     rows = read_turns(path)
-    today = datetime.now().date().isoformat()
-    todays = [r for r in rows if str(r.get("date", "")) == today]
+    if session is None:
+        session = _resolve_session_et_date()
+    todays = [r for r in rows if (r.get("et_date") or compute_et_date(r.get("ts"))) == session]
     cost = round(sum(float(r.get("cost_usd") or 0) for r in todays), 4)
     recent = []
-    # F22: only today's turns — stale rows from previous runs would place
-    # markers at unreachable times on today's timeline.
+    # F22/F25: only the current ET session's turns — stale rows from previous
+    # sessions would place markers at unreachable times on the timeline.
     for r in todays[-_MONITOR_TURNS:]:
         recent.append({
             "id": r.get("turn_id", ""),
             "type": r.get("turn_type", "?"),
-            "ts": _hhmm(r.get("ts")),
+            "ts": _iso(r.get("ts")),                              # F25: full ISO
+            "et_date": r.get("et_date") or compute_et_date(r.get("ts")),
             "cost_usd": round(float(r.get("cost_usd") or 0), 4),
             "num_decisions": r.get("num_decisions", 0),
             "duration_ms": r.get("duration_ms"),

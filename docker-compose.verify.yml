@@ -77,11 +77,21 @@ services:
       - attach-steering:/app/steering
       - attach-workspace:/app/workspace
       - attach-logs:/app/logs
+      # F25: give the container the HOST timezone so the timeline TUI (which runs
+      # IN the container and uses `new Date()` = container-local tz) shows the
+      # operator's local time, not UTC. Without this the now-cursor + tick labels
+      # are off by the UTC offset (e.g. 20:12 KST rendered as 11:12).
+      - /etc/localtime:/etc/localtime:ro
     environment:
       # Same fail-closed isolation as `verify` (preflight asserts these): TEST account only.
       AUTOSTOCK_ENV_FILE: /app/.env.test
       PYTHONPATH: /app
       STEERING_DIR: /app/steering
+      # F25: Bun (the TUI runtime) reads the TZ env var, NOT /etc/localtime, and
+      # ships its own tzdata — so an IANA name here makes the timeline show the
+      # operator's local time instead of the container's UTC (20:12 KST was being
+      # rendered as 11:12). Defaults to Asia/Seoul; override with host TZ if elsewhere.
+      TZ: ${TZ:-Asia/Seoul}
       PYTHONDONTWRITEBYTECODE: "1"
       # F18: the opencode console MCP config (operator-console/cli/.opencode/opencode.jsonc)
       # substitutes {env:AUTOSTOCK_ROOT} (the mcp-server.ts command path) and
@@ -99,6 +109,26 @@ services:
       # values via pydantic's OS-env > dotenv precedence and cause "unauthorized" in the daemon.
       ALPACA_PAPER: ${ALPACA_PAPER:-true}
     command: ["attach"]
+
+  # F25: seed the attach workspace volume with synthetic turns + interventions so
+  # the timeline bar can be exercised (3 market regions, edge-clamped off-window
+  # markers, human markers) without waiting for a live session. Run BEFORE attach:
+  #   docker compose -f docker-compose.verify.yml run --rm seed-timeline
+  #   docker compose -f docker-compose.verify.yml run --rm seed-timeline --date 2026-06-04
+  # then start `attach` and navigate the timeline to the seeded date.
+  seed-timeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.verify
+    working_dir: /app
+    volumes:
+      - .:/app
+      - attach-workspace:/app/workspace
+    environment:
+      PYTHONPATH: /app
+      PYTHONDONTWRITEBYTECODE: "1"
+    entrypoint: ["python", "-u", "scripts/gen_test_timeline.py", "--workspace", "/app/workspace"]
+    command: []
 
 volumes:
   verify-node-modules:

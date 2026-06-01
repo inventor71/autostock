@@ -166,11 +166,14 @@ def test_refresh_round_trip_reads_broker_fills(tmp_path):
 
 
 def test_publish_monitor_writes_file_and_masks_secrets(tmp_path):
+    from src.agent.steering.runtime import _resolve_session_et_date
     rt, _ = _runtime(tmp_path)
     root = rt.executor.journal.root
     root.mkdir(parents=True, exist_ok=True)
+    # F25: turns are filtered to the current ET session; tag the fixture with it.
+    session = _resolve_session_et_date()
     (root / "turns.jsonl").write_text(json.dumps({
-        "ts": "2026-05-29T10:00:00", "date": datetime.now().date().isoformat(),
+        "ts": f"{session}T10:00:00-04:00", "et_date": session, "date": session,
         "turn_type": "intraday", "cost_usd": 0.12, "num_decisions": 1}) + "\n")
     (root / "decisions.jsonl").write_text(json.dumps({
         "ts": "2026-05-29T10:00:00", "symbol": "AAPL", "action": "BUY",
@@ -180,6 +183,9 @@ def test_publish_monitor_writes_file_and_masks_secrets(tmp_path):
     assert mon["turns"]["today_count"] == 1
     assert any(d.get("symbol") == "AAPL" for d in mon["decisions"])
     assert "turns" in mon and "log" in mon
+    # F25: market-aware metadata present
+    assert mon["market"]["tz"] == "America/New_York"
+    assert "session_et_date" in mon and "interventions" in mon
 
 
 def test_publish_monitor_log_masks_token():
