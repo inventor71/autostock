@@ -27,10 +27,13 @@ handback, .git 비파괴 백업, safe.directory, 일부 named-volume 마스킹)�
 
 ## Stage Progress
 - [x] Workspace Detection — Brownfield, RE 아티팩트 존재 → Requirements Analysis로
-- [~] Requirements Analysis — Standard depth, 요구사항 문서 작성 완료, 승인 대기
-- [ ] User Stories — SKIP 예정 (개발 인프라, 사용자 대면 없음)
-- [ ] Workflow Planning
-- [ ] Application Design — SKIP 예정
-- [ ] Units Generation — SKIP 예정 (단일 유닛: verify-harness)
-- [ ] Construction (per-unit Code Generation)
-- [ ] Build & Test
+- [x] Requirements Analysis — Standard depth, `docker-verify-nonroot.md` 승인됨 (2026-06-01)
+- [x] User Stories — SKIP (개발 인프라, 사용자 대면 없음)
+- [x] Workflow Planning — 실행 계획 승인됨 (`inception/plans/docker-verify-nonroot-execution-plan.md`, 2026-06-01)
+- [ ] Application Design — SKIP (새 컴포넌트/메서드 없음)
+- [ ] Units Generation — SKIP (단일 유닛: verify-harness)
+- [ ] Functional Design / NFR Requirements / NFR Design — SKIP (비즈니스 로직·신규 NFR 없음)
+- [x] Infrastructure Design — 승인됨 (`construction/verify-harness/infrastructure-design/`). 확정: D-1 래퍼(verify-run.sh), D-2 볼륨 구조 유지, D-3 HOME=/tmp. critic 5건 반영(G-7 init-perms 1차안, G-1 verify-first, MED-4 git 근거 교정 등)
+- [x] Construction (Code Generation) — worktree `.claude/worktrees/F27`(feat/F27, base 46c48a9) 생성. 4 parent 파일 변경 +90/−78 + 신규 verify-run.sh. 비실행검증(bash -n, compose config, fail-loud) 통과. 코드요약: `construction/verify-harness/code/code-summary.md`
+- [x] Build & Test — **4모드 전부 PASS**: typecheck 19/19, unit 556, smoke OK, attach OK(⭐G-1 인증 verify-first 적중, ⭐MED-4 git 에러 없음). `find -user root` 공백 + sudo-free 제거 실증. 테스트 중 2건 픽스: Dockerfile `npm i -g node-gyp`, verify-run.sh 마운트포인트 호스트소유 선생성. 선행 블로커(서브모듈 origin 미동기화)도 push로 해결.
+- [ ] 커밋 → main 머지 (parent-only, 서브모듈 변경 없음)

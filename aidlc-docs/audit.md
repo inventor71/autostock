@@ -1525,3 +1525,9 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 **Timestamp**: 2026-06-01T09:30:00Z
 **Merge commit**: 02f46cb (parent) / 4c21687 (submodule main)
 **Summary**: AI-collaborative timeline bar — market-aware 12h view (KST local, IANA-tz DST), 3 market regions + phase badge (● PRE-MARKET/REGULAR/AFTER/CLOSED), date navigation, human intervention markers + overlay, flicker-free monitor polling. Unit A (daemon: et_date sessions, market rule + interventions in monitor.json). verify.sh: re-applied lost F22 fixes (.env copy + operator-console install → fixes MCP -32000) + pointer-only git guard. docker-compose: TZ for correct local time in attach TUI. 556 Python + 21 TS tests, critic 6 findings (2 HIGH + 1 MED applied). Note: submodule git was repeatedly clobbered by docker verify.sh running as root (recovered each time from working tree) → F27 opened to fix root-cause.
+
+---
+## F27 Merged
+**Timestamp**: 2026-06-01T12:55:00Z
+**Merge commit**: a22952f (parent-only, no submodule change)
+**Summary**: docker-verify harness runs as host user (non-root, scripts/verify-run.sh wrapper — fail-loud UID injection) + root-ownership workarounds stripped (cleanup chown handback, .git mv-aside/safe.directory). 4-mode verified non-root (typecheck 19/19, unit 556, smoke+attach OK). Extras found+fixed: missing node-gyp in image, bind-mount mountpoint ownership. Submodule git origin sync pushed (4c21687, F22+F25+timeline unpushed commits). This closes the root-owned-file class of problems (R-1: sudo-free worktree remove, R-2: submodule git corruption) that bit F22/F25.
