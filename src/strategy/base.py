@@ -35,6 +35,43 @@ class BaseStrategy(ABC):
         """
         pass
 
+    def supports_precompute(self) -> bool:
+        """Return whether this strategy supports an incremental backtest fast-path.
+
+        A strategy whose indicators are causal/rolling (value at bar *i* depends
+        only on data ``[0:i]``) can compute its full-series state ONCE via
+        ``precompute()`` and answer each bar in O(1) via ``generate_signal_at()``,
+        instead of recomputing over a growing slice every bar (the O(n^2) default).
+
+        False by default → the engine uses the slice + ``generate_signal`` path,
+        so existing strategies behave exactly as before.
+        """
+        return False
+
+    def precompute(self, symbol: str, bars: pd.DataFrame) -> None:
+        """Optional hook: precompute full-series indicator state for ``symbol``.
+
+        Called once per symbol before the bar loop when ``supports_precompute()``
+        is True. Default is a no-op.
+        """
+        return None
+
+    def generate_signal_at(
+        self,
+        symbol: str,
+        bars: pd.DataFrame,
+        i: int,
+        portfolio: PortfolioState | None = None,
+    ) -> TradeSignal:
+        """Signal for bar ``i`` over the full ``bars`` frame.
+
+        Default delegates to ``generate_signal(bars[:i+1])`` — i.e. identical
+        behavior with no speedup. A strategy overriding this for the fast-path
+        MUST return exactly what the default would (the backtest characterization
+        golden enforces this).
+        """
+        return self.generate_signal(symbol, bars.iloc[: i + 1], portfolio)
+
     def supports_selection(self) -> bool:
         """Return whether this strategy supports dynamic symbol selection.
 

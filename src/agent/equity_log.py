@@ -60,13 +60,19 @@ def snapshot(portfolio: PortfolioState, benchmark: dict | None = None) -> dict:
 
 
 def fetch_benchmark(data_provider, symbols: tuple[str, ...] = ("SPY", "QQQ", "^VIX")) -> dict:
-    """Best-effort latest prices for benchmark symbols (skips ones that error)."""
+    """Best-effort latest prices for benchmark symbols (skips ones that error).
+
+    Fetches run concurrently (same per-symbol calls, value-preserving); symbols
+    that error yield None and are skipped, exactly as the old sequential loop did.
+    """
+    from src.data.prices import fetch_latest_prices
+
+    prices = fetch_latest_prices(data_provider, symbols)
     out: dict[str, float] = {}
     for sym in symbols:
-        try:
-            out[sym.lstrip("^")] = float(data_provider.get_latest_price(sym))
-        except Exception:
-            continue
+        price = prices.get(sym)
+        if price is not None:
+            out[sym.lstrip("^")] = float(price)
     return out
 
 

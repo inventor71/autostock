@@ -103,21 +103,18 @@ def scoreboard(symbols: list[str], provider, limit: int = 120) -> list[dict]:
     The agent reads this to choose which names deserve deep work — Python does
     not pre-select candidates.
     """
-    rows: list[dict] = []
-    for symbol in symbols:
+    def _row(symbol: str) -> dict:
         try:
             bars = provider.get_bars(symbol, limit=limit)
         except Exception as exc:  # one bad symbol must not sink the scan
-            rows.append({"symbol": symbol.upper(), "error": str(exc)})
-            continue
+            return {"symbol": symbol.upper(), "error": str(exc)}
         if bars is None or bars.empty:
-            rows.append({"symbol": symbol.upper(), "error": "no data"})
-            continue
+            return {"symbol": symbol.upper(), "error": "no data"}
 
         recent_high = float(bars["high"].tail(20).max())
         close = float(bars["close"].iloc[-1])
         row = _latest_features(bars)
-        rows.append({
+        return {
             "symbol": symbol.upper(),
             "close": _round(close, 2),
             "chg_1d": _pct_change(bars, 1),
@@ -127,7 +124,18 @@ def scoreboard(symbols: list[str], provider, limit: int = 120) -> list[dict]:
             "macd_hist": _round(float(row["macd_hist"])) if row is not None else None,
             "vol_ratio": _round(float(row["volume_ratio"]), 2) if row is not None else None,
             "dist_high_20d_pct": _round((close / recent_high - 1) * 100, 2) if recent_high else None,
-        })
+        }
+
+    # Fetch+compute per symbol concurrently; ThreadPoolExecutor.map preserves the
+    # input order so the returned rows are identical (value AND order) to the old
+    # sequential scan — just overlapping the per-symbol network fetches.
+    symbols = list(symbols)
+    if len(symbols) <= 1:
+        rows: list[dict] = [_row(s) for s in symbols]
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(symbols))) as ex:
+            rows = list(ex.map(_row, symbols))
     return rows
 
 

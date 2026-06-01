@@ -16,6 +16,7 @@ from __future__ import annotations
 from loguru import logger
 
 from src.core.models import FilledOrder, PortfolioState
+from src.data.prices import fetch_latest_prices
 from src.execution.base import BaseBroker
 from src.risk.manager import RiskManager
 
@@ -53,16 +54,14 @@ def run_polled_exits(
         the FilledOrders for any exits that fired.
     """
     if symbol is None:
-        # Whole-portfolio cycle: refresh every position's price.
+        # Whole-portfolio cycle: refresh every position's price. Fetches run
+        # concurrently (same per-symbol calls, value-preserving); a single failed
+        # fetch yields None and is skipped so it never sinks the whole check.
         if data_provider is not None:
-            for sym in portfolio.positions:
-                try:
-                    portfolio.positions[sym].update_price(
-                        data_provider.get_latest_price(sym)
-                    )
-                except Exception:
-                    # A single failed price fetch must not skip the whole check.
-                    pass
+            prices = fetch_latest_prices(data_provider, list(portfolio.positions))
+            for sym, price in prices.items():
+                if price is not None:
+                    portfolio.positions[sym].update_price(price)
     else:
         # Per-symbol path (e.g. realtime bar): only that position is refreshed.
         position = portfolio.positions.get(symbol)

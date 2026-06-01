@@ -121,6 +121,22 @@ class BacktestEngine:
             f"{len(reference_bars)} bars, warmup={warmup_period}"
         )
 
+        # R2 C-1a/C-1b: when the strategy exposes a causal precompute fast-path AND
+        # does no dynamic selection, precompute full-series indicators once and
+        # answer each bar in O(1) — skipping both the per-bar slice copy and the
+        # per-bar indicator recompute (the old O(n^2)). The fast-path is required
+        # to match generate_signal exactly (enforced by the backtest golden); any
+        # other strategy keeps the original slice + generate_signal path unchanged.
+        use_fast_path = (
+            self.strategy.supports_precompute()
+            and not self.strategy.supports_selection()
+        )
+        if use_fast_path:
+            for symbol in universe:
+                sb = bars_dict.get(symbol)
+                if sb is not None:
+                    self.strategy.precompute(symbol, sb)
+
         for i in range(warmup_period, len(reference_bars)):
             ts = reference_bars.index[i]
 
@@ -139,36 +155,52 @@ class BacktestEngine:
                 ):
                     _record(exit_fill, ts)
 
-            # Build look-ahead-safe market data for selection + signals.
-            market_data = {}
-            for symbol in universe:
-                symbol_bars = bars_dict.get(symbol)
-                if symbol_bars is not None and i < len(symbol_bars):
-                    market_data[symbol] = symbol_bars.iloc[:i + 1]
-
-            portfolio = self.broker.get_portfolio_state()
-            if self.strategy.supports_selection():
-                try:
-                    selected_symbols = self.strategy.select_symbols(
-                        universe, market_data, portfolio
-                    )
-                except Exception as e:
-                    self._logger.debug(f"Symbol selection failed: {e}")
-                    selected_symbols = universe
-            else:
+            # Build look-ahead-safe market data for selection + signals. The
+            # fast-path skips this per-bar slice copy entirely (C-1a).
+            if use_fast_path:
+                portfolio = self.broker.get_portfolio_state()
                 selected_symbols = universe
+            else:
+                market_data = {}
+                for symbol in universe:
+                    symbol_bars = bars_dict.get(symbol)
+                    if symbol_bars is not None and i < len(symbol_bars):
+                        market_data[symbol] = symbol_bars.iloc[:i + 1]
+
+                portfolio = self.broker.get_portfolio_state()
+                if self.strategy.supports_selection():
+                    try:
+                        selected_symbols = self.strategy.select_symbols(
+                            universe, market_data, portfolio
+                        )
+                    except Exception as e:
+                        self._logger.debug(f"Symbol selection failed: {e}")
+                        selected_symbols = universe
+                else:
+                    selected_symbols = universe
 
             for symbol in selected_symbols:
-                history = market_data.get(symbol)
-                if history is None or history.empty:
-                    continue
+                if use_fast_path:
+                    symbol_bars = bars_dict.get(symbol)
+                    if symbol_bars is None or i >= len(symbol_bars):
+                        continue
+                    try:
+                        signal = self.strategy.generate_signal_at(
+                            symbol, symbol_bars, i, portfolio
+                        )
+                    except InsufficientDataError:
+                        continue
+                    price = float(symbol_bars.iloc[i]["close"])
+                else:
+                    history = market_data.get(symbol)
+                    if history is None or history.empty:
+                        continue
+                    try:
+                        signal = self.strategy.generate_signal(symbol, history, portfolio)
+                    except InsufficientDataError:
+                        continue
+                    price = float(history.iloc[-1]["close"])
 
-                try:
-                    signal = self.strategy.generate_signal(symbol, history, portfolio)
-                except InsufficientDataError:
-                    continue
-
-                price = float(history.iloc[-1]["close"])
                 order = self.risk_manager.evaluate_signal(signal, price, portfolio)
                 if order is None:
                     continue
