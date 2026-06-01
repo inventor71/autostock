@@ -43,6 +43,7 @@
 | F29 | Supervisor-mode codebase orientation — 에이전트 경로·구조 헷갈림 개선 | active (paused) | — | — | — | bb2da2d | 2026-06-01 |
 | R2 | Speed/throughput review — behavior-preserving (×3 engine, ×5.6 optimizer, parallel fetch) | merged | feat/R2 | — | — | 46c48a9→dfb8200 | 2026-06-01 |
 | F28 | Normal-mode UI self-explanation — 에이전트가 자기 TUI 요소(타임라인 `$6.01`·마커·사이드바)의 의미를 설명 (rides F26 allowlist) | active | feat/F28 (TBD) | .claude/worktrees/F28 (TBD) | feat/F28 (opencode) | a4b1732 | 2026-06-01 |
+| F30 | KIS OpenAPI 브로커 확장 — 한국투자증권 API를 통한 미국/한국주식 페이퍼트레이딩 | active | feat/F30 (TBD) | .claude/worktrees/F30 (TBD) | — | b4fa955 | 2026-06-01 |
 | F31 | TUI Sidebar Orders 색상 깜박임 버그 수정 | merged | feat/F31 | — | feat/F31 (opencode) | 1746d6a→TBD | 2026-06-02 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
