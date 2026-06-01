@@ -192,6 +192,30 @@ class AgentTradingMode:
         self._scheduled_turn(lambda: self.orchestrator.run_intraday(brief))
         self._funnel(self._exec_pending_and_exits)
 
+    def _save_quality_report(self) -> None:
+        """EOD: persist decision quality report to workspace/quality/<date>.json.
+        JSON only; no prompt injection (LLM shouldn't see small-sample metrics)."""
+        try:
+            from src.agent.quality.collector import collect_outcomes
+            from src.agent.quality.aggregate import summary
+
+            logger.info("Saving decision quality report")
+            outcomes = collect_outcomes(self.executor.journal)
+            if not outcomes:
+                logger.info("No decision outcomes to report")
+                return
+            s = summary(outcomes)
+            import json
+            from datetime import date
+
+            out_dir = self.executor.journal.root / "quality"
+            out_dir.mkdir(exist_ok=True)
+            out_file = out_dir / f"{date.today().isoformat()}.json"
+            out_file.write_text(json.dumps(s, indent=2, default=str), encoding="utf-8")
+            logger.info(f"Quality report saved to {out_file}")
+        except Exception as exc:
+            logger.warning(f"Quality report failed (non-fatal): {exc}")
+
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
         from src.agent.equity_log import fetch_benchmark, record_equity
@@ -258,6 +282,7 @@ class AgentTradingMode:
             self._intraday, interval_minutes=self.intraday_minutes, job_id="agent_intraday"
         )
         self.scheduler.add_market_close_job(self._eod, job_id="agent_eod")
+        self.scheduler.add_market_close_job(self._save_quality_report, job_id="agent_quality_report")
         if self.steering is not None:
             self.scheduler.add_seconds_job(self.steering.poll_commands, 2, "steering_poll")
             self.scheduler.add_seconds_job(self.steering.publish_snapshot, 5, "steering_snapshot")
