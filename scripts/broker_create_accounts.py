@@ -29,9 +29,20 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from alpaca.broker.client import BrokerClient
-from alpaca.broker.requests import CreateAccountRequest
+from alpaca.broker.requests import (
+    CreateAccountRequest,
+    CreateACHRelationshipRequest,
+    CreateACHTransferRequest,
+)
 from alpaca.broker.models import Contact, Identity, Disclosures, Agreement
-from alpaca.broker.enums import AgreementType, TaxIdType, FundingSource
+from alpaca.broker.enums import (
+    AgreementType,
+    TaxIdType,
+    FundingSource,
+    BankAccountType,
+    TransferDirection,
+    TransferTiming,
+)
 
 
 def _client() -> BrokerClient:
@@ -120,6 +131,58 @@ def cmd_create(client: BrokerClient, count: int, prefix: str) -> None:
               "(e.g. submit_order_for_account / get_trade_account_by_id).")
 
 
+def cmd_fund(client: BrokerClient, account_id: str | None, amount: float) -> None:
+    """Add simulated buying power to sandbox accounts via ACH deposit.
+
+    Sandbox accounts start with $0 buying power.  This creates a dummy ACH
+    relationship and an INCOMING transfer; the sandbox processes it who-knows-
+    how-fast (V3 — not assumed instant).
+    """
+    accounts = client.list_accounts()
+    targets: list[str] = [account_id] if account_id else [str(a.id) for a in accounts]
+    if not targets:
+        print("No accounts to fund.")
+        return
+
+    for aid in targets:
+        acct = client.get_trade_account_by_id(aid)
+        print(f"  funding {acct.account_number} ({aid[:8]}…): ${amount:,.0f}")
+        try:
+            # Step 1: reuse existing ACH relationship, or create one.
+            rels = client.get_ach_relationships_for_account(aid)
+            if rels:
+                rel_id = str(rels[0].id)
+            else:
+                rel = client.create_ach_relationship_for_account(
+                    aid,
+                    CreateACHRelationshipRequest(
+                        account_owner_name="Auto Stock",
+                        bank_account_type=BankAccountType.CHECKING,
+                        bank_account_number="123456789",
+                        bank_routing_number="021000021",
+                        nickname="sandbox-funding",
+                    ),
+                )
+                rel_id = str(rel.id)
+            # Step 2: transfer
+            tx = client.create_transfer_for_account(
+                aid,
+                CreateACHTransferRequest(
+                    relationship_id=rel_id,
+                    amount=str(int(amount)),
+                    direction=TransferDirection.INCOMING,
+                    timing=TransferTiming.IMMEDIATE,
+                ),
+            )
+            # Re-read
+            acct2 = client.get_trade_account_by_id(aid)
+            print(
+                f"    transfer {str(tx.id)[:8]}… → "
+                f"buying_power=${float(acct2.buying_power):,.2f}"
+            )
+        except Exception as e:
+            print(f"    ✗ {e}")
+
 def cmd_list(client: BrokerClient) -> None:
     accounts = client.list_accounts()
     if not accounts:
@@ -135,10 +198,15 @@ def main() -> None:
     p.add_argument("--count", type=int, default=1, help="how many accounts to create")
     p.add_argument("--prefix", default="autostock", help="email local-part prefix")
     p.add_argument("--list", action="store_true", help="list existing accounts and exit")
+    p.add_argument("--fund", type=float, metavar="AMOUNT",
+                   help="fund account(s) with $AMOUNT via ACH (sandbox)")
+    p.add_argument("--account", help="target account_id for --fund (omit = all)")
     args = p.parse_args()
 
     client = _client()
-    if args.list:
+    if args.fund:
+        cmd_fund(client, args.account, args.fund)
+    elif args.list:
         cmd_list(client)
     else:
         cmd_create(client, args.count, args.prefix)

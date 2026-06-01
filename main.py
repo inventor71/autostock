@@ -25,12 +25,23 @@ def create_data_provider(settings):
 
 def create_broker(settings):
     """Create broker based on config."""
-    from src.execution.brokers.alpaca_broker import AlpacaBroker
-    return AlpacaBroker(
-        api_key=settings.alpaca_api_key,
-        secret_key=settings.alpaca_secret_key,
-        paper=settings.broker.paper,
-    )
+    provider = settings.broker.get("provider", settings.broker.get("name", "alpaca"))
+    if provider == "broker_api":
+        from src.execution.brokers.broker_api_broker import BrokerApiBroker
+        return BrokerApiBroker(
+            api_key=settings.broker_api_key,
+            secret_key=settings.broker_api_secret,
+            account_id=settings.broker_account_id,
+            sandbox=True,
+        )
+    else:
+        # default: alpaca (Trading API)
+        from src.execution.brokers.alpaca_broker import AlpacaBroker
+        return AlpacaBroker(
+            api_key=settings.alpaca_api_key,
+            secret_key=settings.alpaca_secret_key,
+            paper=settings.broker.paper,
+        )
 
 
 def _resolve_api_key(settings, provider: str) -> str:
