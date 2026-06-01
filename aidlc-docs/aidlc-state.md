@@ -37,8 +37,10 @@
 | F23 | Multi-Agent Research 교차검증 + 시그널 확장 | merged | feat/F23 | .claude/worktrees/F23 | — | 620eeac→77d7f9e→927627a | 2026-06-01 |
 | F24 | Decision Quality Metrics — 에이전트 결정 품질 정량 분석 | merged | feat/F24 | — | — | e0a345b→b4fa955 | 2026-06-01 |
 | F25 | 타임라인 바 개선 — market-aware timeline + date nav + human markers | merged | feat/F25 | .claude/worktrees/F25 | feat/F25 → main 4c21687 | 437d57d→02f46cb | 2026-06-01 |
-| F26 | Supervisor mode — read-only whole-codebase introspection for the steering agent; normal mode stays code-blocked (MCP + permitted files) | active | feat/F26 (TBD) | .claude/worktrees/F26 (TBD) | feat/F26 (opencode) | 572db79 | 2026-06-01 |
+| F26 | Supervisor mode — permission profiles + launcher --supervisor + docker-verify support | **merged** | feat/F26 | .claude/worktrees/F26 | feat/F26 → main 674bdb5 (opencode) | 572db79→bb2da2d | 2026-06-01 |
 | F27 | docker-verify 하네스 non-root 실행 — root-소유 파일 근본 제거 + 우회 코드 정리 | merged | feat/F27 | — | — (parent repo: Dockerfile.verify/compose/verify.sh/verify-run.sh/worktree-setup.sh) | 46c48a9→a22952f | 2026-06-01 |
+| F28 | Normal-mode UI self-explanation — 에이전트가 자기 TUI 요소의 의미 설명 (rides F26 allowlist) | active (paused) | — | — | — | a4b1732 | 2026-06-01 |
+| F29 | Supervisor-mode codebase orientation — 에이전트 경로·구조 헷갈림 개선 | active (paused) | — | — | — | bb2da2d | 2026-06-01 |
 | R2 | Speed/throughput review — behavior-preserving (live latency + backtest throughput + LLM-turn blocking) | active | feat/R2 | .claude/worktrees/R2 | — | 46c48a9 | 2026-06-01 |
 | F28 | Normal-mode UI self-explanation — 에이전트가 자기 TUI 요소(타임라인 `$6.01`·마커·사이드바)의 의미를 설명 (rides F26 allowlist) | active | feat/F28 (TBD) | .claude/worktrees/F28 (TBD) | feat/F28 (opencode) | a4b1732 | 2026-06-01 |
 
