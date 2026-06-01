@@ -87,6 +87,11 @@ services:
       AUTOSTOCK_ENV_FILE: /app/.env.test
       PYTHONPATH: /app
       STEERING_DIR: /app/steering
+      # F25: Bun (the TUI runtime) reads the TZ env var, NOT /etc/localtime, and
+      # ships its own tzdata — so an IANA name here makes the timeline show the
+      # operator's local time instead of the container's UTC (20:12 KST was being
+      # rendered as 11:12). Defaults to Asia/Seoul; override with host TZ if elsewhere.
+      TZ: ${TZ:-Asia/Seoul}
       PYTHONDONTWRITEBYTECODE: "1"
       # F18: the opencode console MCP config (operator-console/cli/.opencode/opencode.jsonc)
       # substitutes {env:AUTOSTOCK_ROOT} (the mcp-server.ts command path) and
