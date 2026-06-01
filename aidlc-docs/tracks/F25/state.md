@@ -35,7 +35,11 @@ F22 타임라인 바 3가지 개선:
 - [~] Construction (per-unit)
   - [x] Unit A (daemon-timeline, Python) — FD + Code Gen COMPLETE. 555 tests pass, 15 new, 0 regressions.
         et_date 세션 키, market 규칙 블록, full-ISO ts, interventions(거래만). commit d37577a (worktree).
-  - [ ] Unit B (timeline-ui, TypeScript) — 12h layout, 3구간 배경, 날짜 네비, human 마커
+  - [~] Unit B (timeline-ui, TypeScript) — Code Gen COMPLETE (typecheck clean, 13 TS tests).
+        12h market-aware layout(epoch+IANA tz DST), 3구간 배경, 마켓 경계선, 로컬시간 라벨,
+        날짜 네비(마우스 `< Today >`), human 마커(✚)+overlay. 승인 대기.
+        **DEFERRED**: 키보드(← → T) + `/timeline <date>` slash command — opencode 중앙 keymap
+        통합 필요(파손 위험). 마우스 네비는 완성. 사용자 결정 필요.
 - [ ] Build & Test
 
 ## Worktree
