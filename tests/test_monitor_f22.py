@@ -13,24 +13,26 @@ import pytest
 def workspace(tmp_path: Path):
     turns = tmp_path / "turns.jsonl"
     decisions = tmp_path / "decisions.jsonl"
-    today = datetime.now().date().isoformat()
-    started_ts = "2026-06-01T09:30:00"
-    end_ts = "2026-06-01T09:31:00"
-    mid_ts = "2026-06-01T09:30:30"
-    started_ts2 = "2026-06-01T10:00:00"
-    end_ts2 = "2026-06-01T10:01:00"
+    # F25: turns are keyed by ET trading date (et_date). Use tz-aware ET timestamps
+    # so the session grouping is deterministic regardless of the test machine's tz.
+    et_date = "2026-06-01"
+    started_ts = "2026-06-01T09:30:00-04:00"
+    end_ts = "2026-06-01T09:31:00-04:00"
+    mid_ts = "2026-06-01T09:30:30-04:00"
+    started_ts2 = "2026-06-01T10:00:00-04:00"
+    end_ts2 = "2026-06-01T10:01:00-04:00"
 
     turns.write_text(
         json.dumps({
             "turn_id": "R1", "started_at": started_ts, "ts": end_ts,
-            "date": today, "turn_type": "research",
+            "date": et_date, "et_date": et_date, "turn_type": "research",
             "model": "test", "num_decisions": 2, "cost_usd": 1.5,
             "duration_ms": 30000, "summary": "Research: BUY AAPL(0.8), HOLD MSFT(0.5)",
             "health": "ok",
         }) + "\n"
         + json.dumps({
             "turn_id": "I1", "started_at": started_ts2, "ts": end_ts2,
-            "date": today, "turn_type": "intraday",
+            "date": et_date, "et_date": et_date, "turn_type": "intraday",
             "model": "test", "num_decisions": 0, "cost_usd": 0.3,
             "duration_ms": 5000, "summary": "Intraday: no decisions",
             "health": "ok",
@@ -57,7 +59,7 @@ class TestTurnsSummary:
     def test_structured_recent(self, workspace):
         _, turns_path, _ = workspace
         from src.agent.steering.runtime import _turns_summary
-        result = _turns_summary(turns_path)
+        result = _turns_summary(turns_path, session="2026-06-01")
 
         assert result["today_count"] == 2
         assert result["today_cost_usd"] == 1.8

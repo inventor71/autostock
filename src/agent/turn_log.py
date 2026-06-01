@@ -11,8 +11,14 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from loguru import logger
+
+# F25: US equity trading day is anchored to the exchange timezone. The local
+# (e.g. KST) calendar date splits one ET session across two local dates because
+# the regular session crosses local midnight, so we key sessions by ET date.
+_MARKET_TZ = ZoneInfo("America/New_York")
 
 _TYPE_PREFIX = {
     "research": "R", "intraday": "I", "wake": "W", "eod": "E", "reconcile": "C",
@@ -24,13 +30,40 @@ _TYPE_LABEL = {
 _ID_RE = re.compile(r"^([A-Z])(\d+)$")
 
 
+def compute_et_date(ts: datetime | str | None = None) -> str:
+    """ET trading-day date (YYYY-MM-DD) for an instant.
+
+    A naive datetime/ISO string is interpreted in the machine's local timezone
+    (that is how older records were written), then converted to ET. ET extended
+    hours (04:00–20:00) never cross ET midnight, so the ET calendar date is the
+    trading-session key.
+    """
+    if ts is None:
+        dt = datetime.now().astimezone()
+    elif isinstance(ts, str):
+        try:
+            dt = datetime.fromisoformat(ts)
+        except ValueError:
+            # Last resort: today's ET date.
+            return datetime.now(_MARKET_TZ).date().isoformat()
+    else:
+        dt = ts
+    if dt.tzinfo is None:
+        dt = dt.astimezone()  # attach local tz to a naive value
+    return dt.astimezone(_MARKET_TZ).date().isoformat()
+
+
 def generate_turn_id(path: str | Path, turn_type: str) -> str:
-    """Type-prefixed daily-sequential turn ID (e.g. R1, I3, W1)."""
+    """Type-prefixed session-sequential turn ID (e.g. R1, I3, W1).
+
+    Sequencing is keyed by ET trading date so a session that crosses local
+    midnight keeps a single, monotonic ID sequence (F25)."""
     prefix = _TYPE_PREFIX.get(turn_type, "T")
-    today = datetime.now().date().isoformat()
+    today_et = compute_et_date()
     max_n = 0
     for rec in read_turns(path):
-        if str(rec.get("date", "")) != today:
+        rec_et = rec.get("et_date") or compute_et_date(rec.get("ts"))
+        if rec_et != today_et:
             continue
         tid = rec.get("turn_id", "")
         m = _ID_RE.match(str(tid))
@@ -117,11 +150,13 @@ def record_turn(
     """Append one turn's telemetry (cost/duration/tokens/decisions) as JSONL."""
     raw = raw or {}
     usage = raw.get("usage") or {}
+    now = datetime.now().astimezone()  # F25: tz-aware so the TUI can localize
     rec = {
         "turn_id": turn_id,
         "started_at": started_at,
-        "ts": datetime.now().isoformat(timespec="seconds"),
-        "date": datetime.now().date().isoformat(),
+        "ts": now.isoformat(timespec="seconds"),
+        "date": now.date().isoformat(),       # local date (kept for back-compat)
+        "et_date": compute_et_date(now),       # F25: ET trading-session key
         "turn_type": turn_type,
         "model": model,
         "num_decisions": num_decisions,
