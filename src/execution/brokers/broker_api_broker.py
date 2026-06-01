@@ -300,12 +300,14 @@ class BrokerApiBroker(BaseBroker):
     def get_open_orders(self, symbol: str | None = None) -> list[OpenOrder]:
         """Open orders at the Broker API, including bracket/OCO protective legs.
 
-        Uses ``nested=True`` and flattens each order's ``legs`` so the stop-loss
-        leg of an OCO/bracket is surfaced (parity with AlpacaBroker).
+        Fetches ALL statuses (Broker API ``OPEN`` filter omits HELD legs and
+        returns legs as top-level without the parent's nesting), then client-side
+        filters out terminal statuses. ``nested=True`` + leg flattening so the
+        stop-loss leg of an OCO/bracket is surfaced (parity with AlpacaBroker).
         """
         try:
             req = GetOrdersRequest(
-                status=QueryOrderStatus.OPEN,
+                status=QueryOrderStatus.ALL,
                 symbols=[symbol] if symbol else None,
                 nested=True,
             )
@@ -318,9 +320,13 @@ class BrokerApiBroker(BaseBroker):
         seen: set[str] = set()
         for o in orders:
             for node in [o, *(getattr(o, "legs", None) or [])]:
-                if str(node.id) in seen:
+                sid = str(node.id)
+                if sid in seen:
                     continue
-                seen.add(str(node.id))
+                status = str(getattr(node, "status", "")).split(".")[-1].lower()
+                if status in _TERMINAL_STATUSES:
+                    continue
+                seen.add(sid)
                 out.append(self._to_open_order(node, default_symbol=o.symbol))
         return out
 
