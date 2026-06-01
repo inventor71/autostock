@@ -37,6 +37,8 @@
 | F23 | Multi-Agent Research 교차검증 + 시그널 확장 | merged | feat/F23 | .claude/worktrees/F23 | — | 620eeac→77d7f9e→927627a | 2026-06-01 |
 | F24 | Decision Quality Metrics — 에이전트 결정 품질 정량 분석 | merged | feat/F24 | — | — | e0a345b→b4fa955 | 2026-06-01 |
 | F25 | 타임라인 바 개선 — market-aware timeline + date nav + human markers | active | feat/F25 (TBD) | .claude/worktrees/F25 (TBD) | feat/F25 (opencode) | TBD | 2026-06-01 |
+| F26 | Supervisor mode — read-only whole-codebase introspection for the steering agent; normal mode stays code-blocked (MCP + permitted files) | active | feat/F26 (TBD) | .claude/worktrees/F26 (TBD) | feat/F26 (opencode) | 572db79 | 2026-06-01 |
+| F27 | docker-verify 하네스 non-root 실행 — root-소유 파일 근본 제거 + 우회 코드 정리 | active | feat/F27 (TBD) | .claude/worktrees/F27 (TBD) | — (parent repo: Dockerfile.verify/compose/verify.sh) | TBD | 2026-06-01 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
