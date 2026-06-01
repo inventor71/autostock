@@ -19,7 +19,7 @@
 #     --docker-verify  Containerized verification (F10): init submodule on the HOST (the container
 #                      can't — worktree .git is outside the mount) + provision .env.test (COPIED from
 #                      ${MAIN_ROOT}/.env.test if present, else from the example), then print the
-#                      `docker compose -f docker-compose.verify.yml` commands. ZERO prod impact:
+#                      `scripts/verify-run.sh` commands (F27 wrapper → host-user run). ZERO prod impact:
 #                      the container loads .env.test only (a TEST paper account), never prod .env.
 #
 # Idempotent: re-running reuses an existing worktree/branch and re-checks deps.
@@ -143,12 +143,14 @@ merge/rebase it into this track first."
     note "  ${MAIN_ROOT}/.env.test once and future tracks copy them automatically). gitignored."
   fi
   cat <<EOF
-  ✔ ready. Run FROM the worktree dir (so .:/app mounts THIS worktree):
+  ✔ ready. Run FROM the worktree dir (so .:/app mounts THIS worktree). F27: use verify-run.sh —
+    it runs the container as your host UID:GID (no root-owned files) and chowns the volumes first.
+    A raw 'docker compose' call now fails fast (the user: keys require DOCKER_UID from the wrapper):
       cd ${WT}
-      docker compose -f docker-compose.verify.yml build
-      docker compose -f docker-compose.verify.yml run --rm verify typecheck
-      docker compose -f docker-compose.verify.yml run --rm verify unit
-      docker compose -f docker-compose.verify.yml run --rm verify smoke   # needs real TEST keys + ~/.claude
+      scripts/verify-run.sh build
+      scripts/verify-run.sh run --rm verify typecheck
+      scripts/verify-run.sh run --rm verify unit
+      scripts/verify-run.sh run --rm verify smoke   # needs real TEST keys + ~/.claude
 EOF
 fi
 
