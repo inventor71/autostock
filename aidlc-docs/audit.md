@@ -1,5 +1,7 @@
 # AI-DLC Audit Log
 
+## F31 merge 2026-06-02 — TUI Sidebar Orders 색상 깜박임 버그 수정 (1-line: autostock.tsx side-fallback color when current_price null; submodule feat/F31 → main)
+
 ## Workflow Start — Project Review Request
 **Timestamp**: 2026-05-28T00:00:00Z
 **User Input**: "AI-DLC를 이용해서 현 프로젝트를 리뷰하고, 구조를 개선을 필히 해야 하는 부분을 찾아보고 싶어"
