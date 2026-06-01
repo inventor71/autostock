@@ -88,6 +88,32 @@ class DecisionExecutor:
         )
 
     # ------------------------------------------------------------------ #
+    # Execution log (F24: durable decision→fill link for quality metrics)
+    # ------------------------------------------------------------------ #
+    def _log_execution(self, d: Decision, filled) -> None:
+        log_file = self.journal.root / "execution_log.jsonl"
+        try:
+            decisions = self.journal.read_decisions()
+            idx = next(
+                (i for i, dec in enumerate(decisions) if dec.ts == d.ts and dec.symbol == d.symbol),
+                -1,
+            )
+            entry = json.dumps({
+                "decision_index": idx,
+                "symbol": d.symbol,
+                "action": d.action,
+                "order_id": filled.order_id,
+                "filled_qty": float(filled.qty),
+                "filled_price": float(filled.filled_price),
+                "ts": datetime.now().isoformat(),
+            })
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            with log_file.open("a", encoding="utf-8") as fh:
+                fh.write(entry + "\n")
+        except Exception as exc:
+            logger.warning(f"execution_log append failed (non-fatal): {exc}")
+
+    # ------------------------------------------------------------------ #
     # Execute pending decisions
     # ------------------------------------------------------------------ #
     def execute_pending(self) -> list[ExecutionOutcome]:
@@ -169,11 +195,13 @@ class DecisionExecutor:
             return ExecutionOutcome(d, "no_order", "risk manager returned no order")
 
         filled = self.broker.submit_order(order)
-        return ExecutionOutcome(
+        outcome = ExecutionOutcome(
             d, "executed",
             f"{order.side.value} {order.qty} {d.symbol} ({order.order_class.value})",
             order_id=filled.order_id,
         )
+        self._log_execution(d, filled)
+        return outcome
 
     def _to_signal(self, d: Decision) -> TradeSignal:
         confidence = d.confidence if d.confidence is not None else 0.5
