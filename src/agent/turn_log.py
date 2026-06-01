@@ -39,20 +39,67 @@ def generate_turn_id(path: str | Path, turn_type: str) -> str:
     return f"{prefix}{max_n + 1}"
 
 
-def build_turn_summary(turn_type: str, decisions) -> str:
-    """Deterministic 1-line summary from the turn's decisions."""
+def build_turn_summary(
+    turn_type: str,
+    decisions,
+    llm_text: str = "",
+    event_reasons: list[str] | None = None,
+) -> str:
+    """Build a turn summary enriched with LLM reasoning and event context.
+
+    For turns with decisions, the decisions are listed first, followed by a
+    snippet of the LLM's analysis. For turns without decisions (e.g. wake),
+    event reasons or the LLM's own summary is used directly.
+    """
     label = _TYPE_LABEL.get(turn_type, turn_type.capitalize())
-    if not decisions:
-        return f"{label}: no decisions"
-    parts = []
+
+    # Extract a concise snippet from the LLM's output: first 2 non-empty,
+    # non-JSON lines that look like analysis (not decisions.jsonl output).
+    analysis_lines: list[str] = []
+    if llm_text:
+        for line in llm_text.split("\n"):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("{") or stripped.startswith("["):
+                continue
+            # Skip lines that look like raw JSON fragments or tool output
+            if len(stripped) < 10:
+                continue
+            analysis_lines.append(stripped)
+            if len(analysis_lines) >= 3:
+                break
+
+    # Build decision list
+    decision_parts: list[str] = []
     for d in decisions[:4]:
         sym = getattr(d, "symbol", None) or d.get("symbol", "?") if isinstance(d, dict) else d.symbol
         act = getattr(d, "action", None) or d.get("action", "?") if isinstance(d, dict) else d.action
         conf = getattr(d, "confidence", None) or d.get("confidence") if isinstance(d, dict) else d.confidence
         conf_s = f"({conf:.1f})" if isinstance(conf, (int, float)) else ""
-        parts.append(f"{act} {sym}{conf_s}")
+        decision_parts.append(f"{act} {sym}{conf_s}")
     tail = f", +{len(decisions) - 4} more" if len(decisions) > 4 else ""
-    return f"{label}: {', '.join(parts)}{tail}"
+
+    lines: list[str] = []
+
+    if decisions:
+        lines.append(f"{label}: {', '.join(decision_parts)}{tail}")
+        if analysis_lines:
+            lines.append("")
+            lines.extend(analysis_lines[:2])
+    elif event_reasons:
+        lines.append(f"{label}: {event_reasons[0]}")
+        if len(event_reasons) > 1:
+            lines.append(f"  +{len(event_reasons) - 1} more events")
+        if analysis_lines:
+            lines.append("")
+            lines.extend(analysis_lines[:2])
+    elif analysis_lines:
+        lines.append(f"{label}: {analysis_lines[0]}")
+        if len(analysis_lines) > 1:
+            lines.extend(analysis_lines[1:2])
+    else:
+        lines.append(f"{label}: no decisions")
+
+    return "\n".join(lines)
 
 
 def record_turn(

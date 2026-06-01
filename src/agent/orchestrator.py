@@ -102,7 +102,8 @@ class AgentTradingLoop:
         return self.journal.list_positions()
 
     def _run(
-        self, prompt: str, turn_type: str, model: str | None = None, timeout: float | None = None
+        self, prompt: str, turn_type: str, model: str | None = None,
+        timeout: float | None = None, event_reasons: list[str] | None = None,
     ) -> AgentTurnResult:
         from src.agent.turn_log import build_turn_summary, generate_turn_id, record_turn
 
@@ -141,7 +142,12 @@ class AgentTradingLoop:
                 turn_id,
                 len(self.last_new_decisions), len(self.last_kept), len(self.last_rejected),
             )
-            summary = build_turn_summary(turn_type, self.last_new_decisions)
+            llm_text = getattr(result, "result", "") if result is not None else ""
+            summary = build_turn_summary(
+                turn_type, self.last_new_decisions,
+                llm_text=llm_text,
+                event_reasons=event_reasons,
+            )
             raw = result.raw if result is not None else None
             record_turn(
                 turns_path,
@@ -382,7 +388,10 @@ class AgentTradingLoop:
         long this holds the turn_lock — critic#2). Advisor-only, same journal/
         executor gate as every other turn."""
         reasons = [getattr(e, "reason", str(e)) for e in (events or [])]
-        return self._run(prompts.wake_prompt(brief, reasons), "wake", timeout=timeout)
+        return self._run(
+            prompts.wake_prompt(brief, reasons), "wake",
+            timeout=timeout, event_reasons=reasons,
+        )
 
     def run_eod_review(self, outcomes: list[str] | None = None) -> AgentTurnResult:
         # `outcomes` are richer (levels vs price, P&L) when the caller assembles
