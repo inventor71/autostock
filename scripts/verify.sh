@@ -161,25 +161,48 @@ run_attach() {
   : "${STEERING_DIR:=/app/steering}"; export STEERING_DIR
   mkdir -p "$STEERING_DIR" /app/logs
 
-  # Worktree submodule .git files use relative paths (gitdir: ../../../../../.git/worktrees/...)
-  # that escape the /app bind mount. Replace with a standalone git init so bun/app git calls work.
-  if [ -f "${CONSOLE_DIR}/.git" ] && ! git -C "${CONSOLE_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
-    log "fixing submodule .git for container (worktree gitdir escapes /app mount)"
-    rm "${CONSOLE_DIR}/.git"
+  # F22: copy .env.test → .env so both the Python daemon (pydantic-settings default)
+  # and the TS MCP server (alpaca-data.ts dotenv fallback) find the test keys without
+  # needing ALPACA_* OS-env vars (those would override the dotenv file and break auth).
+  # A worktree-setup.sh symlink .env → main .env is dangling in the container; remove first.
+  rm -f /app/.env
+  cp /app/.env.test /app/.env
+  log "copied .env.test → .env (daemon + MCP server both read .env)"
+
+  # The worktree submodule .git can be a pointer (gitdir:) that escapes the /app bind
+  # mount, breaking in-container git. Swap in a throwaway standalone repo for the
+  # container — but NON-DESTRUCTIVELY: the bind mount is the HOST worktree, so a plain
+  # `rm .git` here clobbers the host submodule's git metadata (F22 + F25 both got bitten:
+  # branch reset to an empty `master`, history lost). Move the host .git aside and restore
+  # it in the EXIT trap. (A self-contained standalone .git dir passes rev-parse and is left
+  # untouched.)
+  CONSOLE_GIT="${CONSOLE_DIR}/.git"
+  CONSOLE_GIT_RESTORE=0
+  if [ -e "$CONSOLE_GIT" ] && ! git -C "${CONSOLE_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
+    log "fixing submodule .git for container (non-destructive — host .git restored on exit)"
+    mv "$CONSOLE_GIT" "${CONSOLE_GIT}.hostbak"
     ( cd "${CONSOLE_DIR}" && git init -q && git add -A && git commit -q -m "container snapshot" --allow-empty ) 2>/dev/null || true
+    CONSOLE_GIT_RESTORE=1
   fi
 
   log "installing console deps (bun) — first run only, cached in the node_modules volume"
   ( cd "$CONSOLE_DIR" && bun install --frozen-lockfile )
+  # F22: mcp-server.ts lives at operator-console/src/ and its deps (@modelcontextprotocol/sdk,
+  # zod) are declared in operator-console/package.json. The cli/ install only populates
+  # cli/node_modules — a separate install at the operator-console level is needed so bun can
+  # resolve the MCP SDK import (else the MCP server exits and the console shows -32000).
+  ( cd /app/operator-console && bun install --frozen-lockfile )
 
-  log "starting daemon: main.py --mode agent --steering  (TEST paper account; logs → /app/logs/daemon.attach.log)"
-  ( cd /app && PYTHONPATH=/app exec python -u main.py --mode agent --steering ) \
+  log "starting daemon: main.py --mode agent --steering  (TEST paper account; .env=.env.test copy)"
+  ( cd /app && unset AUTOSTOCK_ENV_FILE && PYTHONPATH=/app exec python -u main.py --mode agent --steering ) \
       > /app/logs/daemon.attach.log 2>&1 &
   DAEMON_PID=$!
-  # Stop the daemon (and clear root-owned JS build scratch via cleanup) whenever this exits —
-  # normal console quit, Ctrl-C, or error. Overrides the bare `trap cleanup EXIT` set above.
+  # Stop the daemon, restore the host submodule .git, and clear root-owned scratch on ANY
+  # exit (normal quit, Ctrl-C, error). Overrides the bare `trap cleanup EXIT` set above.
   trap 'log "stopping daemon (pid $DAEMON_PID)"; kill "$DAEMON_PID" 2>/dev/null || true; \
-        wait "$DAEMON_PID" 2>/dev/null || true; cleanup' EXIT INT TERM
+        wait "$DAEMON_PID" 2>/dev/null || true; \
+        [ "${CONSOLE_GIT_RESTORE:-0}" = 1 ] && { rm -rf "$CONSOLE_GIT"; mv "${CONSOLE_GIT}.hostbak" "$CONSOLE_GIT"; }; \
+        cleanup' EXIT INT TERM
 
   log "waiting for the first snapshot ($STEERING_DIR/snapshot.json) — up to 180s (a startup LLM turn can be slow)…"
   for i in $(seq 1 180); do
