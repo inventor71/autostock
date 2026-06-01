@@ -8,6 +8,7 @@ real yfinance-backed providers and prints the returned dict/list as JSON.
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, Callable
 
 import pandas as pd
@@ -136,6 +137,8 @@ _FUNDAMENTAL_KEYS = (
     "priceToBook", "profitMargins", "revenueGrowth", "earningsGrowth",
     "dividendYield", "beta", "fiftyTwoWeekHigh", "fiftyTwoWeekLow",
     "targetMeanPrice", "recommendationKey",
+    "shortRatio", "shortPercentOfFloat",
+    "heldPercentInsiders", "heldPercentInstitutions",
 )
 
 
@@ -230,4 +233,216 @@ def account(broker) -> dict:
     }
     if orders_error is not None:
         out["open_orders_error"] = orders_error
+    return out
+
+
+# -- F23: new signal tools ------------------------------------------------- #
+
+
+def earnings(symbol: str, ticker_factory: Callable[[str], Any] | None = None) -> dict:
+    """Earnings calendar: next date, consensus estimates, surprise history."""
+    if ticker_factory is None:
+        import yfinance as yf
+        ticker_factory = yf.Ticker
+    sym = symbol.upper()
+    try:
+        ticker = ticker_factory(symbol)
+    except Exception as exc:
+        return {"symbol": sym, "error": str(exc)}
+
+    out: dict[str, Any] = {"symbol": sym}
+
+    try:
+        cal = ticker.calendar
+        if isinstance(cal, dict) and cal:
+            earn_date = cal.get("Earnings Date")
+            if earn_date is not None:
+                if isinstance(earn_date, (list, tuple)):
+                    earn_date = earn_date[0] if earn_date else None
+                if earn_date is not None:
+                    if isinstance(earn_date, datetime):
+                        earn_date_d = earn_date.date()
+                    elif isinstance(earn_date, date):
+                        earn_date_d = earn_date
+                    else:
+                        earn_date_d = None
+                    if earn_date_d:
+                        out["next_earnings_date"] = earn_date_d.isoformat()
+                        out["days_until_earnings"] = (earn_date_d - date.today()).days
+            out["consensus_eps"] = _round(cal.get("Earnings Average"))
+            out["consensus_revenue"] = _round(cal.get("Revenue Average"))
+    except Exception:
+        pass
+
+    try:
+        ed = ticker.earnings_dates
+        if ed is not None and not ed.empty:
+            history = []
+            for idx, row in ed.head(8).iterrows():
+                reported = row.get("Reported EPS")
+                estimated = row.get("EPS Estimate")
+                surprise = None
+                if reported is not None and estimated is not None and estimated != 0:
+                    try:
+                        surprise = _round((float(reported) - float(estimated)) / abs(float(estimated)) * 100, 1)
+                    except (ValueError, ZeroDivisionError):
+                        pass
+                history.append({
+                    "date": str(idx.date()) if hasattr(idx, "date") else str(idx),
+                    "reported_eps": _round(reported),
+                    "estimated_eps": _round(estimated),
+                    "surprise_pct": surprise,
+                })
+            out["surprise_history"] = history
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    if len(out) == 1:
+        out["error"] = "no earnings data"
+    return out
+
+
+def insider(symbol: str, ticker_factory: Callable[[str], Any] | None = None) -> dict:
+    """Insider transactions from SEC Form 4 filings."""
+    if ticker_factory is None:
+        import yfinance as yf
+        ticker_factory = yf.Ticker
+    sym = symbol.upper()
+    try:
+        ticker = ticker_factory(symbol)
+        df = ticker.insider_transactions
+    except Exception as exc:
+        return {"symbol": sym, "error": str(exc)}
+
+    if df is None or df.empty:
+        return {"symbol": sym, "transactions": [], "summary": {}}
+
+    txns = []
+    for _, row in df.head(20).iterrows():
+        shares = row.get("Shares")
+        value = row.get("Value")
+        txns.append({
+            "insider": row.get("Insider") or row.get("insider"),
+            "position": row.get("Position") or row.get("position"),
+            "date": str(row.get("Start Date") or row.get("startDate") or ""),
+            "type": row.get("Text") or row.get("text") or "",
+            "shares": int(shares) if pd.notna(shares) else None,
+            "value": _round(float(value), 0) if pd.notna(value) else None,
+        })
+
+    buys = [t for t in txns if t.get("type") and "Purchase" in str(t["type"])]
+    sells = [t for t in txns if t.get("type") and "Sale" in str(t["type"])]
+    largest_buy = max((t for t in buys if t.get("value")), key=lambda t: t["value"], default=None)
+
+    return {
+        "symbol": sym,
+        "transactions": txns,
+        "summary": {
+            "total_buys": len(buys),
+            "total_sells": len(sells),
+            "largest_buy": largest_buy,
+        },
+    }
+
+
+def analyst_upgrades(symbol: str, ticker_factory: Callable[[str], Any] | None = None) -> dict:
+    """Recent analyst upgrade/downgrade actions."""
+    if ticker_factory is None:
+        import yfinance as yf
+        ticker_factory = yf.Ticker
+    sym = symbol.upper()
+    try:
+        ticker = ticker_factory(symbol)
+        df = ticker.upgrades_downgrades
+    except Exception as exc:
+        return {"symbol": sym, "error": str(exc)}
+
+    if df is None or df.empty:
+        return {"symbol": sym, "recent": [], "count_upgrade": 0, "count_downgrade": 0}
+
+    recent = []
+    for idx, row in df.head(10).iterrows():
+        recent.append({
+            "date": str(idx.date()) if hasattr(idx, "date") else str(idx),
+            "firm": row.get("Firm"),
+            "action": row.get("Action"),
+            "to_grade": row.get("ToGrade"),
+            "from_grade": row.get("FromGrade"),
+        })
+
+    upgrades = sum(1 for r in recent if r.get("action") in ("up", "upgrade", "Upgrade"))
+    downgrades = sum(1 for r in recent if r.get("action") in ("down", "downgrade", "Downgrade"))
+
+    return {
+        "symbol": sym,
+        "recent": recent,
+        "count_upgrade": upgrades,
+        "count_downgrade": downgrades,
+    }
+
+
+def institutional(symbol: str, ticker_factory: Callable[[str], Any] | None = None) -> dict:
+    """Top institutional holders and aggregate ownership."""
+    if ticker_factory is None:
+        import yfinance as yf
+        ticker_factory = yf.Ticker
+    sym = symbol.upper()
+    try:
+        ticker = ticker_factory(symbol)
+        df = ticker.institutional_holders
+    except Exception as exc:
+        return {"symbol": sym, "error": str(exc)}
+
+    if df is None or df.empty:
+        return {"symbol": sym, "top_holders": [], "institutional_pct": None}
+
+    holders = []
+    for _, row in df.head(5).iterrows():
+        pct = row.get("pctHeld") or row.get("% Out")
+        holders.append({
+            "name": row.get("Holder"),
+            "pct": _round(float(pct) * 100, 2) if pd.notna(pct) else None,
+            "shares": int(row["Shares"]) if pd.notna(row.get("Shares")) else None,
+            "date": str(row.get("Date Reported") or ""),
+        })
+
+    total_pct = sum(h["pct"] for h in holders if h["pct"] is not None)
+    return {
+        "symbol": sym,
+        "top_holders": holders,
+        "institutional_pct": _round(total_pct, 2),
+    }
+
+
+def macro(provider=None) -> dict:
+    """Compact macro dashboard: yields, dollar, commodities, VIX."""
+    _MACRO_SYMBOLS = {
+        "treasury_10y": "^TNX",
+        "treasury_5y": "^FVX",
+        "dollar_index": "DX-Y.NYB",
+        "gold": "GC=F",
+        "oil": "CL=F",
+        "vix": "^VIX",
+    }
+    if provider is None:
+        import yfinance as yf
+        provider = yf
+
+    out: dict[str, Any] = {}
+    for label, sym in _MACRO_SYMBOLS.items():
+        try:
+            hist = provider.Ticker(sym).history(period="5d")
+            if hist.empty:
+                out[label] = {"error": "no data"}
+                continue
+            price = float(hist["Close"].iloc[-1])
+            prev = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else None
+            chg = _round((price / prev - 1) * 100, 2) if prev and prev != 0 else None
+            out[label] = {"price": _round(price, 2), "change_1d_pct": chg}
+        except Exception as exc:
+            out[label] = {"error": str(exc)}
+
+    out["as_of"] = date.today().isoformat()
     return out

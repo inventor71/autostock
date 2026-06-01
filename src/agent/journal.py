@@ -23,6 +23,21 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 DecisionAction = Literal["BUY", "SELL", "HOLD", "ADJUST_STOP"]
 
+LESSON_CATEGORIES = (
+    "entry_timing", "exit_timing", "risk_mgmt", "regime",
+    "thesis", "sizing", "other",
+)
+
+
+class LessonRecord(BaseModel):
+    lesson_id: str
+    date: str = Field(default_factory=lambda: date.today().isoformat())
+    category: str = "other"
+    signal_used: str = ""
+    outcome: str = ""
+    takeaway: str = ""
+    times_applied: int = 0
+
 
 class Decision(BaseModel):
     """One machine-executable action line in ``decisions.jsonl``.
@@ -195,3 +210,42 @@ class Journal:
         if existing and not existing.endswith("\n"):
             existing += "\n"
         self.lessons_file.write_text(f"{existing}- [{stamp}] {text}\n", encoding="utf-8")
+
+    # ------------------------------------------------------------------ #
+    # Structured lessons (F23)
+    # ------------------------------------------------------------------ #
+    @property
+    def lessons_jsonl(self) -> Path:
+        return self.root / "lessons.jsonl"
+
+    def read_lessons_jsonl(self) -> list[LessonRecord]:
+        if not self.lessons_jsonl.exists():
+            return []
+        from src.agent.steering.jsonl import read_complete_lines
+
+        out: list[LessonRecord] = []
+        lines, _ = read_complete_lines(self.lessons_jsonl, 0)
+        for line in lines:
+            try:
+                out.append(LessonRecord.model_validate_json(line))
+            except Exception as exc:
+                logger.warning(f"Skipping unparseable lesson line: {exc}")
+        return out
+
+    def next_lesson_id(self) -> str:
+        existing = self.read_lessons_jsonl()
+        if not existing:
+            return "L001"
+        nums = []
+        for r in existing:
+            try:
+                nums.append(int(r.lesson_id.lstrip("L")))
+            except ValueError:
+                continue
+        return f"L{max(nums, default=0) + 1:03d}"
+
+    def append_lesson_record(self, record: LessonRecord) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        with self.lessons_jsonl.open("a", encoding="utf-8") as fh:
+            fh.write(record.model_dump_json() + "\n")
+        self.append_lesson(f"[{record.category}] {record.takeaway}")

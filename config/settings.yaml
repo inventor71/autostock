@@ -207,12 +207,35 @@ llm:
   # claude_code needs no key -- it reuses the logged-in `claude` CLI session.
 
 agent:
-  model: sonnet            # intraday / EOD turns (frequent, lighter)
-  research_model: opus     # daily research turn (deep fundamental + discovery)
-  turn_timeout: 600        # seconds per intraday / EOD turn
-  research_timeout: 1800   # seconds for the deep research turn (opus + web + 100-symbol scan)
-  experiment_start: "2026-05-27"  # ignore broker fills before this (pre-experiment test trades)
-  min_trade_notional: 50.0        # drop penny/test fills below this $ notional
+  model: sonnet
+  research_model: opus
+  turn_timeout: 600
+  research_timeout: 1800
+  research_start_before_open: 60   # start research N min before market open
+  research_end_before_open: 5      # finish N min before open (hard deadline)
+  experiment_start: "2026-05-27"
+  min_trade_notional: 50.0
+
+multi_agent:
+  enabled: false
+  mode: sequential       # sequential (Mode B) | parallel (Mode C)
+  n_agents: 3            # [1,5]; enabled=true enforces >= 2
+
+research:
+  signals:
+    - quote
+    - indicators
+    - fundamentals
+    - news
+    - scoreboard
+    - earnings
+    - insider
+    - macro
+    - analyst_upgrades
+    - institutional
+  reflection:
+    enabled: true
+    max_lessons_injected: 10
 
 # F3 intraday redesign — event-driven wakes + structured brief (only active with
 # --steering). All keys optional; omitted values fall back to the defaults shown.

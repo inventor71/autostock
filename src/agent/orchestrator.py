@@ -11,6 +11,11 @@ job (see ``src/agent/executor.py``).
 
 from __future__ import annotations
 
+import shutil
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 from loguru import logger
@@ -19,6 +24,22 @@ from src.agent import prompts
 from src.agent.journal import Decision, Journal
 from src.agent.session import AgentSession, AgentTurnResult
 from src.core.models import PortfolioState
+
+
+@dataclass
+class SubAgentTask:
+    agent_index: int
+    description: str
+    focus_symbols: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SubAgentReport:
+    agent_index: int
+    task: SubAgentTask
+    result_text: str
+    completed: bool
+    error: str | None = None
 
 
 def filter_in_universe(
@@ -42,18 +63,26 @@ class AgentTradingLoop:
         portfolio_provider: Callable[[], PortfolioState] | None = None,
         research_model: str | None = None,
         research_timeout: float | None = None,
+        multi_agent_enabled: bool = False,
+        multi_agent_mode: str = "sequential",
+        multi_agent_n: int = 3,
+        research_signals: list[str] | None = None,
+        reflection_enabled: bool = True,
+        reflection_max_lessons: int = 10,
     ):
         self.session = session or AgentSession()
         self.journal: Journal = self.session.journal
         self.universe = universe
-        # Deeper model + longer timeout for the daily research turn; None = session default.
         self.research_model = research_model
         self.research_timeout = research_timeout
-        # Optional source of real holdings (a broker); falls back to the journal's
-        # tracked theses when no broker is supplied.
         self.portfolio_provider = portfolio_provider
+        self._multi_agent_enabled = multi_agent_enabled
+        self._multi_agent_mode = multi_agent_mode
+        self._multi_agent_n = multi_agent_n
+        self._research_signals = research_signals
+        self._reflection_enabled = reflection_enabled
+        self._reflection_max_lessons = reflection_max_lessons
 
-        # Populated after each turn for inspection and the executor handoff.
         self.last_new_decisions: list[Decision] = []
         self.last_kept: list[Decision] = []
         self.last_rejected: list[Decision] = []
@@ -133,12 +162,208 @@ class AgentTradingLoop:
     # Turn types
     # ------------------------------------------------------------------ #
     def run_morning_research(self) -> AgentTurnResult:
+        if self._multi_agent_enabled and self._multi_agent_n >= 2:
+            if self._multi_agent_mode == "parallel":
+                return self._run_parallel_research()
+            return self._run_sequential_research()
         return self._run(
             prompts.morning_research_prompt(self.universe, self.held_symbols()),
             "research",
             model=self.research_model,
             timeout=self.research_timeout,
         )
+
+    # -- F23: multi-agent research ----------------------------------------- #
+
+    def _get_lessons(self):
+        if not self._reflection_enabled:
+            return []
+        return self.journal.read_lessons_jsonl()
+
+    def _run_sequential_research(self) -> AgentTurnResult:
+        n = self._multi_agent_n
+        n_rounds = n - 1
+        held = self.held_symbols()
+        lessons = self._get_lessons()
+        timeout = self.research_timeout
+        per_round = timeout / (n_rounds + 1) if timeout else None
+
+        before = len(self.journal.read_decisions())
+
+        try:
+            self.session.run_turn(
+                prompts.multi_research_initial_prompt(
+                    self.universe, held, self._research_signals, lessons, n_rounds,
+                    max_lessons=self._reflection_max_lessons,
+                ),
+                model=self.research_model,
+                timeout=per_round,
+            )
+
+            for i in range(1, n_rounds):
+                self.session.run_turn(
+                    prompts.debate_prompt(i, n_rounds),
+                    model=self.research_model,
+                    timeout=per_round,
+                )
+
+            result = self.session.run_turn(
+                prompts.synthesis_prompt(n_rounds),
+                model=self.research_model,
+                timeout=per_round,
+            )
+        except Exception:
+            self.session.reset_session()
+            raise
+
+        self.last_new_decisions = self.journal.read_decisions()[before:]
+        self.last_kept, self.last_rejected = filter_in_universe(
+            self.last_new_decisions, self.universe
+        )
+        for d in self.last_rejected:
+            logger.warning(f"Out-of-universe: {d.symbol} {d.action}")
+        logger.info(
+            "Multi-agent sequential ({} rounds): {} decisions, {} kept",
+            n_rounds + 1, len(self.last_new_decisions), len(self.last_kept),
+        )
+        if not self.last_new_decisions:
+            logger.warning(
+                "Multi-agent sequential synthesis produced 0 decisions — "
+                "the agent may have failed to write decisions.jsonl"
+            )
+        from src.agent.turn_log import record_turn
+        record_turn(
+            self.journal.root / "turns.jsonl", turn_type="research",
+            model=self.research_model or getattr(self.session, "model", "unknown"),
+            num_decisions=len(self.last_new_decisions), raw=result.raw,
+        )
+        return result
+
+    def _create_isolated_workspace(self) -> Path:
+        tmp = Path(tempfile.mkdtemp(prefix="autostock_sub_"))
+        for name in ("CLAUDE.md", "lessons.md", "regime.md", "watchlist.md"):
+            src = self.journal.root / name
+            if src.exists():
+                shutil.copy2(src, tmp / name)
+        if self.journal.positions_dir.exists():
+            shutil.copytree(self.journal.positions_dir, tmp / "positions")
+        return tmp
+
+    def _plan_sub_tasks(self) -> list[SubAgentTask]:
+        n = self._multi_agent_n - 1
+        held = self.held_symbols()
+        tasks = []
+        if n >= 1:
+            tasks.append(SubAgentTask(
+                0, f"Review all held positions ({', '.join(held) or 'none'}) — "
+                "pull fresh indicators, news, fundamentals for each. Evaluate "
+                "whether to HOLD, SELL, or ADJUST_STOP.",
+                focus_symbols=held,
+            ))
+        if n >= 2:
+            tasks.append(SubAgentTask(
+                1, "Discovery: scan the scoreboard for the full universe, identify "
+                "the top candidates for new BUY entries. Deep-dive promising names "
+                "with indicators, fundamentals, news, and earnings data.",
+            ))
+        for i in range(2, n):
+            tasks.append(SubAgentTask(
+                i, f"Supplementary analysis #{i - 1}: regime assessment (macro tool), "
+                "cross-check held positions' theses against sector rotation, "
+                "and flag any earnings-event risks within 5 days.",
+            ))
+        return tasks
+
+    def _run_sub_agent(self, task: SubAgentTask, workspace: Path,
+                       timeout: float) -> SubAgentReport:
+        try:
+            sub = AgentSession.create_sub_agent(
+                workspace=workspace,
+                model=self.research_model or "sonnet",
+                timeout=timeout,
+                runner=self.session._runner,
+            )
+            result = sub.run_turn(
+                prompts.sub_agent_prompt(
+                    task.description, self.universe, self._research_signals,
+                ),
+                model=self.research_model,
+                timeout=timeout,
+            )
+            return SubAgentReport(task.agent_index, task, result.result, True)
+        except Exception as exc:
+            logger.warning(f"Sub-agent {task.agent_index} failed: {exc}")
+            return SubAgentReport(task.agent_index, task, "", False, str(exc))
+
+    def _run_parallel_research(self) -> AgentTurnResult:
+        tasks = self._plan_sub_tasks()
+        total_timeout = self.research_timeout or 3300.0
+        sub_timeout = total_timeout * 0.7
+
+        before = len(self.journal.read_decisions())
+
+        workspaces: list[Path] = []
+        reports: list[SubAgentReport] = []
+        try:
+            with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+                futures = {}
+                for task in tasks:
+                    ws = self._create_isolated_workspace()
+                    workspaces.append(ws)
+                    futures[pool.submit(self._run_sub_agent, task, ws, sub_timeout)] = task
+                for f in as_completed(futures, timeout=sub_timeout + 30):
+                    try:
+                        reports.append(f.result())
+                    except Exception as exc:
+                        t = futures[f]
+                        reports.append(SubAgentReport(t.agent_index, t, "", False, str(exc)))
+        except TimeoutError:
+            logger.warning("Sub-agent timeout; synthesizing with partial results")
+        finally:
+            for ws in workspaces:
+                shutil.rmtree(ws, ignore_errors=True)
+
+        report_texts = [r.result_text for r in reports if r.completed and r.result_text]
+        if not report_texts:
+            logger.warning("No sub-agent reports; falling back to single-session research")
+            return self._run(
+                prompts.morning_research_prompt(self.universe, self.held_symbols()),
+                "research", model=self.research_model, timeout=max(total_timeout * 0.3, 60.0),
+            )
+
+        lessons = self._get_lessons()
+        lesson_ctx = prompts._build_lesson_context(
+            lessons, max_n=self._reflection_max_lessons,
+        ) if lessons else ""
+        result = self.session.run_turn(
+            prompts.parallel_synthesis_prompt(report_texts)
+            + (f"\n{lesson_ctx}" if lesson_ctx else ""),
+            model=self.research_model,
+            timeout=max(total_timeout * 0.3, 60.0),
+        )
+
+        self.last_new_decisions = self.journal.read_decisions()[before:]
+        self.last_kept, self.last_rejected = filter_in_universe(
+            self.last_new_decisions, self.universe
+        )
+        for d in self.last_rejected:
+            logger.warning(f"Out-of-universe: {d.symbol} {d.action}")
+        logger.info(
+            "Multi-agent parallel ({} sub-agents, {} reports): {} decisions, {} kept",
+            len(tasks), len(report_texts), len(self.last_new_decisions), len(self.last_kept),
+        )
+        if not self.last_new_decisions:
+            logger.warning(
+                "Multi-agent parallel synthesis produced 0 decisions — "
+                "the synthesis agent may have failed to write decisions.jsonl"
+            )
+        from src.agent.turn_log import record_turn
+        record_turn(
+            self.journal.root / "turns.jsonl", turn_type="research",
+            model=self.research_model or getattr(self.session, "model", "unknown"),
+            num_decisions=len(self.last_new_decisions), raw=result.raw,
+        )
+        return result
 
     def run_intraday(self, brief: str | None = None) -> AgentTurnResult:
         """Scheduled intraday turn. F3: when ``brief`` is supplied (assembled by

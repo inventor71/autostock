@@ -9,6 +9,10 @@ these prompts only carry the turn-specific task and live context.
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.agent.journal import LessonRecord
 
 _ADVISOR_REMINDER = (
     "You are advisory only: never place, modify, or cancel orders. Record "
@@ -125,6 +129,176 @@ def wake_prompt(brief: str | None, reasons: list[str] | None = None) -> str:
     )
     lines.append(_ADVISOR_REMINDER)
     return "\n".join(lines)
+
+
+# -- F23: multi-agent research prompts ------------------------------------ #
+
+_SIGNAL_TOOL_GUIDE = {
+    "quote": "`python -m src.agent.tools quote <SYM>` — latest price, OHLCV, % changes",
+    "indicators": "`python -m src.agent.tools indicators <SYM>` — RSI, MACD, Bollinger, SMA, ATR",
+    "fundamentals": "`python -m src.agent.tools fundamentals <SYM>` — P/E, margins, growth, short interest, analyst target",
+    "news": "`python -m src.agent.tools news <SYM>` — recent headlines with sentiment",
+    "scoreboard": "`python -m src.agent.tools scoreboard` — compact universe scan",
+    "earnings": "`python -m src.agent.tools earnings <SYM>` — next earnings date, consensus EPS, surprise history",
+    "insider": "`python -m src.agent.tools insider <SYM>` — insider buy/sell from SEC Form 4",
+    "macro": "`python -m src.agent.tools macro` — Treasury yields, Dollar, Gold, Oil, VIX",
+    "analyst_upgrades": "`python -m src.agent.tools analyst_upgrades <SYM>` — recent upgrade/downgrade actions",
+    "institutional": "`python -m src.agent.tools institutional <SYM>` — top institutional holders",
+    "account": "`python -m src.agent.tools account` — live equity, positions, resting orders",
+}
+
+_VERDICT_SCHEMA = """## Verdict
+For each symbol you have a view on, write one block:
+- symbol: <TICKER>
+- action: BUY | SELL | HOLD | ADJUST_STOP
+- confidence: 0.0-1.0
+- stop: <price or null>
+- target: <price or null>
+- reason: <one-line rationale>"""
+
+
+def _build_signal_guide(signals: list[str] | None = None) -> str:
+    if not signals:
+        signals = list(_SIGNAL_TOOL_GUIDE.keys())
+    lines = ["Available analysis tools:"]
+    seen = set()
+    for sig in signals:
+        if sig in _SIGNAL_TOOL_GUIDE and sig not in seen:
+            lines.append(f"  - {_SIGNAL_TOOL_GUIDE[sig]}")
+            seen.add(sig)
+    if "account" not in seen:
+        lines.append(f"  - {_SIGNAL_TOOL_GUIDE['account']}")
+    return "\n".join(lines)
+
+
+def _build_lesson_context(lessons: "list[LessonRecord]", max_n: int = 10) -> str:
+    if not lessons:
+        return ""
+    recent = lessons[-max_n:]
+    lines = ["\n## Recent lessons from past trades (apply these):"]
+    for r in recent:
+        lines.append(f"- [{r.date}] [{r.category}] {r.takeaway}")
+    return "\n".join(lines)
+
+
+def multi_research_initial_prompt(
+    universe: list[str],
+    held: list[str] | None = None,
+    signals: list[str] | None = None,
+    lessons: "list[LessonRecord] | None" = None,
+    n_rounds: int = 2,
+    max_lessons: int = 10,
+    today: date | None = None,
+) -> str:
+    today = today or date.today()
+    held_str = ", ".join(held) if held else "none"
+    universe_str = ", ".join(universe)
+    lesson_ctx = _build_lesson_context(lessons or [], max_n=max_lessons)
+    signal_guide = _build_signal_guide(signals)
+    return f"""Morning research turn — {today.isoformat()} (multi-agent, round 1 of {n_rounds + 1}).
+
+Start by reading CLAUDE.md, lessons.md, regime.md, watchlist.md, and the thesis
+file for every held/tracked name.
+
+Positions to manage: {held_str}.
+Tradeable universe: {universe_str}
+
+{signal_guide}
+{lesson_ctx}
+
+Ground every call in fresh data pulled THIS turn. Do the following:
+1. Account truth: run `python -m src.agent.tools account`
+2. Regime: refresh regime.md using tools and web research.
+3. Held positions: for EACH held name, pull indicators + news, update thesis.
+4. Discovery: scan scoreboard, dig into promising candidates.
+5. Update watchlist.md.
+
+This is round 1 of a {n_rounds + 1}-round cross-validation process.
+Do NOT write to decisions.jsonl yet — record your analysis and preliminary
+views in your session context. The last round will produce the verdicts.
+
+{_ADVISOR_REMINDER}"""
+
+
+def debate_prompt(round_num: int, total_rounds: int) -> str:
+    return f"""Cross-validation round {round_num + 1} of {total_rounds + 1}.
+
+Critically evaluate your previous analysis:
+- Are there risks or opportunities you missed?
+- Is your data interpretation biased (confirmation bias, recency bias)?
+- Does your regime assessment match current conditions?
+- Would a contrarian view be more defensible for any position?
+
+Challenge your own conclusions. Pull additional data with tools if needed.
+Do NOT write to decisions.jsonl — this is an evaluation round.
+
+{_ADVISOR_REMINDER}"""
+
+
+def synthesis_prompt(total_rounds: int) -> str:
+    return f"""Final synthesis round (round {total_rounds + 1} of {total_rounds + 1}).
+
+You have completed {total_rounds} rounds of analysis and cross-validation.
+Now produce your final verdicts:
+
+1. For each symbol, weigh all bull and bear arguments from previous rounds.
+2. Record final decisions in decisions.jsonl (BUY/SELL/HOLD/ADJUST_STOP with
+   stop, target, confidence, and reason).
+3. Write a structured verdict summary:
+
+{_VERDICT_SCHEMA}
+
+Only record decisions you have genuine conviction about after the full
+cross-validation. Quality over quantity.
+
+{_ADVISOR_REMINDER}"""
+
+
+def sub_agent_prompt(
+    task_description: str,
+    universe: list[str],
+    signals: list[str] | None = None,
+    today: date | None = None,
+) -> str:
+    today = today or date.today()
+    universe_str = ", ".join(universe)
+    signal_guide = _build_signal_guide(signals)
+    return f"""You are an independent analyst for a PM trading agent — {today.isoformat()}.
+
+Your assigned task: {task_description}
+
+Tradeable universe: {universe_str}
+
+{signal_guide}
+
+Produce a thorough analysis. At the end, include a structured verdict:
+
+{_VERDICT_SCHEMA}
+
+Do NOT write to decisions.jsonl — the Manager will make the final decisions.
+Your output (this response) is your full report.
+
+{_ADVISOR_REMINDER}"""
+
+
+def parallel_synthesis_prompt(reports: list[str]) -> str:
+    sections = []
+    for i, report in enumerate(reports):
+        sections.append(f"--- Analyst {i + 1} Report ---\n{report}\n")
+    reports_text = "\n".join(sections)
+    return f"""You have received reports from {len(reports)} independent analysts:
+
+{reports_text}
+
+Cross-validate their findings:
+1. Where analysts agree, confidence is higher.
+2. Where they disagree, pull additional data to resolve.
+3. Produce final decisions in decisions.jsonl.
+4. Write a structured verdict summary:
+
+{_VERDICT_SCHEMA}
+
+{_ADVISOR_REMINDER}"""
 
 
 def eod_review_prompt(

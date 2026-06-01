@@ -39,10 +39,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m src.agent.tools")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    for name in ("quote", "indicators", "fundamentals", "news"):
+    for name in ("quote", "indicators", "fundamentals", "news",
+                  "earnings", "insider", "analyst_upgrades", "institutional"):
         p = sub.add_parser(name)
         p.add_argument("symbol")
     sub.choices["news"].add_argument("--limit", type=int, default=8)
+
+    sub.add_parser("macro")
+
+    lp = sub.add_parser("lesson")
+    lsub = lp.add_subparsers(dest="lesson_cmd", required=True)
+    la = lsub.add_parser("add")
+    la.add_argument("--category", default="other")
+    la.add_argument("--signal", default="")
+    la.add_argument("--outcome", default="")
+    la.add_argument("--takeaway", required=True)
 
     sc = sub.add_parser("scoreboard")
     sc.add_argument(
@@ -80,6 +91,31 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "scoreboard":
         symbols = args.symbols or _universe()
         out = market.scoreboard(symbols, _provider())
+    elif args.cmd == "earnings":
+        out = market.earnings(args.symbol)
+    elif args.cmd == "insider":
+        out = market.insider(args.symbol)
+    elif args.cmd == "analyst_upgrades":
+        out = market.analyst_upgrades(args.symbol)
+    elif args.cmd == "institutional":
+        out = market.institutional(args.symbol)
+    elif args.cmd == "macro":
+        out = market.macro()
+    elif args.cmd == "lesson":
+        import os
+        from src.agent.journal import Journal, LessonRecord
+
+        root = os.environ.get("AGENT_JOURNAL_ROOT") or Journal().root
+        journal = Journal(root)
+        record = LessonRecord(
+            lesson_id=journal.next_lesson_id(),
+            category=args.category,
+            signal_used=args.signal,
+            outcome=args.outcome,
+            takeaway=args.takeaway,
+        )
+        journal.append_lesson_record(record)
+        out = {"added": record.model_dump()}
     elif args.cmd == "account":
         out = market.account(_broker())
     elif args.cmd == "watch":

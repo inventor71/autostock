@@ -5,8 +5,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from typing import Literal
+
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 
@@ -81,14 +83,20 @@ class LLMConfig(BaseModel):
 class AgentConfig(BaseModel):
     """Agentic PM trader (`--mode agent`) settings."""
 
-    model: str = "sonnet"  # base model for intraday / EOD turns
-    research_model: str = "opus"  # deeper model for the daily research turn
-    turn_timeout: float = 600.0  # seconds per intraday / EOD turn
-    research_timeout: float = 1800.0  # seconds for the deep research turn (opus + web + scan)
-    # Trade-ledger hygiene: ignore broker fills before the experiment began and
-    # tiny test fills, so the track record reflects only the agent's trades.
-    experiment_start: str | None = None  # ISO date; fills before it are dropped
-    min_trade_notional: float = 0.0  # drop fills below this $ notional (penny/test)
+    model: str = "sonnet"
+    research_model: str = "opus"
+    turn_timeout: float = 600.0
+    research_timeout: float = 1800.0
+    research_start_before_open: int = 60
+    research_end_before_open: int = 5
+    experiment_start: str | None = None
+    min_trade_notional: float = 0.0
+
+
+class MultiAgentConfig(BaseModel):
+    enabled: bool = False
+    mode: Literal["sequential", "parallel"] = "sequential"
+    n_agents: int = Field(default=3, ge=1, le=5)
 
 
 class Settings(BaseSettings):
@@ -101,9 +109,9 @@ class Settings(BaseSettings):
     monitoring: MonitoringConfig = MonitoringConfig()
     llm: LLMConfig = LLMConfig()
     agent: AgentConfig = AgentConfig()
-    # F3 intraday redesign tunables (abnormal_move / wake / news / bars / price).
-    # Raw mapping -> IntradayConfig.from_mapping at the composition root.
+    multi_agent: MultiAgentConfig = MultiAgentConfig()
     intraday: dict = {}
+    research: dict = {}
 
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""

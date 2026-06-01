@@ -274,17 +274,36 @@ class AgentTradingMode:
         except Exception as e:
             logger.error("Launch turn failed ({}); scheduler continues, next cron will retry", e)
 
+    def _resolve_research_schedule(self) -> tuple[int, int]:
+        """Compute research start hour:minute from start_before_open config."""
+        from config.config import get_settings
+        cfg = get_settings().agent
+        market_open_min = 9 * 60 + 30
+        start_min = market_open_min - cfg.research_start_before_open
+        return start_min // 60, start_min % 60
+
+    def _resolve_research_timeout(self) -> float:
+        from config.config import get_settings
+        cfg = get_settings().agent
+        auto = (cfg.research_start_before_open - cfg.research_end_before_open) * 60.0
+        if abs(cfg.research_timeout - 1800.0) > 0.001:
+            logger.warning("research_timeout={:.0f}s overrides auto={:.0f}s", cfg.research_timeout, auto)
+            return cfg.research_timeout
+        return auto
+
     def start(self, fresh: bool = False) -> None:
+        rh, rm = self._resolve_research_schedule()
+        resolved_timeout = self._resolve_research_timeout()
+        self.orchestrator.research_timeout = resolved_timeout
         logger.info(
-            f"Starting agent trading mode (research {self.research_hour:02d}:"
-            f"{self.research_minute:02d} ET, intraday every {self.intraday_minutes} min)"
+            f"Starting agent trading mode (research {rh:02d}:{rm:02d} ET, "
+            f"timeout {resolved_timeout:.0f}s, intraday every {self.intraday_minutes} min)"
         )
         if self.steering is not None:
-            self.steering.start()  # bus + hook settings + token (before any turn spawns the agent)
+            self.steering.start()
 
         self.scheduler.add_daily_job(
-            self._premarket_research, hour=self.research_hour,
-            minute=self.research_minute, job_id="agent_research",
+            self._premarket_research, hour=rh, minute=rm, job_id="agent_research",
         )
         self.scheduler.add_market_open_job(self._open_execute, job_id="agent_open")
         self.scheduler.add_batch_job(
