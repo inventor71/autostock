@@ -77,6 +77,11 @@ services:
       - attach-steering:/app/steering
       - attach-workspace:/app/workspace
       - attach-logs:/app/logs
+      # F25: give the container the HOST timezone so the timeline TUI (which runs
+      # IN the container and uses `new Date()` = container-local tz) shows the
+      # operator's local time, not UTC. Without this the now-cursor + tick labels
+      # are off by the UTC offset (e.g. 20:12 KST rendered as 11:12).
+      - /etc/localtime:/etc/localtime:ro
     environment:
       # Same fail-closed isolation as `verify` (preflight asserts these): TEST account only.
       AUTOSTOCK_ENV_FILE: /app/.env.test
