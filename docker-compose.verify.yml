@@ -129,6 +129,16 @@ services:
       # rendered as 11:12). Defaults to Asia/Seoul; override with host TZ if elsewhere.
       TZ: ${TZ:-Asia/Seoul}
       PYTHONDONTWRITEBYTECODE: "1"
+      # F26: match the launcher's actual runtime env — lockdown must be on in ALL profiles
+      # so the operator console never exposes write/exec builtins to the agent. Without this,
+      # attach had all tools (edit/write/bash/task) available — a worse permission surface than
+      # the real launcher. Supervisor env-var (AUTOSTOCK_SUPERVISOR=on) can be injected by the
+      # host or by verify.sh for testing supervisor mode in the container.
+      AUTOSTOCK_LOCKDOWN: "on"
+      # F26: pass through from the host to test supervisor mode.
+      #   AUTOSTOCK_SUPERVISOR=on scripts/verify-run.sh run --rm -it attach
+      # Normal (empty) → source reads blocked; on → full /app read except secrets.
+      AUTOSTOCK_SUPERVISOR: ${AUTOSTOCK_SUPERVISOR:-}
       # F18: the opencode console MCP config (operator-console/cli/.opencode/opencode.jsonc)
       # substitutes {env:AUTOSTOCK_ROOT} (the mcp-server.ts command path) and
       # {env:STEERING_OPERATOR_TOKEN} (the shared daemon<->console secret, runtime.py honours

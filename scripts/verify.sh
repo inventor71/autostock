@@ -192,6 +192,23 @@ run_attach() {
   fi
 
   log "launching the operator console TUI — the live sidebar is below. Quit (or Ctrl-C) stops the daemon too."
+
+  # F26: if AUTOSTOCK_SUPERVISOR=on is set (from the compose env or host override), build and
+  # inject the supervisor permission profile. Container paths are fixed: AUTOSTOCK_ROOT=/app,
+  # STEERING_DIR=/app/steering, consoleCwd=/app/operator-console/cli (worktree-relative for
+  # read patterns). Normal mode: MCP+web+$STEERING_DIR only. Supervisor: whole /app except secrets.
+  if [ "${AUTOSTOCK_SUPERVISOR:-}" = "on" ]; then
+    log "SUPERVISOR mode — injecting full /app read permission (secrets/logs/.git excluded)"
+    # read patterns are worktree-relative (consoleCwd=/app/operator-console/cli → steering=../../steering)
+    OPENCODE_PERMISSION='{"read":{"*":"allow",".env*":"deny","**/.env*":"deny","*.key":"deny","*.pem":"deny","secrets/**":"deny","**/secrets/**":"deny","logs/**":"deny","**/logs/**":"deny",".git/**":"deny","**/.git/**":"deny"},"glob":"allow","grep":"allow","lsp":"allow","external_directory":{"*":"deny","/app/**":"allow","/app/secrets/**":"deny","/app/logs/**":"deny","/app/.git/**":"deny"}}'
+    export OPENCODE_PERMISSION
+  else
+    # Normal mode (default): MCP+web tools + only $STEERING_DIR readable. glob/grep/lsp off.
+    log "NORMAL mode — steering files only; source reads blocked"
+    OPENCODE_PERMISSION='{"read":{"*":"deny","../../steering/**":"allow"},"glob":"deny","grep":"deny","lsp":"deny","external_directory":{"*":"deny","/app/steering/**":"allow"}}'
+    export OPENCODE_PERMISSION
+  fi
+
   ( cd "$CONSOLE_DIR/packages/opencode" && exec bun run dev )
 }
 

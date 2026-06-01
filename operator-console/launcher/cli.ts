@@ -52,9 +52,15 @@ export async function main(): Promise<void> {
   //    Forward any user args (e.g. `autostock -s ses_x` to resume a session); bare `autostock`
   //    passes none → opencode opens a FRESH home (no stale session), and the autostock sidebar
   //    renders on the home route (F5 option ②), so it is sidebar-first without resuming a session.
-  const env = consoleEnv(cfg);
+  // F26: `--supervisor` is the ONLY entry to the elevated (whole-codebase read) profile.
+  // It requires shell access here (developer-only, FR-4②); the daemon/autonomous paths
+  // never pass it. STRIP it from consoleArgs so it never leaks to opencode's CLI.
   const userArgs = process.argv.slice(2);
-  const consoleArgs = userArgs;
+  const isSupervisorArg = (a: string) => a === "--supervisor" || a.startsWith("--supervisor=");
+  const supervisor = userArgs.some(isSupervisorArg);
+  const consoleArgs = userArgs.filter((a) => !isSupervisorArg(a));
+  const env = consoleEnv(cfg, process.env, supervisor);
+  if (supervisor) process.stderr.write("autostock: ⚠ SUPERVISOR 모드 (전체 코드 읽기, read-only)\n");
   let code: number;
   try {
     // @ts-ignore Bun global

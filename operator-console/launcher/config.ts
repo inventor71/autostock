@@ -4,7 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 export const TOKEN_KEY = "STEERING_OPERATOR_TOKEN";
 
@@ -99,14 +99,112 @@ export function resolveConfig(opts: ResolveOpts = {}): LauncherConfig {
   };
 }
 
+/** F26 permission rule value: a single action, or a per-pattern map. Mirrors
+ *  opencode's ConfigPermission.Rule (Action | Record<pattern, Action>). */
+type PermAction = "allow" | "deny" | "ask";
+type PermRule = PermAction | Record<string, PermAction>;
+type PermProfile = Record<string, PermRule>;
+
+/**
+ * F26 — build the per-profile permission object injected via `OPENCODE_PERMISSION`
+ * (opencode merges it into the static `opencode.json` at config load:
+ *  flag.ts → process.env.OPENCODE_PERMISSION → config.ts mergeDeep). This is the
+ * ONLY lever that differentiates normal vs supervisor; opencode's permission engine
+ * is NOT patched.
+ *
+ * Two coordinate systems (verified against the fork):
+ *  - `read`/`glob`/`grep` evaluate the file path **relative to the console worktree**
+ *    (`read.ts` → `path.relative(instance.worktree, filepath)`; worktree = consoleCwd),
+ *    so allow/deny globs here are worktree-relative.
+ *  - `external_directory` evaluates an **absolute** dir glob (`external-directory.ts`),
+ *    so its globs are absolute under autostockRoot/steeringDir.
+ *
+ * Rule ORDER matters: the engine uses `findLast` (last match wins). For supervisor we
+ * put `"*": "allow"` first then secret denies (deny wins for secrets). For normal we put
+ * `"*": "deny"` first then the steering allow last (steering wins). `glob`/`grep`/`lsp`
+ * in normal are `"deny"` (a `{"*":"deny"}` shorthand) so `disabled()` removes the tools
+ * entirely — they can't be path-scoped (their permission key is the search pattern), and
+ * normal mode doesn't need source exploration. Secret globs use a globstar prefix
+ * (`**` then slash) so they match the worktree-relative `../../.env` form (anchored
+ * dotall matcher).
+ */
+export function buildPermissionProfile(cfg: LauncherConfig, supervisor: boolean): PermProfile {
+  const steerRel = relative(cfg.consoleCwd, cfg.steeringDir).replaceAll("\\", "/");
+  const root = cfg.autostockRoot.replaceAll("\\", "/");
+  const steerAbs = cfg.steeringDir.replaceAll("\\", "/");
+
+  if (!supervisor) {
+    // Normal: only the steering status dir is readable; no source/cwd reads; no glob/grep/lsp.
+    return {
+      read: { "*": "deny", [`${steerRel}/**`]: "allow" },
+      glob: "deny",
+      grep: "deny",
+      lsp: "deny",
+      external_directory: { "*": "deny", [`${steerAbs}/**`]: "allow" },
+    };
+  }
+  // Supervisor: whole repo readable EXCEPT secrets (deny last so it wins via findLast).
+  // CRITICAL: `read` is evaluated on the path RELATIVE to the console worktree, and the
+  // matcher is anchored+dotall (wildcard.ts). So a `**/`-prefixed glob ONLY matches paths
+  // that contain a slash — it MISSES worktree-root files like `.env` (relative path ".env")
+  // or `foo.key`. The cli worktree root holds `.env` (STEERING_OPERATOR_TOKEN), so we MUST
+  // include slash-less variants too. `*.key`/`*.pem` need no `**/` variant — `*`→`.*` is
+  // dotall, so `*.key` already matches BOTH "foo.key" and "../../a/foo.key".
+  return {
+    read: {
+      "*": "allow",
+      ".env*": "deny", // root-level (relative path has no slash)
+      "**/.env*": "deny", // nested / parent-repo (../../.env)
+      "*.key": "deny", // dotall — matches root AND nested
+      "*.pem": "deny",
+      "secrets/**": "deny",
+      "**/secrets/**": "deny",
+      "logs/**": "deny",
+      "**/logs/**": "deny",
+      ".git/**": "deny",
+      "**/.git/**": "deny",
+    },
+    glob: "allow",
+    grep: "allow",
+    lsp: "allow",
+    external_directory: {
+      // external_directory matches an ABSOLUTE *parent-dir* glob (not the filename), so only
+      // directory-level denies fire here; file-level secrets (.env/*.key) are caught by the
+      // `read` layer above (authoritative content gate). Keep dir denies as defense-in-depth.
+      "*": "deny",
+      [`${root}/**`]: "allow",
+      [`${root}/secrets/**`]: "deny",
+      [`${root}/logs/**`]: "deny",
+      [`${root}/.git/**`]: "deny",
+    },
+  };
+}
+
 /** The env set the console MUST inherit so opencode's {env:...} MCP wiring resolves
- *  (critic2 #2): AUTOSTOCK_ROOT + STEERING_DIR + STEERING_OPERATOR_TOKEN, all absolute. */
-export function consoleEnv(cfg: LauncherConfig, base: Record<string, string | undefined> = process.env): Record<string, string> {
+ *  (critic2 #2): AUTOSTOCK_ROOT + STEERING_DIR + STEERING_OPERATOR_TOKEN, all absolute.
+ *  F26: also injects the supervisor flag + the per-profile permission set. */
+export function consoleEnv(
+  cfg: LauncherConfig,
+  base: Record<string, string | undefined> = process.env,
+  supervisor: boolean = false,
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(base)) if (v !== undefined) out[k] = v;
   out.AUTOSTOCK_ROOT = cfg.autostockRoot;
   out.STEERING_DIR = cfg.steeringDir;
   if (cfg.token) out[TOKEN_KEY] = cfg.token;
   out.AUTOSTOCK_LOCKDOWN = "on";
+  // F26: enable real web search for ALL providers. opencode gates `websearch` behind
+  // webSearchEnabled() which is true only for the `opencode` provider OR the exa/parallel
+  // flags (registry.ts) — with a direct Anthropic/etc. provider it would be silently
+  // dropped. OPENCODE_ENABLE_EXA opens the gate; the Exa backend (mcp.exa.ai/mcp) works
+  // KEYLESS, and if the operator sets EXA_API_KEY in the env it is passed through above
+  // (copied from base) and Exa uses it for higher limits. webfetch is always available too.
+  if (base.OPENCODE_ENABLE_PARALLEL === undefined && base.OPENCODE_ENABLE_EXA === undefined)
+    out.OPENCODE_ENABLE_EXA = "true";
+  // The console agent has no runtime tool to flip it (FR-4). Normal omits the flag.
+  if (supervisor) out.AUTOSTOCK_SUPERVISOR = "on";
+  else delete out.AUTOSTOCK_SUPERVISOR; // never inherit a stale value from the parent env
+  out.OPENCODE_PERMISSION = JSON.stringify(buildPermissionProfile(cfg, supervisor));
   return out;
 }

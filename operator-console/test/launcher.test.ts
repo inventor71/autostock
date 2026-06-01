@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { consoleEnv, parseDotenv, resolveConfig, TOKEN_KEY } from "../launcher/config";
+import { buildPermissionProfile, consoleEnv, parseDotenv, resolveConfig, TOKEN_KEY } from "../launcher/config";
 import { formatReport, runPreflight } from "../launcher/preflight";
 import { renderUnit } from "../launcher/unit-template";
 import { DaemonService, DaemonStartError, publishedAtMs, type DaemonDeps } from "../launcher/daemon";
@@ -67,6 +67,79 @@ describe("config.consoleEnv (critic2 #2 — full inject set)", () => {
     expect(env.STEERING_DIR).toBe(join(root, "steering"));
     expect(env[TOKEN_KEY]).toBe("t");
     expect(env.AUTOSTOCK_LOCKDOWN).toBe("on");
+  });
+});
+
+describe("F26 supervisor mode — consoleEnv + buildPermissionProfile", () => {
+  test("normal (default): no AUTOSTOCK_SUPERVISOR; OPENCODE_PERMISSION = locked normal profile", () => {
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot("t") } });
+    const env = consoleEnv(cfg, {});
+    expect(env.AUTOSTOCK_SUPERVISOR).toBeUndefined();
+    const perm = JSON.parse(env.OPENCODE_PERMISSION);
+    // source/cwd reads denied; only the steering status dir readable
+    expect(perm.read["*"]).toBe("deny");
+    expect(perm.read["../../steering/**"]).toBe("allow"); // consoleCwd=.../cli, steering=root/steering
+    // glob/grep/lsp off (can't be path-scoped); removed as tools by disabled()
+    expect(perm.glob).toBe("deny");
+    expect(perm.grep).toBe("deny");
+    expect(perm.lsp).toBe("deny");
+  });
+
+  test("supervisor flag: AUTOSTOCK_SUPERVISOR=on; read = all-but-secrets, deny AFTER allow", () => {
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot("t") } });
+    const env = consoleEnv(cfg, {}, true);
+    expect(env.AUTOSTOCK_SUPERVISOR).toBe("on");
+    const perm = JSON.parse(env.OPENCODE_PERMISSION);
+    expect(perm.read["*"]).toBe("allow");
+    expect(perm.read["**/.env*"]).toBe("deny");
+    expect(perm.read["**/secrets/**"]).toBe("deny");
+    expect(perm.glob).toBe("allow");
+    expect(perm.grep).toBe("allow");
+    // ORDER matters (engine uses findLast): "*" allow must precede the secret denies so
+    // deny wins for secrets. JSON.parse preserves insertion order for string keys.
+    const keys = Object.keys(perm.read);
+    expect(keys[0]).toBe("*");
+    expect(keys.indexOf("**/.env*")).toBeGreaterThan(0);
+  });
+
+  test("secret deny globs cover BOTH worktree-root and nested paths", () => {
+    // regression guard for the two critic findings about the anchored, dotall, worktree-relative
+    // matcher: `**/.env*` matches nested/parent (../../.env) but NOT root (".env"); the bare
+    // `.env*` matches root but NOT nested. BOTH are required. `*.key` (dotall) covers both.
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot("t") } });
+    const perm = buildPermissionProfile(cfg, true);
+    const readKeys = Object.keys(perm.read as Record<string, string>);
+    expect(readKeys).toContain(".env*"); // root (e.g. cli/.env = STEERING_OPERATOR_TOKEN)
+    expect(readKeys).toContain("**/.env*"); // nested / parent-repo
+    expect(readKeys).toContain("secrets/**");
+    expect(readKeys).toContain("**/secrets/**");
+    expect(readKeys).toContain("*.key"); // dotall → matches root AND nested
+  });
+
+  test("stale AUTOSTOCK_SUPERVISOR in the parent env is scrubbed when launching normal", () => {
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot("t") } });
+    const env = consoleEnv(cfg, { AUTOSTOCK_SUPERVISOR: "on" }, false);
+    expect(env.AUTOSTOCK_SUPERVISOR).toBeUndefined();
+  });
+
+  test("websearch enabled for all providers via OPENCODE_ENABLE_EXA (keyless Exa)", () => {
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot("t") } });
+    const env = consoleEnv(cfg, {});
+    expect(env.OPENCODE_ENABLE_EXA).toBe("true");
+  });
+
+  test("operator override: existing OPENCODE_ENABLE_PARALLEL is not overridden with exa", () => {
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot("t") } });
+    const env = consoleEnv(cfg, { OPENCODE_ENABLE_PARALLEL: "true" });
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBe("true");
+    expect(env.OPENCODE_ENABLE_EXA).toBeUndefined();
+  });
+
+  test("EXA_API_KEY in the parent env is passed through (higher Exa limits)", () => {
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: fakeRoot("t") } });
+    const env = consoleEnv(cfg, { EXA_API_KEY: "sk-exa-xxx" });
+    expect(env.EXA_API_KEY).toBe("sk-exa-xxx");
+    expect(env.OPENCODE_ENABLE_EXA).toBe("true");
   });
 });
 
