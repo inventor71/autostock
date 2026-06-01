@@ -105,6 +105,17 @@ class TestInterventionsTail:
     def test_missing_file(self, tmp_path):
         assert _interventions_tail(tmp_path / "nope.jsonl") == []
 
+    def test_secrets_masked_in_detail(self, tmp_path):
+        # SECURITY-03: outcome/detail are free-form; secrets must be masked.
+        p = tmp_path / "human_directives.jsonl"
+        self._write(p, [
+            {"ts": "2026-06-01T10:00:00-04:00", "command": "buy",
+             "args": {"symbol": "AAPL"}, "outcome": "executed",
+             "detail": "token=abcdef0123456789abcdef0123 placed"},
+        ])
+        out = _interventions_tail(p)
+        assert "abcdef0123456789abcdef0123" not in out[0]["detail"]
+
     def test_torn_line_skipped(self, tmp_path):
         p = tmp_path / "human_directives.jsonl"
         p.write_text(

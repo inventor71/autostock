@@ -488,8 +488,10 @@ def _interventions_tail(path: Path) -> list[dict]:
             "et_date": compute_et_date(ts),
             "verb": verb,
             "symbol": _intervention_symbol(verb, r.get("args") or {}),
-            "outcome": r.get("outcome", ""),
-            "detail": r.get("detail", ""),
+            # SECURITY-03: outcome/detail are free-form (built from broker echoes
+            # and exception strings) so mask secrets just like the log tail does.
+            "outcome": _mask_secrets(str(r.get("outcome", ""))),
+            "detail": _mask_secrets(str(r.get("detail", ""))),
         })
     return out[-_MONITOR_INTERVENTIONS:]
 
