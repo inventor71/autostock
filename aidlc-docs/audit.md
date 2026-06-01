@@ -1514,3 +1514,8 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 **Merge commit**: ab6e742
 **Summary**: AI-collaborative TUI (timeline bar + turn/symbol overlays), Docker attach MCP fix (alpaca-data.ts .env fallback), runtime.py reason truncation removal, opaque overlay background, colored now-arrow. 489 tests green.
 
+## F23 Merged
+**Timestamp**: 2026-06-01T06:00:00Z
+**Merge commit**: 927627a
+**Summary**: Multi-agent research (Mode B sequential debate + Mode C parallel sub-agents), 5 new signal tools (earnings/insider/analyst_upgrades/institutional/macro), structured lessons.jsonl, configurable via MultiAgentConfig + research.signals. 51 new tests, 482 total, 0 new deps.
+
