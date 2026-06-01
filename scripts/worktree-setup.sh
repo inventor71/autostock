@@ -103,6 +103,13 @@ if [ "$DO_PY" -eq 1 ]; then
   else
     note "no main .env to link (skipping)"
   fi
+  # Also copy .env.test (real file, not symlink) so docker-verify attach works
+  # without needing --docker-verify. Symlinks break inside the container because
+  # the bind mount (.:/app) doesn't follow host symlinks outside the mount.
+  if [ ! -e "${WT}/.env.test" ] && [ -e "${MAIN_ROOT}/.env.test" ]; then
+    cp "${MAIN_ROOT}/.env.test" "${WT}/.env.test"
+    note "copied .env.test → worktree (for docker-verify attach)"
+  fi
   note "run with main venv:  ${MAIN_ROOT}/venv/bin/python  (read-only calls only — see worktree-live-verification)"
 fi
 

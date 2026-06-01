@@ -36,6 +36,7 @@ class Decision(BaseModel):
     ts: datetime = Field(default_factory=datetime.now)
     symbol: str
     action: DecisionAction
+    turn_id: str | None = None
     # F4: who originated this decision. Existing lines without the field parse as
     # "agent" (backward compatible). Human-forced trades from the steering console
     # are tagged "human" so they're distinguishable in journal/logs and drive the
