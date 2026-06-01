@@ -36,6 +36,7 @@
 | F22 | AI 협업 TUI 개선 — AI(research/intraday) 협업 특화 UI/UX | merged | feat/F22 | .claude/worktrees/F22 | feat/F22 | 620eeac→5968d9b→ab6e742 | 2026-06-01 |
 | F23 | Multi-Agent Research 교차검증 + 시그널 확장 | merged | feat/F23 | .claude/worktrees/F23 | — | 620eeac→77d7f9e→927627a | 2026-06-01 |
 | F24 | Decision Quality Metrics — 에이전트 결정 품질 정량 분석 | merged | feat/F24 | — | — | e0a345b→b4fa955 | 2026-06-01 |
+| F25 | 타임라인 바 개선 — market-aware timeline + date nav + human markers | active | feat/F25 (TBD) | .claude/worktrees/F25 (TBD) | feat/F25 (opencode) | TBD | 2026-06-01 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
