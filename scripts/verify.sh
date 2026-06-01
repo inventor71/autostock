@@ -161,16 +161,6 @@ run_attach() {
   : "${STEERING_DIR:=/app/steering}"; export STEERING_DIR
   mkdir -p "$STEERING_DIR" /app/logs
 
-  # F22: copy .env.test → .env so both the Python daemon (pydantic-settings default) and
-  # the TS MCP server (alpaca-data.ts dotenv fallback) find the test keys without needing
-  # ALPACA_* OS-env vars — the OS-env injection would otherwise conflict with pydantic's
-  # OS-env > dotenv precedence and cause "unauthorized" in the daemon.
-  # The worktree-setup.sh may symlink .env → main .env; that symlink is dangling inside the
-  # container (the main tree isn't mounted). Remove it first so cp writes a real file.
-  rm -f /app/.env
-  cp /app/.env.test /app/.env
-  log "copied .env.test → .env (daemon + MCP server both read .env)"
-
   # Worktree submodule .git files use relative paths (gitdir: ../../../../../.git/worktrees/...)
   # that escape the /app bind mount. Replace with a standalone git init so bun/app git calls work.
   if [ -f "${CONSOLE_DIR}/.git" ] && ! git -C "${CONSOLE_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
@@ -181,14 +171,9 @@ run_attach() {
 
   log "installing console deps (bun) — first run only, cached in the node_modules volume"
   ( cd "$CONSOLE_DIR" && bun install --frozen-lockfile )
-  # F22: mcp-server.ts lives at operator-console/src/ and its dependencies
-  # (@modelcontextprotocol/sdk, zod) are declared in operator-console/package.json.
-  # The cli/ install above only populates cli/node_modules — we need a separate
-  # install at the operator-console level so bun can resolve the MCP SDK import.
-  ( cd /app/operator-console && bun install --frozen-lockfile )
 
-  log "starting daemon: main.py --mode agent --steering  (TEST paper account; .env=.env.test copy)"
-  ( cd /app && unset AUTOSTOCK_ENV_FILE && PYTHONPATH=/app exec python -u main.py --mode agent --steering ) \
+  log "starting daemon: main.py --mode agent --steering  (TEST paper account; logs → /app/logs/daemon.attach.log)"
+  ( cd /app && PYTHONPATH=/app exec python -u main.py --mode agent --steering ) \
       > /app/logs/daemon.attach.log 2>&1 &
   DAEMON_PID=$!
   # Stop the daemon (and clear root-owned JS build scratch via cleanup) whenever this exits —

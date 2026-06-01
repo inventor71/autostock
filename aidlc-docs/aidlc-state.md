@@ -33,6 +33,9 @@
 | F19 | F9 follow-up: 6 structured-tool opencode permission keys in fork config | merged | feat/F19 | — | merged→fork main bc82b71 | 2f13a7a→a1851e0 | 2026-05-31 |
 | F20 | Alpaca-shaped read tools (arbitrary-symbol quote/orders) — fix console read limit | merged | feat/F20 | .claude/worktrees/F20 | feat/F20 (opencode perm keys) | 79df84a→093f11e | 2026-05-31 |
 | F21 | Synchronous MCP arg validation (3-layer: zod .refine() → degenerate check → daemon defense-in-depth) | merged | feat/F21 | .claude/worktrees/F21 | — (parent repo: mcp-server.ts + commands.py) | 79df84a→0ed7044→merge | 2026-05-31 |
+| F22 | AI 협업 TUI 개선 — AI(research/intraday) 협업 특화 UI/UX | merged | feat/F22 | .claude/worktrees/F22 | feat/F22 | 620eeac→5968d9b→ab6e742 | 2026-06-01 |
+| F23 | Multi-Agent Research 교차검증 + 시그널 확장 | active | feat/F23 (TBD) | .claude/worktrees/F23 (TBD) | — | TBD | 2026-06-01 |
+| F24 | Decision Quality Metrics — 에이전트 결정 품질 정량 분석 | merged | feat/F24 | — | — | e0a345b→b4fa955 | 2026-06-01 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
