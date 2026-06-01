@@ -186,9 +186,11 @@ run_attach() {
 
   CONSOLE_GIT="${CONSOLE_DIR}/.git"
   CONSOLE_GIT_RESTORE=0
-  if [ -e "$CONSOLE_GIT" ] && ! git -C "${CONSOLE_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
-    # Only reached for a worktree-pointer .git (gitdir: escapes the mount), never
-    # for a standalone .git dir (now trusted). Back up + restore non-destructively.
+  # ONLY act when .git is a FILE (a worktree gitdir: pointer that escapes the /app
+  # mount). A standalone .git DIRECTORY is a real self-contained repo — never touch
+  # it, even if rev-parse hiccups, so we can't clobber it into a `master` snapshot
+  # (the recurring F22/F25 data-loss bug). [-f] not [-e] is the load-bearing guard.
+  if [ -f "$CONSOLE_GIT" ] && ! git -C "${CONSOLE_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
     log "fixing submodule .git for container (non-destructive — host .git restored on exit)"
     mv "$CONSOLE_GIT" "${CONSOLE_GIT}.hostbak"
     ( cd "${CONSOLE_DIR}" && git init -q && git add -A && git commit -q -m "container snapshot" --allow-empty ) 2>/dev/null || true
