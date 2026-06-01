@@ -192,6 +192,36 @@ class AgentTradingMode:
         self._scheduled_turn(lambda: self.orchestrator.run_intraday(brief))
         self._funnel(self._exec_pending_and_exits)
 
+    def _save_quality_report(self) -> None:
+        """EOD: persist decision quality report to workspace/quality/<date>.json.
+        JSON only; no prompt injection (LLM shouldn't see small-sample metrics).
+        Fetches fills from the broker for round-trip matching (MAE/MFE/R:R)."""
+        try:
+            from src.agent.quality.collector import collect_outcomes
+            from src.agent.quality.aggregate import summary
+
+            logger.info("Saving decision quality report")
+            fills = []
+            try:
+                fills = self.executor.broker.get_fills()
+            except Exception:
+                pass
+            outcomes = collect_outcomes(self.executor.journal, fills=fills)
+            if not outcomes:
+                logger.info("No decision outcomes to report")
+                return
+            s = summary(outcomes)
+            import json
+            from datetime import date
+
+            out_dir = self.executor.journal.root / "quality"
+            out_dir.mkdir(exist_ok=True)
+            out_file = out_dir / f"{date.today().isoformat()}.json"
+            out_file.write_text(json.dumps(s, indent=2, default=str), encoding="utf-8")
+            logger.info(f"Quality report saved to {out_file}")
+        except Exception as exc:
+            logger.warning(f"Quality report failed (non-fatal): {exc}")
+
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
         from src.agent.equity_log import fetch_benchmark, record_equity
@@ -202,6 +232,7 @@ class AgentTradingMode:
             outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
             self._scheduled_turn(lambda: self.orchestrator.run_eod_review(outcomes=outcomes))
             self._funnel(self.executor.execute_pending)
+            self._save_quality_report()
 
         # Daily marks for the track record. record_trade_ledger() is a no-op on
         # brokers that don't reconstruct closed round-trips (e.g. simulated);

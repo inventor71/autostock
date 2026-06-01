@@ -127,17 +127,27 @@ def wake_prompt(brief: str | None, reasons: list[str] | None = None) -> str:
     return "\n".join(lines)
 
 
-def eod_review_prompt(outcomes: list[str] | None = None) -> str:
+def eod_review_prompt(
+    outcomes: list[str] | None = None,
+    quality_summary: str | None = None,
+) -> str:
     """End-of-day turn: grade calls against outcomes, distill lessons, write note.
 
     ``outcomes`` are authoritative per-decision snapshots (levels vs current
     price, holding and P&L, a status hint) assembled from the broker/data so the
     grading is grounded in facts rather than the agent's recollection.
+
+    ``quality_summary`` is an optional compact digest of decision quality metrics
+    (direction hit rate, MAE/MFE, stop quality, confidence calibration) injected
+    when enough data exists (>= 5 decisions).
     """
     lines = ["End-of-day review turn (continuing today's session)."]
     if outcomes:
         lines.append("## Your calls and their current state (from the broker/market):")
         lines.extend(f"- {o}" for o in outcomes)
+    if quality_summary is not None:
+        lines.append("## Decision Quality Metrics (statistical, from your track record):")
+        lines.append(quality_summary)
     lines.append(
         "Cross-check with decisions.jsonl and your position theses. For each call, "
         "compare what you intended to what actually happened and append a "
