@@ -34,6 +34,7 @@ class SteeringChannel:
         self.commands_file = self.dir / "commands.jsonl"
         self.events_file = self.dir / "events.jsonl"
         self.snapshot_file = self.dir / "snapshot.json"
+        self.codebase_file = self.dir / "codebase.json"  # F29
         self._processed_file = self.dir / ".processed.json"
         self._token = token
         self._processed: set[str] = set()
@@ -179,3 +180,10 @@ class SteeringChannel:
         """Atomically publish the live read view (no torn JSON for the reader)."""
         payload = {**snapshot, "published_at": datetime.now().isoformat()}
         atomic_write_text(self.snapshot_file, json.dumps(payload))
+
+    # F29: codebase tree for supervisor orientation --------------------------- #
+    def publish_codebase(self, tree_text: str) -> None:
+        """Publish the project directory tree as ``codebase.json`` so the operator
+        agent can discover the repo structure via ``steer_read{command:/codebase}``."""
+        payload = {"tree": tree_text, "published_at": datetime.now().isoformat()}
+        atomic_write_text(self.codebase_file, json.dumps(payload))

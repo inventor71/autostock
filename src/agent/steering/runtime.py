@@ -10,6 +10,7 @@ exactly as before (NFR-8).
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import re
@@ -115,6 +116,9 @@ class SteeringRuntime:
         os.environ[TOKEN_ENV_VAR] = self.token
         write_agent_hook_settings(self.executor.journal.root)  # BR-10.1 confinement
         self.bus.start()
+        # F29: publish the project directory tree so the supervisor agent can
+        # discover the repo structure without guessing file paths.
+        self._publish_codebase_tree()
         logger.info("Steering runtime started (channel={}, hook installed)", self.steering_dir)
 
     def stop(self) -> None:
@@ -355,6 +359,138 @@ class SteeringRuntime:
         """F25: the ET trading date the timeline should default to — the live
         session during extended hours on a weekday, else the next weekday."""
         return _resolve_session_et_date(self._market_rule)
+
+    # F29: project directory tree for supervisor orientation ------------------ #
+    # Scanned once at startup; source structure doesn't change while the daemon
+    # runs. Descriptions are hand-maintained (structural changes are rare, and
+    # human intent matters more than auto-extracted docstrings).
+
+    _TREE_DIRS = ["src", "operator-console", "config", "tests", "docs", "scripts"]
+    _TREE_EXCLUDE = {"__pycache__", ".git", "node_modules", ".mypy_cache",
+                     ".pytest_cache", ".ruff_cache", "venv", ".venv",
+                     "dist", "build", ".DS_Store"}
+    # Glob-style patterns checked via fnmatch (egg-info dirs vary by project name).
+    _TREE_EXCLUDE_GLOBS = ["*.egg-info"]
+
+    @classmethod
+    def _is_excluded(cls, name: str) -> bool:
+        """True when *name* should be excluded from the codebase tree."""
+        if name in cls._TREE_EXCLUDE:
+            return True
+        return any(fnmatch.fnmatch(name, pat) for pat in cls._TREE_EXCLUDE_GLOBS)
+
+    _PKG_DESCRIPTIONS: dict[str, str] = {
+        "src": "Python application code",
+        "src/agent": "Agent mode — LLM PM + journal + decision executor + steering engine",
+        "src/agent/intraday": "F3 — real-time wake detection / brief assembly / abnormal-move",
+        "src/agent/steering": "F4 — operator steering engine (bus/turns/state/channel/commands)",
+        "src/agent/tools": "Agent MCP tools (market data, account, news, watch)",
+        "src/trading": "Trading engine + mode dispatch (agent/paper/live/backtest)",
+        "src/trading/modes": "Per-mode entry points (agent.py, paper.py, backtest.py)",
+        "src/strategy": "Strategy implementations",
+        "src/strategy/technical": "Technical strategies — MA Crossover, RSI, MACD, Bollinger",
+        "src/strategy/ml": "ML strategies — Random Forest, LSTM",
+        "src/strategy/llm": "LLM strategy (Claude/OpenAI) + prompt auto-improvement",
+        "src/risk": "Risk management — single order gate (manager.py) + exits + sizing",
+        "src/execution": "Broker abstraction — BaseBroker, SimulatedBroker, AlpacaBroker",
+        "src/data": "Data collection / transformation (yfinance, Alpaca, intraday features)",
+        "src/core": "Shared Pydantic models / types / enums (depended on by all, depends on none)",
+        "src/config": "Configuration (pydantic-settings, settings.yaml loader)",
+        "operator-console": "Operator console — opencode hard-fork (TypeScript)",
+        "operator-console/cli": "opencode fork — TUI + permission engine + agent session",
+        "operator-console/launcher": "autostock launcher — config resolution + process management",
+        "operator-console/src": "MCP server (mcp-server.ts) + steer handler + file-drop client",
+        "config": "YAML configuration files (settings.yaml, strategies.yaml)",
+        "tests": "Python test suite",
+        "docs": "Design documentation (DESIGN.md)",
+        "scripts": "Utility scripts (agent_trace.py, worktree-setup.sh, etc.)",
+        "workspace": "Agent runtime data — journal, turns, decisions, human directives",
+        "steering": "Operator steering channel — snapshot.json, monitor.json, commands, events",
+        "aidlc-docs": "AI-DLC design documents — requirements, plans, track records, RE artifacts",
+        "logs": "Daemon log output (autostock.log)",
+    }
+
+    _KEY_FILES: dict[str, str] = {
+        "src/agent/orchestrator.py": "AgentTradingLoop — sequences research/intraday/EOD turns",
+        "src/agent/session.py": "AgentSession — wraps claude CLI subprocess",
+        "src/agent/executor.py": "DecisionExecutor — decisions→orders (the only order-placing path)",
+        "src/agent/journal.py": "File-based journal (workspace/decisions.jsonl)",
+        "src/agent/prompts.py": "LLM prompt templates (research / intraday / EOD / wake)",
+        "src/agent/review.py": "EOD self-review → lessons learned",
+        "src/trading/engine.py": "TradingEngine — strategy-path per-symbol cycle",
+        "src/trading/modes/agent.py": "AgentTradingMode — daemon scheduler setup for agent mode",
+        "src/risk/manager.py": "RiskManager — single gate: signal/decision → Order",
+        "src/execution/base.py": "BaseBroker — abstract broker; SimulatedBroker, AlpacaBroker",
+        "src/execution/alpaca_broker.py": "AlpacaBroker — live Alpaca Trading API",
+        "src/data/intraday_features.py": "Per-session intraday features (F1)",
+        "src/core/models.py": "Core Pydantic models — Order, Position, PortfolioState, etc.",
+        "operator-console/src/mcp-server.ts": "MCP server — steer/steer_read + Alpaca-shaped tools",
+        "operator-console/src/steer-handler.ts": "steer/steer_read command dispatch + validation",
+        "operator-console/launcher/config.ts": "Launcher config — env resolution + permission profiles",
+        "config/settings.yaml": "Main settings — universe, risk, intraday, agent config",
+        "main.py": "CLI entry point — mode dispatch (agent/backtest/paper/live)",
+    }
+
+    def _publish_codebase_tree(self, root: Path | None = None) -> None:
+        """Generate the project directory tree and publish it via the channel.
+
+        Scanned once at daemon start; the tree is small enough to serve inline
+        via ``steer_read{command:/codebase}``.  Excludes build artifacts, caches,
+        and virtual environments so the output stays focused on source layout.
+
+        *root* defaults to ``_REPO_ROOT``; override for testing against a
+        synthetic tree."""
+        root = root or _REPO_ROOT
+        lines = [f"{{AUTOSTOCK_ROOT}} = {root}", ""]
+        # Walk depth-first, three levels (root files/dirs → src/ packages → sub-packages).
+        for entry in sorted(root.iterdir(), key=lambda p: (not p.is_dir(), p.name)):
+            if entry.name.startswith(".") or self._is_excluded(entry.name):
+                continue
+            if entry.is_dir():
+                desc = self._PKG_DESCRIPTIONS.get(entry.name, "")
+                lines.append(f"{entry.name}/" + (f"  # {desc}" if desc else ""))
+                if entry.name in self._TREE_DIRS:
+                    self._walk_tree(entry, entry.name, lines, depth=2, indent=1)
+            else:
+                desc = self._KEY_FILES.get(entry.name, "")
+                lines.append(f"{entry.name}" + (f"  # {desc}" if desc else ""))
+        # Append the steering/ + workspace/ + aidlc-docs/ + logs/ dirs at root
+        # level since they are outside _TREE_DIRS but useful to know about.
+        for extra in ["workspace", "steering", "aidlc-docs", "logs"]:
+            if extra not in self._TREE_DIRS:
+                ep = root / extra
+                if ep.is_dir():
+                    desc = self._PKG_DESCRIPTIONS.get(extra, "Runtime / design data")
+                    lines.append(f"{extra}/  # {desc}")
+        tree_text = "\n".join(lines)
+        try:
+            self.channel.publish_codebase(tree_text)
+        except Exception as e:
+            logger.warning("codebase tree publish failed (non-fatal): {}", e)
+
+    def _walk_tree(self, directory: Path, prefix: str, lines: list[str],
+                   depth: int, indent: int = 1) -> None:
+        """Recurse into *directory*, appending indented entries to *lines*.
+
+        *indent* grows with each recursion level so the visual hierarchy is
+        preserved in the output."""
+        if depth <= 0:
+            return
+        pad = "  " * indent
+        entries = sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name))
+        for entry in entries:
+            if entry.name.startswith(".") or self._is_excluded(entry.name):
+                continue
+            rel = f"{prefix}/{entry.name}"
+            if entry.is_dir():
+                desc = self._PKG_DESCRIPTIONS.get(rel, "")
+                lines.append(f"{pad}{entry.name}/" + (f"  # {desc}" if desc else ""))
+                if depth > 1:
+                    self._walk_tree(entry, rel, lines, depth - 1, indent + 1)
+            else:
+                desc = self._KEY_FILES.get(rel, "")
+                if desc:
+                    lines.append(f"{pad}{entry.name}  # {desc}")
 
     def publish_monitor(self) -> None:
         """F6 FR-4 / F22: publish structured turns / decisions / agent-log
