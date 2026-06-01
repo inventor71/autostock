@@ -15,6 +15,7 @@ export class FileDrop {
   readonly eventsFile: string;
   readonly snapshotFile: string;
   readonly monitorFile: string;
+  readonly codebaseFile: string;  // F29
   private token: string;
 
   constructor(steeringDir: string, token?: string) {
@@ -23,6 +24,7 @@ export class FileDrop {
     this.eventsFile = join(steeringDir, "events.jsonl");
     this.snapshotFile = join(steeringDir, "snapshot.json");
     this.monitorFile = join(steeringDir, "monitor.json"); // F6: deep-monitoring read view
+    this.codebaseFile = join(steeringDir, "codebase.json"); // F29: project tree
     this.token = token ?? process.env[TOKEN_ENV] ?? "";
   }
 
@@ -110,6 +112,15 @@ export class FileDrop {
   readMonitor(): Record<string, unknown> | null {
     try {
       return JSON.parse(readFileSync(this.monitorFile, "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  /** F29: Read the project directory tree (published by the daemon at startup). */
+  readCodebase(): Record<string, unknown> | null {
+    try {
+      return JSON.parse(readFileSync(this.codebaseFile, "utf8"));
     } catch {
       return null;
     }

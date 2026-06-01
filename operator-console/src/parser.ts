@@ -24,6 +24,8 @@ export const READ_VERBS = new Set([
   // F6: deep-monitoring views served from steering/monitor.json (turn cost/activity,
   // recent decisions). `log` (above) also reads the monitor view's log tail.
   "turns", "decisions",
+  // F29: project directory tree for supervisor codebase orientation
+  "codebase",
 ]);
 
 const VERB_ALIASES: Record<string, SteeringVerb> = {

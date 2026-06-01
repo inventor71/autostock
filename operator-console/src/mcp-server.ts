@@ -60,7 +60,10 @@ server.registerTool(
       "For live Alpaca data (positions/orders/account/market prices) prefer the get_* tools instead.\n" +
       "SNAPSHOT verbs: /status · /agent-trace · /why — daemon-internal state ONLY available here.\n" +
       "MONITOR verbs (deep view, from monitor.json): /turns (turn cost/activity) · /decisions (recent " +
-      "decisions) · /log (agent log tail).",
+      "decisions) · /log (agent log tail).\n" +
+      "CODEBASE verb: /codebase — project directory tree with package descriptions. " +
+      "Use this FIRST when asked about autostock's code or implementation; all source paths " +
+      "are relative to $AUTOSTOCK_ROOT (run `echo $AUTOSTOCK_ROOT` to resolve).",
     inputSchema: { command: z.string().describe("a read command, e.g. /status or /turns") },
   },
   async ({ command }) => ({ content: [{ type: "text", text: handleSteerRead(command, fd) }] }),

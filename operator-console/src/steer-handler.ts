@@ -107,6 +107,13 @@ export function handleSteerRead(command: string, fd: FileDrop): string {
   if (!draft.readOnly) {
     return "this is a mutating command — use the steer tool (opencode will ask you to confirm)";
   }
+  // F29: codebase tree lives in its own file (generated once at daemon startup,
+  // not periodically refreshed like monitor/snapshot).
+  if (draft.verb === "codebase") {
+    const cb = fd.readCodebase();
+    if (!cb) return "(no codebase tree yet — daemon may not have published it)";
+    return `codebase tree:\n${cb.tree ?? JSON.stringify(cb)}`;
+  }
   // F6: dispatch deep-monitoring verbs to monitor.json (previously every read verb,
   // even `log`, fell through to the snapshot — critic #3).
   const key = MONITOR_VERBS[draft.verb];
