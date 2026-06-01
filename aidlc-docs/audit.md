@@ -1537,3 +1537,7 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 **Timestamp**: 2026-06-01T15:00:00Z
 **Merge commit**: bb2da2d (parent) / 674bdb5 (submodule main)
 **Summary**: Supervisor mode — `autostock --supervisor` launch flag selects normal (MCP+web+$STEERING_DIR only, source reads blocked) vs supervisor (whole $AUTOSTOCK_ROOT read, secrets excluded) permission profiles. Launcher injects OPENCODE_PERMISSION via env (no opencode engine patch); websearch enabled for all providers (OPENCODE_ENABLE_EXA, keyless Exa). MODE: SUPERVISOR sidebar badge. Two critic passes caught: design matcher anchored-dotall root-level secret leak (../../.env vs .env globs, both now covered), implementation verify-lockdown merged-config modeling. docker-compose: AUTOSTOCK_LOCKDOWN=on added (was missing in attach). verify.sh: supervisor profile build for container. Tests: verify-lockdown 43, launcher 38, registry 16, tsgo 19 — all green. Runtime docker-verify attach confirmed working. Nearby tracks: F28 (UI self-explanation, paused), F29 (codebase orientation, paused).
+
+## R2 merged — speed-review (2026-06-01)
+**Timestamp**: 2026-06-01T21:09:00Z
+**Summary**: R2 merged (dfb8200). Behavior-preserving speed review: engine ×3.0 (O(n²)→O(n) backtest precompute), optimizer ×5.6 (ProcessPool), parallel price fetch (ThreadPool value-preserving), scoreboard parallel fetch. Full suite + docker verify green.
