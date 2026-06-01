@@ -342,12 +342,20 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
 
     universe = list(settings.trading.symbols)
     session = AgentSession(model=settings.agent.model, timeout=settings.agent.turn_timeout)
+    research_signals = settings.research.get("signals") if settings.research else None
+    reflection_cfg = settings.research.get("reflection", {}) if settings.research else {}
     orchestrator = AgentTradingLoop(
         session=session,
         universe=universe,
         portfolio_provider=broker.get_portfolio_state,
         research_model=settings.agent.research_model,
         research_timeout=settings.agent.research_timeout,
+        multi_agent_enabled=settings.multi_agent.enabled,
+        multi_agent_mode=settings.multi_agent.mode,
+        multi_agent_n=settings.multi_agent.n_agents,
+        research_signals=research_signals,
+        reflection_enabled=reflection_cfg.get("enabled", True),
+        reflection_max_lessons=reflection_cfg.get("max_lessons_injected", 10),
     )
     executor = DecisionExecutor(
         broker, risk_manager, data_provider, journal=session.journal, universe=universe

@@ -82,6 +82,12 @@ class AgentSession:
         "Bash(python3 -m src.agent.tools:*)",
     )
 
+    READ_ONLY_TOOLS = (
+        "Read", "Glob", "Grep", "WebSearch", "WebFetch",
+        "Bash(python -m src.agent.tools:*)",
+        "Bash(python3 -m src.agent.tools:*)",
+    )
+
     def __init__(
         self,
         workspace: str | Path | None = None,
@@ -92,6 +98,7 @@ class AgentSession:
         timeout: float = 600.0,
         session_date: date | None = None,
         runner: Callable[..., subprocess.CompletedProcess] | None = None,
+        one_shot: bool = False,
     ):
         self.journal = Journal(workspace)
         self.workspace = self.journal.root
@@ -100,12 +107,27 @@ class AgentSession:
         self.allowed_tools = list(allowed_tools or self.DEFAULT_ALLOWED_TOOLS)
         self.permission_mode = permission_mode
         self.timeout = timeout
-        # None -> use the live US/Eastern trading date each turn (so a
-        # long-running daemon still gets a fresh session per trading day).
-        # An explicit date pins it (used in tests).
         self._fixed_date = session_date
         self._runner = runner or _default_runner
         self._started = False
+        self._one_shot = one_shot
+
+    @classmethod
+    def create_sub_agent(
+        cls,
+        workspace: str | Path,
+        model: str = "sonnet",
+        timeout: float = 600.0,
+        runner: Callable[..., subprocess.CompletedProcess] | None = None,
+    ) -> "AgentSession":
+        return cls(
+            workspace=workspace,
+            model=model,
+            allowed_tools=list(cls.READ_ONLY_TOOLS),
+            timeout=timeout,
+            runner=runner,
+            one_shot=True,
+        )
 
     # ------------------------------------------------------------------ #
     # Session lifecycle
@@ -191,6 +213,8 @@ class AgentSession:
         from src.agent.steering.security import scrub_agent_env
 
         env = scrub_agent_env(dict(os.environ))
+        if self._one_shot:
+            env["AGENT_JOURNAL_ROOT"] = str(self.workspace)
         existing_pp = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(_REPO_ROOT) + (os.pathsep + existing_pp if existing_pp else "")
 
@@ -219,11 +243,15 @@ class AgentSession:
         overrides the session default for this turn (e.g. opus for research). The
         prompt is sent on stdin; the agent's journal writes are the real output."""
         self.journal.init()  # ensure workspace + CLAUDE.md exist
-        state = self._read_state()
-        session_id = state.get("session_id") if state else None
-        resume = session_id is not None
-        if session_id is None:
+        if self._one_shot:
             session_id = str(uuid.uuid4())
+            resume = False
+        else:
+            state = self._read_state()
+            session_id = state.get("session_id") if state else None
+            resume = session_id is not None
+            if session_id is None:
+                session_id = str(uuid.uuid4())
 
         logger.info(
             "Agent turn ({}) session={} model={}",
@@ -240,7 +268,7 @@ class AgentSession:
             else:
                 raise
 
-        if not resume:
+        if not self._one_shot and not resume:
             self._write_state(session_id)
 
         return AgentTurnResult(
