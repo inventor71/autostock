@@ -380,7 +380,9 @@ def _turns_summary(path: Path) -> dict:
     todays = [r for r in rows if str(r.get("date", "")) == today]
     cost = round(sum(float(r.get("cost_usd") or 0) for r in todays), 4)
     recent = []
-    for r in rows[-_MONITOR_TURNS:]:
+    # F22: only today's turns — stale rows from previous runs would place
+    # markers at unreachable times on today's timeline.
+    for r in todays[-_MONITOR_TURNS:]:
         recent.append({
             "id": r.get("turn_id", ""),
             "type": r.get("turn_type", "?"),
