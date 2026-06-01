@@ -100,6 +100,26 @@ services:
       ALPACA_PAPER: ${ALPACA_PAPER:-true}
     command: ["attach"]
 
+  # F25: seed the attach workspace volume with synthetic turns + interventions so
+  # the timeline bar can be exercised (3 market regions, edge-clamped off-window
+  # markers, human markers) without waiting for a live session. Run BEFORE attach:
+  #   docker compose -f docker-compose.verify.yml run --rm seed-timeline
+  #   docker compose -f docker-compose.verify.yml run --rm seed-timeline --date 2026-06-04
+  # then start `attach` and navigate the timeline to the seeded date.
+  seed-timeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.verify
+    working_dir: /app
+    volumes:
+      - .:/app
+      - attach-workspace:/app/workspace
+    environment:
+      PYTHONPATH: /app
+      PYTHONDONTWRITEBYTECODE: "1"
+    entrypoint: ["python", "-u", "scripts/gen_test_timeline.py", "--workspace", "/app/workspace"]
+    command: []
+
 volumes:
   verify-node-modules:
   mcp-node-modules:
