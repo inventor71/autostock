@@ -1,5 +1,7 @@
 # AI-DLC Audit Log
 
+## F32 merge 2026-06-02 — Timeline Markers 사라짐 버그 수정 (_interventions_tail 150-line window → ET-date filter; 566 tests green)
+
 ## F31 merge 2026-06-02 — TUI Sidebar Orders 색상 깜박임 버그 수정 (1-line: autostock.tsx side-fallback color when current_price null; submodule feat/F31 → main)
 
 ## Workflow Start — Project Review Request
