@@ -27,10 +27,12 @@ F22 타임라인 바 3가지 개선:
 
 ## Stage Progress
 - [x] Workspace Detection — Brownfield, existing RE artifacts → skip to Requirements Analysis
-- [ ] Requirements Analysis
-- [ ] User Stories
-- [ ] Workflow Planning
-- [ ] Application Design
-- [ ] Units Generation
-- [ ] Construction
+- [x] Requirements Analysis — Standard depth, 10 questions + 12h 뷰 후속 결정, APPROVED 2026-06-01
+- [x] User Stories — SKIP (단일 운영자 도구, FR로 충분)
+- [~] Workflow Planning — 실행 계획 작성 완료, 승인 대기
+- [ ] Application Design — SKIP (Functional Design에 흡수)
+- [ ] Units Generation — EXECUTE (2 units: A daemon-timeline Python → B timeline-ui TS)
+- [~] Construction (per-unit)
+  - [~] Unit A (daemon-timeline, Python) — Functional Design 완료, 승인 대기
+  - [ ] Unit B (timeline-ui, TypeScript)
 - [ ] Build & Test
