@@ -1531,3 +1531,9 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 **Timestamp**: 2026-06-01T12:55:00Z
 **Merge commit**: a22952f (parent-only, no submodule change)
 **Summary**: docker-verify harness runs as host user (non-root, scripts/verify-run.sh wrapper — fail-loud UID injection) + root-ownership workarounds stripped (cleanup chown handback, .git mv-aside/safe.directory). 4-mode verified non-root (typecheck 19/19, unit 556, smoke+attach OK). Extras found+fixed: missing node-gyp in image, bind-mount mountpoint ownership. Submodule git origin sync pushed (4c21687, F22+F25+timeline unpushed commits). This closes the root-owned-file class of problems (R-1: sudo-free worktree remove, R-2: submodule git corruption) that bit F22/F25.
+
+---
+## F26 Merged
+**Timestamp**: 2026-06-01T15:00:00Z
+**Merge commit**: bb2da2d (parent) / 674bdb5 (submodule main)
+**Summary**: Supervisor mode — `autostock --supervisor` launch flag selects normal (MCP+web+$STEERING_DIR only, source reads blocked) vs supervisor (whole $AUTOSTOCK_ROOT read, secrets excluded) permission profiles. Launcher injects OPENCODE_PERMISSION via env (no opencode engine patch); websearch enabled for all providers (OPENCODE_ENABLE_EXA, keyless Exa). MODE: SUPERVISOR sidebar badge. Two critic passes caught: design matcher anchored-dotall root-level secret leak (../../.env vs .env globs, both now covered), implementation verify-lockdown merged-config modeling. docker-compose: AUTOSTOCK_LOCKDOWN=on added (was missing in attach). verify.sh: supervisor profile build for container. Tests: verify-lockdown 43, launcher 38, registry 16, tsgo 19 — all green. Runtime docker-verify attach confirmed working. Nearby tracks: F28 (UI self-explanation, paused), F29 (codebase orientation, paused).
