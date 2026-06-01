@@ -192,17 +192,6 @@ class AgentTradingMode:
         self._scheduled_turn(lambda: self.orchestrator.run_intraday(brief))
         self._funnel(self._exec_pending_and_exits)
 
-    def _quality_snapshot(self) -> str | None:
-        try:
-            from src.agent.quality.collector import collect_outcomes
-            from src.agent.quality.snapshot import quality_snapshot
-
-            outcomes = collect_outcomes(self.executor.journal)
-            return quality_snapshot(outcomes)
-        except Exception as exc:
-            logger.debug(f"Quality snapshot skipped: {exc}")
-            return None
-
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
         from src.agent.equity_log import fetch_benchmark, record_equity
@@ -211,12 +200,7 @@ class AgentTradingMode:
         if not self._paused():
             decisions = self.executor.journal.read_decisions()
             outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
-            q_summary = self._quality_snapshot()
-            self._scheduled_turn(
-                lambda: self.orchestrator.run_eod_review(
-                    outcomes=outcomes, quality_summary=q_summary
-                )
-            )
+            self._scheduled_turn(lambda: self.orchestrator.run_eod_review(outcomes=outcomes))
             self._funnel(self.executor.execute_pending)
 
         # Daily marks for the track record. record_trade_ledger() is a no-op on

@@ -128,16 +128,12 @@ class AgentTradingLoop:
         reasons = [getattr(e, "reason", str(e)) for e in (events or [])]
         return self._run(prompts.wake_prompt(brief, reasons), "wake", timeout=timeout)
 
-    def run_eod_review(
-        self,
-        outcomes: list[str] | None = None,
-        quality_summary: str | None = None,
-    ) -> AgentTurnResult:
+    def run_eod_review(self, outcomes: list[str] | None = None) -> AgentTurnResult:
+        # `outcomes` are richer (levels vs price, P&L) when the caller assembles
+        # them from the broker; otherwise fall back to a plain decision list.
         if outcomes is None:
             outcomes = [f"{d.symbol} {d.action}" for d in self.journal.read_decisions()[-20:]]
-        return self._run(
-            prompts.eod_review_prompt(outcomes, quality_summary=quality_summary), "eod"
-        )
+        return self._run(prompts.eod_review_prompt(outcomes), "eod")
 
     def run_reconcile(self, context: str = "") -> AgentTurnResult:
         """Out-of-band turn after a human intervention (F4 FR-6): the agent
