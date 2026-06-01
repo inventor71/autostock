@@ -217,7 +217,7 @@ agent:
   min_trade_notional: 50.0
 
 multi_agent:
-  enabled: false
+  enabled: true
   mode: sequential       # sequential (Mode B) | parallel (Mode C)
   n_agents: 3            # [1,5]; enabled=true enforces >= 2
 
