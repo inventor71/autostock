@@ -1,5 +1,7 @@
 # AI-DLC Audit Log
 
+## F29 merge 2026-06-02 — Supervisor codebase orientation: steer_read{command:/codebase} returns project directory tree (daemon startup scan, depth=2, fnmatch exclusions); 577 tests green, 0 new deps, docker-verify attach verified.
+
 ## F32 merge 2026-06-02 — Timeline Markers 사라짐 버그 수정 (_interventions_tail 150-line window → ET-date filter; 566 tests green)
 
 ## F31 merge 2026-06-02 — TUI Sidebar Orders 색상 깜박임 버그 수정 (1-line: autostock.tsx side-fallback color when current_price null; submodule feat/F31 → main)
@@ -1545,3 +1547,8 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 ## R2 merged — speed-review (2026-06-01)
 **Timestamp**: 2026-06-01T21:09:00Z
 **Summary**: R2 merged (dfb8200). Behavior-preserving speed review: engine ×3.0 (O(n²)→O(n) backtest precompute), optimizer ×5.6 (ProcessPool), parallel price fetch (ThreadPool value-preserving), scoreboard parallel fetch. Full suite + docker verify green.
+
+## F34 merged — timeline label z-order (2026-06-02)
+**Timestamp**: 2026-06-02T00:00:00Z
+**Merge commit**: a366545 (parent, ff) / 43423df (submodule fork main, pushed)
+**Summary**: Timeline PRE/OPEN/AFT region labels were occluded by turn/intervention markers (markers painted after the band that embedded the labels). Fix: band → dashes-only; labels rendered as a TOPMOST transparent per-cell overlay (above markers + now-cursor), with clicks on a label cell forwarded to the topmost marker/intervention under that column (hidden marker stays clickable). Per-cell overlay knows its column ⇒ no reliance on screen-global evt.x; `│`/markers/cursor order unchanged (user clarified only the text lifts). New pure `labelCells()` helper + 5 tests (suite 26 pass); tsgo 19/19 (tui-trading covered via opencode). `/critic` feasibility pass confirmed opentui transparent-bg compositing + that click-forwarding is necessary & sufficient. Seed tool `gen_test_timeline.py` gained label-overlap probes (+5/8/11/14m per region boundary) for docker-verify `attach`; user verified visually. Base 378a98b/66c6edc.
