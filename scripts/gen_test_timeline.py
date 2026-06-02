@@ -46,6 +46,38 @@ INTERVENTIONS = [
 ]
 
 
+# --- F34: markers that DELIBERATELY land on the PRE/OPEN/AFT label glyphs ---------
+# The inline region label sits ONE column in from each region's left edge. For the
+# default 12h regular-centered window those left edges are: window-left 06:45 (PRE),
+# regular-open 09:30 (OPEN), regular-close 16:00 (AFT) — all ET. The number of minutes
+# per timeline column depends on the terminal width, so a single marker easily misses
+# the 3-4 label columns (this is why the old seed didn't overlap). A small cluster at
+# +5/+8/+11/+14 min after each boundary reliably covers the label glyph columns across
+# all realistic timeline widths (~80-450 cols), so a marker always sits BEHIND a letter.
+# Verify (F34): the PRE/OPEN/AFT letters stay fully visible on top, and clicking the
+# letter cell still opens the hidden marker's popup (turn probes → turn popup; the
+# intervention probe → human-intervention popup, which wins the click when stacked).
+def _shift_hhmm(hhmm: str, mins: int) -> str:
+    h, m = map(int, hhmm.split(":"))
+    total = h * 60 + m + mins
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+_LABEL_ANCHORS = [("PRE", "06:45"), ("OPEN", "09:30"), ("AFT", "16:00")]
+for _name, _anchor in _LABEL_ANCHORS:
+    for _i, _off in enumerate((5, 8, 11, 14)):
+        TURNS.append((
+            f"L{_name}{_i}", "intraday", _shift_hhmm(_anchor, _off),
+            0.10, 0, f"F34 label-overlap probe ({_name} +{_off}m)", "ok",
+        ))
+    # one human-intervention probe per label (distinct glyph/color; tests the
+    # intervention forwarding path + its priority over a turn at the same column)
+    INTERVENTIONS.append((
+        "buy", "NVDA", _shift_hhmm(_anchor, 8), "executed",
+        f"F34 label-overlap probe ({_name})",
+    ))
+
+
 def _ts(date: str, hhmm: str) -> datetime:
     y, m, d = map(int, date.split("-"))
     h, mi = map(int, hhmm.split(":"))
