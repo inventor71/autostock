@@ -5,9 +5,41 @@
 // the failure mode where our own ctx.ask gate could be mis-keyed or removed. So reaching
 // handleSteer means the human already approved. These are pure parse+(read|write) fns.
 
+import { readFileSync } from "node:fs";
 import { FileDrop } from "./filedrop";
 import { ParseError, parseCommand } from "./parser";
 import type { SteeringVerb } from "./schema";
+
+// F28: static UI legend — TUI element meanings, served via `/ui-legend [element]`.
+// Read from the JSON next to this module (NOT a top-level `import`: a malformed file
+// must degrade gracefully here, not crash the MCP server at spawn). The daemon and the
+// $STEERING_DIR are uninvolved — this is a static, repo-committed dictionary.
+interface UiLegendEntry { id: string; meaning: string; location?: string }
+
+function loadUiLegend(): UiLegendEntry[] {
+  try {
+    const raw = readFileSync(new URL("./ui-legend.json", import.meta.url), "utf8");
+    const parsed = JSON.parse(raw) as { entries?: UiLegendEntry[] };
+    return Array.isArray(parsed.entries) ? parsed.entries : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Serve the `/ui-legend [element]` read verb. `raw` is the full command line
+ *  (e.g. "ui-legend topbar.today_cost"); the element token, if any, is the word
+ *  after the verb (READ_VERBS pass `args.raw` only — no parser-side split). */
+export function handleUiLegend(raw: string): string {
+  const entries = loadUiLegend();
+  if (entries.length === 0) return "(ui legend unavailable)";
+  const element = raw.trim().split(/\s+/)[1]; // [0] = "ui-legend"
+  if (element) {
+    const hit = entries.find((e) => e.id === element);
+    if (!hit) return JSON.stringify({ legend: [], error: `element '${element}' not found` });
+    return JSON.stringify({ legend: [hit] });
+  }
+  return JSON.stringify({ legend: entries });
+}
 
 // ---- F21 L2 degenerate-value helpers ------------------------------------------- //
 // These run SYNCHRONOUSLY before the file-drop write so the agent sees the rejection
@@ -113,6 +145,11 @@ export function handleSteerRead(command: string, fd: FileDrop): string {
     const cb = fd.readCodebase();
     if (!cb) return "(no codebase tree yet — daemon may not have published it)";
     return `codebase tree:\n${cb.tree ?? JSON.stringify(cb)}`;
+  }
+  // F28: static UI legend (TUI element meanings). Served from a repo-committed JSON,
+  // not the daemon — `draft.args.raw` carries the full line incl. an optional element.
+  if (draft.verb === "ui-legend") {
+    return handleUiLegend(String(draft.args.raw ?? ""));
   }
   // F6: dispatch deep-monitoring verbs to monitor.json (previously every read verb,
   // even `log`, fell through to the snapshot — critic #3).
