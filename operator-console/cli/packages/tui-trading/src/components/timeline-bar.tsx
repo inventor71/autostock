@@ -43,6 +43,8 @@ export function TimelineBar(props: TimelineBarProps) {
   const viewStart = () => pinnedStart() ?? liveStart()
   const viewEnd = () => viewStart() + WINDOW_MS
   const isLive = () => pinnedStart() === null
+  // F44: the viewed window covers "today" if live or the primary ET date matches today.
+  const isToday = () => pinnedStart() === null || primaryEtDate() === liveDate()
 
   const goPrev = () => setPinnedStart(viewStart() - WINDOW_MS)
   const goNext = () => setPinnedStart(viewStart() + WINDOW_MS)
