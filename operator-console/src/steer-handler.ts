@@ -158,6 +158,20 @@ export function handleSteerRead(command: string, fd: FileDrop, supervisor = fals
   if (draft.verb === "ui-legend") {
     return handleUiLegend(String(draft.args.raw ?? ""));
   }
+  // F53: position thesis read — agent's thesis/plan/call-vs-outcome for a symbol.
+  // `/thesis AAPL` reads workspace/positions/AAPL.md; `/theses` lists all symbols.
+  if (draft.verb === "thesis") {
+    const symbol = String(draft.args.raw ?? "").trim().split(/\s+/)[1];
+    if (!symbol) return "(thesis: symbol required, e.g. /thesis AAPL)";
+    const content = fd.readThesis(symbol);
+    if (content === null) return `(no thesis file found for ${symbol.toUpperCase()})`;
+    return `thesis ${symbol.toUpperCase()}:\n${content}`;
+  }
+  if (draft.verb === "theses") {
+    const symbols = fd.listTheses();
+    if (symbols.length === 0) return "(no thesis files found in workspace/positions/)";
+    return `theses: ${symbols.join(", ")}`;
+  }
   // F6: dispatch deep-monitoring verbs to monitor.json (previously every read verb,
   // even `log`, fell through to the snapshot — critic #3).
   const key = MONITOR_VERBS[draft.verb];

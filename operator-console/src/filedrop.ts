@@ -4,7 +4,7 @@
 // (token from env, never logged) and appended. The LLM never reaches this code.
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { type SteeringCommand, type SteeringEvent, TOKEN_ENV, type SteeringVerb } from "./schema";
 
@@ -16,6 +16,7 @@ export class FileDrop {
   readonly snapshotFile: string;
   readonly monitorFile: string;
   readonly codebaseFile: string;  // F29
+  readonly positionsDir: string;  // F53: workspace/positions/
   private token: string;
 
   constructor(steeringDir: string, token?: string) {
@@ -25,6 +26,7 @@ export class FileDrop {
     this.snapshotFile = join(steeringDir, "snapshot.json");
     this.monitorFile = join(steeringDir, "monitor.json"); // F6: deep-monitoring read view
     this.codebaseFile = join(steeringDir, "codebase.json"); // F29: project tree
+    this.positionsDir = join(steeringDir, "..", "workspace", "positions"); // F53
     this.token = token ?? process.env[TOKEN_ENV] ?? "";
   }
 
@@ -123,6 +125,33 @@ export class FileDrop {
       return JSON.parse(readFileSync(this.codebaseFile, "utf8"));
     } catch {
       return null;
+    }
+  }
+
+  /** F53: Read a position thesis file (workspace/positions/<SYMBOL>.md).
+   *  Returns the markdown content as a string, or null if the file does not exist. */
+  readThesis(symbol: string): string | null {
+    try {
+      const path = join(this.positionsDir, `${symbol.toUpperCase()}.md`);
+      if (!existsSync(path)) return null;
+      return readFileSync(path, "utf8");
+    } catch {
+      return null; // fail-closed (SECURITY-15): permission errors etc.
+    }
+  }
+
+  /** F53: List all symbols that have a thesis file in workspace/positions/.
+   *  Returns symbols sorted alphabetically, or an empty array if the directory
+   *  is missing or unreadable (fail-closed, SECURITY-15). */
+  listTheses(): string[] {
+    try {
+      if (!existsSync(this.positionsDir)) return [];
+      return readdirSync(this.positionsDir)
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => f.slice(0, -3)) // strip ".md"
+        .sort();
+    } catch {
+      return []; // fail-closed: permission errors etc.
     }
   }
 }
