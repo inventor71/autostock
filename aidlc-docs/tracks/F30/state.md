@@ -53,7 +53,7 @@ Related memories: [[llm-trader-redesign]], [[risk-execution-redesign]], [[worktr
     - **U2 + 재배선 완료(2026-06-03)**: Universe providers(Base/KR/US)+config+스냅샷, **trading.symbols 전면 제거→resolve_universe(MED-4), 607 passed**. 커밋 b0024d0/aed7867/2d9897a/e078680.
     - **통합 배선 완료(2026-06-03)**: create_broker/data market-aware(broker.name=kis, client 공유) + AgentTradingMode KST 스케줄 + always-on kis_reconcile job(HIGH-1) + 5.5/5.7 테스트. 커밋 db367e9/865051e. **613 passed**.
     - **Critic 2차 하드닝 완료(2026-06-03)**: 구현 critic 검토 HIGH 4건 반영 — emulated bracket TP 지연-arm(실체결 사이징/PENDING_ENTRY 상태기계), get_order_status ccld 실구현, 모의 손절을 에이전트 stop_price로(get_protective_stops→check_stop_loss override), resolve_universe(KR) broker.client 공유(토큰충돌 제거) + throttle 스레드안전/원자적 스냅샷/tick 고정점. **619 passed**. 커밋 5b5d9cc.
-    - **follow-up(트랙 내, 비차단)**: ① KR 랭킹 페이징(30→~200)+KOSDAQ 1001 ② 모의 장시간 주문 placement 라이브 ③ is_market_open KRX 공휴일 캘린더.
+    - **Follow-up ①③ 완료(2026-06-03, 커밋 3511360)**: ① KR 동적 = top-30 KOSPI+top-30 KOSDAQ(랭킹 EP 30/시장 캡, 페이징 없음), min_base 수정으로 동적 채택 + EGW00201 backoff 재시도 → **라이브 60종목(KOSPI+KOSDAQ) 확인**. ③ is_market_open KRX 공휴일(chk-holiday opnd_yn 일캐시) → 라이브 확인. **남은 것: ② 모의 장시간 주문 placement 라이브만**(평일 09:00–15:30 KST).
 - [x] Build & Test — `construction/build-and-test/F30-build-and-test-summary.md` 작성. 619 passed, py_compile/import 클린, 라이브 read-only 검증 완료. follow-up: 모의 장시간 주문 placement + KR 페이징/KOSDAQ + 공휴일 캘린더. (Operations 진행 승인 대기)
 
 ## Application Design 델타 — Universe Provider unit (2026-06-03)

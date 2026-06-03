@@ -50,7 +50,7 @@
 
 ## Phase 3 — Universe Provider (U2)
 - [x] 3.1 `src/universe/base.py` — BaseUniverseProvider(get_symbols base∪theme, 1d 캐시, 스냅샷 fallback, UniverseError). 단위 7 신규: `BaseUniverseProvider`(get_symbols=base∪theme, 1일 캐시, 스냅샷 fallback, `UniverseError`)
-- [ ] 3.2 `src/universe/kr_provider.py` 신규: `KRUniverseProvider` — **시총 상위 N(market_cap 엔드포인트)** KOSPI~200+KOSDAQ~150 (ETF-구성종목 전용 EP 부재로 Q6 소스 정정). 스냅샷 fallback. **구현+라이브확인: KOSPI200 실데이터 OK(페이지당 30 → 페이징 TODO), KOSDAQ(1001) 0반환 → 파라미터 TODO; 스냅샷이 breadth 담당**
+- [x] 3.2 `src/universe/kr_provider.py` `KRUniverseProvider` — 시총 상위(market_cap FHPST01740000) KOSPI(2001)+KOSDAQ(1001). **follow-up 처리(2026-06-03)**: 라이브 재확인 — KOSDAQ 정상(앞 0은 rate-limit 아티팩트), 모든 시장 **페이지당 30 고정(EP 페이징 미지원)** → 동적 base = top-30×2≈60 liquid로 현실화, `_min_base`를 30으로 낮춰 **동적이 실제 채택**(기존 87이라 항상 스냅샷이던 버그 수정). 스냅샷은 오프라인 fallback.
 - [x] 3.3 `src/universe/us_provider.py` — USUniverseProvider(S- [ ] 3.3 `src/universe/us_provider.py`P100 read_html + yfinance 선택랭킹). 단위(mock) 신규: `USUniverseProvider`(S&P100 read_html + yfinance marketCap top_n)
 - [x] 3.4 `config/universe/{kr,us}_base.json` 스냅샷 seed(US=기존 131 symbols, KR=30 major) 스냅샷 seed — **US seed = 제거 전 trading.symbols 값을 먼저 캡처**, **KR seed = 비어있지 않은 커밋 시드**(첫 실행 오프라인 UniverseError 방지)
 - [x] 3.5 `config/settings.yaml`+`config/config.py`: `universe.*` 구조 추가(market/top_n/enabled_themes/themes kr·us), `trading.symbols` 필드/기본값(config.py:40) **제거**

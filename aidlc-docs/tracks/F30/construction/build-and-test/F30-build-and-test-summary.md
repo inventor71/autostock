@@ -14,7 +14,7 @@ scripts/worktree-setup.sh F30 --py
 
 ## 2. Unit + Integration 테스트 (네트워크 비의존)
 ```bash
-<venv>/bin/python -m pytest -q                      # 전체: 619 passed
+<venv>/bin/python -m pytest -q                      # 전체: 620 passed
 # F30 신규만:
 <venv>/bin/python -m pytest -q \
   tests/test_kis_pricing.py tests/test_kis_broker.py tests/test_kis_provider.py \
@@ -37,7 +37,7 @@ scripts/worktree-setup.sh F30 --py
 <venv>/bin/python -c "import main"                # import 그래프 무결성 (확인됨)
 <venv>/bin/ruff check src/ tests/ main.py         # 린트(dev extra: pip install -e '.[dev]' 후)
 ```
-(현재 venv엔 ruff 미설치 — dev extras 설치 후 실행. 전체 스위트가 모든 F30 모듈을 import하므로 import 무결성은 619 통과로 확인됨.)
+(현재 venv엔 ruff 미설치 — dev extras 설치 후 실행. 전체 스위트가 모든 F30 모듈을 import하므로 import 무결성은 620 통과로 확인됨.)
 
 ## 4. 라이브 검증 (모의계좌)
 - **완료(read-only, 주문 없음)**: 인증 OK / `get_portfolio_state` cash·equity=50,000,000(모의 시드) / `get_latest_price(005930)`=360,500 / 일봉 5개 OHLCV / KOSPI200 시총랭킹 실데이터.
@@ -49,10 +49,10 @@ scripts/worktree-setup.sh F30 --py
   실호출 검증 후 라이브 BRACKET(지연-arm) 1회 점검.
 
 ## 5. Known follow-ups (비차단)
-- ① KR 랭킹 **페이징(30→~200) + KOSDAQ `1001` 파라미터**(현재 스냅샷이 breadth 담당).
+- ~~① KR 랭킹 페이징/KOSDAQ~~ **처리됨(2026-06-03)**: KOSDAQ 정상, 랭킹 EP는 30/시장 고정(페이징 없음) → 동적=top-30×2≈60 liquid, `_min_base` 수정으로 동적 채택.
 - ② 모의 **장시간 주문 placement** 라이브 검증(위 4절 절차).
-- ③ `is_market_open`에 **KRX 공휴일 캘린더**(현재 평일+시간만; 공휴일은 KIS 거부가 2차 방어).
+- ~~③ KRX 공휴일 캘린더~~ **처리됨(2026-06-03)**: `is_market_open`이 chk-holiday(opnd_yn) 일캐시 조회로 공휴일 차단(fail-open).
 
 ## 6. 회귀/안전
-- 기존 US(Alpaca) 경로 무회귀: 전체 619 passed, `protected_symbols` STOP-leg 변경이 Alpaca 보호 유지(critic verified). `trading.symbols` 제거 후 backtest/CLI/collector/tools 전부 `resolve_universe` 재배선 — 그린.
+- 기존 US(Alpaca) 경로 무회귀: 전체 620 passed, `protected_symbols` STOP-leg 변경이 Alpaca 보호 유지(critic verified). `trading.symbols` 제거 후 backtest/CLI/collector/tools 전부 `resolve_universe` 재배선 — 그린.
 - 모의 안전: 모든 라이브는 모의 도메인(openapivts) + 모의키. 실전 경로는 guarded NotImplementedError.
