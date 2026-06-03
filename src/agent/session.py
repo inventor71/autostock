@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -217,6 +218,15 @@ class AgentSession:
             env["AGENT_JOURNAL_ROOT"] = str(self.workspace)
         existing_pp = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(_REPO_ROOT) + (os.pathsep + existing_pp if existing_pp else "")
+
+        # F46: prepend the daemon's own interpreter bin dir to the agent's PATH so
+        # `python`/`python3` resolve to the exact same interpreter (venv, has alpaca-py).
+        # Without this, the agent's PATH (inherited from the systemd unit) lacks the venv
+        # bin dir, so `python3` → system `/usr/bin/python3` (yfinance OK, alpaca missing)
+        # → `account` tool fails with BrokerError("alpaca-py not installed").
+        bin_dir = os.path.dirname(sys.executable)
+        existing_path = env.get("PATH", "")
+        env["PATH"] = bin_dir + (os.pathsep + existing_path if existing_path else "")
 
         proc = self._runner(
             cmd, input=prompt, cwd=str(self.workspace), timeout=timeout or self.timeout, env=env
