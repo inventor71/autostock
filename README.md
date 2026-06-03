@@ -29,7 +29,7 @@ pip install -e ".[dev]"
 
 # 환경 변수 설정 (Alpaca 페이퍼 트레이딩용)
 export ALPACA_API_KEY="your-api-key"
-export ALPACA_SECRET_KEY="your-secret-key"
+export ALPACA_API_SECRET="your-secret-key"
 
 # (선택) Broker API 계정 팜으로 거래하려면 — "브로커 provider 전환"(§2-3) 참고
 export BROKER_API_KEY="your-broker-api-key"

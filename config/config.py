@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     research: dict = {}
 
     alpaca_api_key: str = ""
-    alpaca_secret_key: str = ""
+    alpaca_api_secret: str = ""
     # Broker API sandbox keys (Legacy, Basic-auth) + target account (F16).
     broker_api_key: str = ""
     broker_api_secret: str = ""

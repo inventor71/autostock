@@ -120,7 +120,7 @@ def main() -> None:
 
     s = get_settings()
     broker = AlpacaBroker(
-        api_key=s.alpaca_api_key, secret_key=s.alpaca_secret_key, paper=s.broker.paper
+        api_key=s.alpaca_api_key, secret_key=s.alpaca_api_secret, paper=s.broker.paper
     )
     record_equity(broker.get_portfolio_state(), default_path())
 

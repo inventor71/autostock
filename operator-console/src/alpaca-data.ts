@@ -51,11 +51,11 @@ function readEnvOrDotenv(key: string): string {
 }
 
 const ALPACA_API_KEY = readEnvOrDotenv("ALPACA_API_KEY");
-const ALPACA_SECRET_KEY = readEnvOrDotenv("ALPACA_SECRET_KEY");
+const ALPACA_API_SECRET = readEnvOrDotenv("ALPACA_API_SECRET");
 
-if (!ALPACA_API_KEY || !ALPACA_SECRET_KEY) {
+if (!ALPACA_API_KEY || !ALPACA_API_SECRET) {
   process.stderr.write(
-    "[autostock] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set\n",
+    "[autostock] ALPACA_API_KEY and ALPACA_API_SECRET must be set\n",
   );
   process.exit(1);
 }
@@ -69,7 +69,7 @@ const DATA_BASE = "https://data.alpaca.markets"; // same for paper & live
 
 const AUTH_HEADERS = {
   "APCA-API-KEY-ID": ALPACA_API_KEY,
-  "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
+  "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
 };
 
 // ---------------------------------------------------------------------------
@@ -164,7 +164,7 @@ async function apiGet(
   // HTTP error → formatted message (BR-2)
   if (!resp.ok) {
     if (resp.status === 401) {
-      return "Authentication failed — check ALPACA_API_KEY and ALPACA_SECRET_KEY";
+      return "Authentication failed — check ALPACA_API_KEY and ALPACA_API_SECRET";
     }
     if (resp.status === 403) {
       return "Access denied — your API key may not have permission for this endpoint";
