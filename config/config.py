@@ -24,6 +24,10 @@ ENV_FILE = os.environ.get("AUTOSTOCK_ENV_FILE") or str(PROJECT_ROOT / ".env")
 class BrokerConfig(BaseModel):
     name: str = "alpaca"
     paper: bool = True
+    # provider selects the broker implementation:
+    #   "alpaca"     → AlpacaBroker (Trading API, one own paper account)
+    #   "broker_api" → BrokerApiBroker (Broker API sandbox, per-account *_for_account)
+    provider: str = "alpaca"
 
 
 class DataConfig(BaseModel):
@@ -115,6 +119,10 @@ class Settings(BaseSettings):
 
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
+    # Broker API sandbox keys (Legacy, Basic-auth) + target account (F16).
+    broker_api_key: str = ""
+    broker_api_secret: str = ""
+    broker_account_id: str = ""
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 
