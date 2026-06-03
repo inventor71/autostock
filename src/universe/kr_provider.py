@@ -17,6 +17,13 @@ _RANK_TR = "FHPST01740000"
 
 
 class KRUniverseProvider(BaseUniverseProvider):
+    """Dynamic KR base = top-N KOSPI + top-N KOSDAQ by market cap.
+
+    The KIS market-cap ranking returns a fixed **top-30 per market per call** and
+    does not paginate, so the dynamic base is the ~60 most-liquid KR names (a
+    focused, tradeable universe). For broader breadth, edit the committed snapshot.
+    """
+
     market = "kr"
 
     def __init__(
@@ -24,8 +31,8 @@ class KRUniverseProvider(BaseUniverseProvider):
         client: KisRestClient,
         *,
         snapshot_path: str | Path = "config/universe/kr_base.json",
-        kospi_n: int = 200,
-        kosdaq_n: int = 150,
+        kospi_n: int = 30,    # the ranking endpoint caps at ~30/market (no paging)
+        kosdaq_n: int = 30,
         themes=None,
         enabled_themes=None,
         cache_ttl: float = 86_400.0,
@@ -37,7 +44,9 @@ class KRUniverseProvider(BaseUniverseProvider):
         self._kosdaq_n = kosdaq_n
 
     def _min_base(self) -> int:
-        return max(10, (self._kospi_n + self._kosdaq_n) // 4)
+        # Accept the dynamic result when both markets returned roughly their cap;
+        # otherwise (rate-limited/partial) fall back to the snapshot.
+        return max(10, (min(self._kospi_n, 30) + min(self._kosdaq_n, 30)) // 2)
 
     def _rank(self, iscd: str, n: int) -> list[str]:
         params = {

@@ -13,7 +13,7 @@ from src.execution.brokers.kis_broker import KisBroker, KisPaperBroker, _OcoStor
 class FakeKis:
     """Records calls; returns canned KIS responses."""
 
-    def __init__(self, positions=None, open_orders=None, ccld=None):
+    def __init__(self, positions=None, open_orders=None, ccld=None, holidays=None):
         self.posts = []
         self.gets = []
         self._seq = 0
@@ -22,6 +22,7 @@ class FakeKis:
         ]
         self.open_orders = open_orders or []  # rows for inquire-psbl-rvsecncl
         self.ccld = ccld or {}                # odno -> {tot_ccld_qty, avg_prvs, pdno, sll_buy_dvsn_cd}
+        self.holidays = holidays or {}        # YYYYMMDD -> opnd_yn ("Y"/"N")
 
     def post(self, path, tr, body):
         self.posts.append((path, tr, body))
@@ -40,6 +41,9 @@ class FakeKis:
         if path.endswith("inquire-daily-ccld"):
             row = self.ccld.get(params.get("ODNO"))
             return {"rt_cd": "0", "output1": [row] if row else []}
+        if path.endswith("chk-holiday"):
+            d = params.get("BASS_DT")
+            return {"rt_cd": "0", "output": [{"bass_dt": d, "opnd_yn": self.holidays.get(d, "Y")}]}
         return {"rt_cd": "0", "output": {}}
 
 
@@ -193,3 +197,12 @@ def test_get_order_status_parses_ccld(tmp_path):
     fo = b.get_order_status("O9")
     assert fo is not None and fo.qty == 7 and fo.filled_price == 70500
     assert b.get_order_status("UNKNOWN") is None
+
+
+def test_is_trading_day_respects_krx_holiday_and_caches(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis(holidays={"20260101": "N", "20260102": "Y"})
+    assert b._is_trading_day("20260101") is False  # KRX holiday → closed
+    assert b._is_trading_day("20260102") is True
+    b._c.holidays["20260102"] = "N"               # change underneath
+    assert b._is_trading_day("20260102") is True  # served from the per-day cache

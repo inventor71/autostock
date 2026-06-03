@@ -119,23 +119,30 @@ class KisRestClient:
 
     # -- calls ----------------------------------------------------------- #
     def get(self, path: str, tr_id: str, params: dict) -> dict:
-        headers = self._headers(tr_id)  # ensure token first (it self-throttles if it issues)
-        self._throttle()                # then space the data call from the token POST
-        try:
-            resp = self._session.get(
-                self._base + path, headers=headers, params=params, timeout=self._timeout
-            )
-            return resp.json()
-        except requests.exceptions.RequestException as e:
-            raise BrokerError(f"KIS GET {path} failed: {e}") from e
+        return self._send("GET", path, self._headers(tr_id), params=params)
 
     def post(self, path: str, tr_id: str, body: dict) -> dict:
-        headers = self._headers(tr_id)
-        self._throttle()
-        try:
-            resp = self._session.post(
-                self._base + path, headers=headers, data=json.dumps(body), timeout=self._timeout
-            )
-            return resp.json()
-        except requests.exceptions.RequestException as e:
-            raise BrokerError(f"KIS POST {path} failed: {e}") from e
+        return self._send("POST", path, self._headers(tr_id), body=body)
+
+    def _send(self, method: str, path: str, headers: dict, *, params=None, body=None) -> dict:
+        # The token is already ensured (in _headers, which self-throttles if it had
+        # to issue); throttle here spaces the data call. Retry once on KIS's
+        # per-second rate limit (EGW00201) — domestic ranking calls in particular
+        # need more spacing than the steady-state cap.
+        for attempt in range(2):
+            self._throttle()
+            try:
+                if method == "GET":
+                    resp = self._session.get(
+                        self._base + path, headers=headers, params=params, timeout=self._timeout)
+                else:
+                    resp = self._session.post(
+                        self._base + path, headers=headers, data=json.dumps(body), timeout=self._timeout)
+                data = resp.json()
+            except requests.exceptions.RequestException as e:
+                raise BrokerError(f"KIS {method} {path} failed: {e}") from e
+            if attempt == 0 and isinstance(data, dict) and data.get("msg_cd") == "EGW00201":
+                time.sleep(max(self._min_interval * 2, 0.5))
+                continue
+            return data
+        return data

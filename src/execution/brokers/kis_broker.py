@@ -39,6 +39,7 @@ _BALANCE_PATH = "/uapi/domestic-stock/v1/trading/inquire-balance"
 _OPENORD_PATH = "/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl"
 _PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-price"
 _CCLD_PATH = "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+_HOLIDAY_PATH = "/uapi/domestic-stock/v1/quotations/chk-holiday"
 
 # ORD_DVSN
 _DVSN_LIMIT = "00"
@@ -152,6 +153,7 @@ class KisBroker(BaseBroker):
         self._prdt = prdt or "01"
         self._oco = _OcoStore(Path(oco_journal))
         self._fill_poll_timeout = fill_poll_timeout
+        self._opnd_cache: tuple[str, bool] | None = None  # (YYYYMMDD, is_trading_day)
 
     @property
     def client(self) -> KisRestClient:
@@ -475,15 +477,37 @@ class KisBroker(BaseBroker):
 
     # -- market hours --------------------------------------------------- #
     def is_market_open(self) -> bool:
-        """KST regular session 09:00–15:30, Mon–Fri. Fail-closed on error."""
+        """KST regular session 09:00–15:30 on a KRX trading day. Fail-closed on error."""
         try:
             now = datetime.now(_KST)
             if now.weekday() >= 5:
                 return False
             minutes = now.hour * 60 + now.minute
-            return 9 * 60 <= minutes <= 15 * 60 + 30
+            if not (9 * 60 <= minutes <= 15 * 60 + 30):
+                return False
+            return self._is_trading_day(now.strftime("%Y%m%d"))
         except Exception:  # noqa: BLE001
             return False
+
+    def _is_trading_day(self, date_str: str) -> bool:
+        """KRX holiday-aware open-day check (chk-holiday opnd_yn), cached per day.
+        Fail-OPEN if the holiday feed is unavailable — a weekday session falls back
+        to the weekday/time gate, and KIS rejects any off-calendar order anyway."""
+        if self._opnd_cache and self._opnd_cache[0] == date_str:
+            return self._opnd_cache[1]
+        opnd = True
+        try:
+            res = self._c.get(_HOLIDAY_PATH, "CTCA0903R",
+                              {"BASS_DT": date_str, "CTX_AREA_FK": "", "CTX_AREA_NK": ""})
+            if res.get("rt_cd") == "0":
+                for row in res.get("output") or []:
+                    if row.get("bass_dt") == date_str:
+                        opnd = row.get("opnd_yn", "Y") == "Y"
+                        break
+        except BrokerError:
+            pass
+        self._opnd_cache = (date_str, opnd)
+        return opnd
 
 
 class KisPaperBroker(KisBroker):
