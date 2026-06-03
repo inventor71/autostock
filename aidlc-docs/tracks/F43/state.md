@@ -8,9 +8,9 @@
 - **Track ID**: F43
 - **Title**: 데몬 코드 버전 스큐 자가치유 — autostock 런처가 구버전 데몬을 감지해 자동 재시작
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
-- **Branch**: feat/F43
-- **Worktree**: .claude/worktrees/F43
+- **Status**: merged → main b0ed183 (2026-06-03)
+- **Branch**: feat/F43 (merged, deleted)
+- **Worktree**: — (제거됨)
 - **Submodule branch**: — (monorepo, post-F35; operator-console/launcher 는 in-repo)
 - **Base commit**: 777cf40
 - **Start Date**: 2026-06-03

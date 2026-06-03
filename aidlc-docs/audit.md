@@ -1,6 +1,7 @@
 # AI-DLC Audit Log
 
 - 2026-06-03 — **F46 merged** (fb06517): agent account tool down — prepend venv bin to agent PATH (51 lines, 2 files, 54 tests green)
+- 2026-06-03 — **F43 merged** (b0ed183): daemon code-version skew self-heal (396 lines, 8 files, 9+6 tests green)
 
 ## F29 merge 2026-06-02 — Supervisor codebase orientation: steer_read{command:/codebase} returns project directory tree (daemon startup scan, depth=2, fnmatch exclusions); 577 tests green, 0 new deps, docker-verify attach verified.
 
