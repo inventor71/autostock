@@ -1573,3 +1573,5 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 **Context**: /ai-dlc-merge Stage 0 — 유일한 승인 게이트 통과.
 
 ---
+
+- 2026-06-03 — **F41 merged** (main `f330370`): research turn 마커 오버레이 정보 강화. multi-agent research turn 오버레이가 빈 summary + agent별 평가 미영속이던 두 근본원인 해결. Unit1 `agent-eval-persistence` — `src/agent/agent_reports.py` 신규(per-turn 평가 리포트 스키마, `_mask_secrets` 준수) + `orchestrator`의 sequential/parallel 두 경로에서 평가 캡처 + `record_turn` summary/turn_id 버그수정(단일 `_run` 경로만 summary 채우던 것). Unit2 `overlay-drilldown` — tui-trading `readAgentReport`/`maskSecrets` + drill-down `turn-overlay.tsx`(runtime.py 무변경, TUI 직접 읽기). `/ai-dlc-merge` 큐 1/3: 큐 진입 시 main(7c62527, 사전 doc 동기 커밋) 위로 rebase(2커밋 clean) → verify 재실행 green(pytest 621/0 regress · tui-trading bun 44 · turbo typecheck 19/19) → `--no-ff` 머지. 겹침 없는 독립 트랙이라 큐 선두 배치.

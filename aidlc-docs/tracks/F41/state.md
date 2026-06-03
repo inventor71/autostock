@@ -8,7 +8,7 @@
 - **Track ID**: F41
 - **Title**: Research turn 마커 오버레이 정보 강화 (multi-agent 평가 노출)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test 통과, /ai-dlc-merge 큐 대기. 레지스트리 행은 머지 시점까지 active 유지 -->
+- **Status**: merged → main f330370 (2026-06-03)  <!-- /ai-dlc-merge: rebased onto 7c62527, verify green (pytest 621 · tui-trading 44 · typecheck 19/19), --no-ff merged -->
 - **Branch**: feat/F41
 - **Worktree**: .claude/worktrees/F41
 - **Submodule branch**: — (monorepo, post-F35; touches Python + operator-console/cli)

@@ -53,7 +53,7 @@
 | F38 | 운영자 수동 turn 트리거 steering 명령 (research turn 등 on-demand 실행) | active | feat/F38 (fc8ee7e, 미머지) | .claude/worktrees/F38 | — (monorepo) | b0b1275 (F42 위로 리베이스) | 2026-06-03 |
 | F39 | Normal 모드 코드 질문 차단 — supervisor 아닐 때 소스/내부 구현 질문 거부 (운영 질문은 steering 데이터로 응답) | active (merge-awaiting) | feat/F39 (6ba79d1, ↑1, merge-awaiting) | .claude/worktrees/F39 | — (monorepo) | 72aba01 | 2026-06-03 |
 | F40 | autostock 런처 `-h`/`--help` 핸들러 — `--supervisor` 등 런처 고유 옵션 노출 + opencode help loose-fuse | merged | feat/F40 → main 65e65ab | — | — (monorepo) | 72aba01→2a17322→65e65ab | 2026-06-03 |
-| F41 | Research turn 마커 오버레이 정보 강화 (multi-agent 평가 노출 + summary 버그 수정) | active | feat/F41 | .claude/worktrees/F41 | — (monorepo) | 72aba01 | 2026-06-03 |
+| F41 | Research turn 마커 오버레이 정보 강화 (multi-agent 평가 노출 + summary 버그 수정) | merged | feat/F41 → main f330370 | — | — (monorepo) | 72aba01→rebased 7c62527→f330370 | 2026-06-03 |
 | F42 | F37 리네임 누락 핫픽스 — main.py + scripts의 `alpaca_secret_key` 잔여 참조 제거 (데몬 startup 크래시) | merged | feat/F42 → main b0b1275 | — (제거됨) | — (monorepo) | 72aba01 | 2026-06-03 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
