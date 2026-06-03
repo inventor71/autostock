@@ -37,6 +37,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "hypothesis>=6.0",  # property-based testing (AI-DLC PBT extension, partial mode)
+    "pre-commit>=3.6",  # runs the gitleaks secret-scan hook (.pre-commit-config.yaml)
 ]
 
 [project.scripts]

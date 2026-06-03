@@ -21,8 +21,7 @@ twice per track (create + close) — rare enough to resolve with `git pull --reb
 - A **track** = one feature/refactor/deprecate effort, developed in its own worktree.
 - Each track has a stable **Track ID**: `F1`, `F2`, … (next id = max existing + 1). Refactor
   and deprecate efforts are tracks too (e.g. `R1`, `D1`) and follow the same partition rules.
-- A track owns exactly one parent-repo branch and (if it touches the submodule) one submodule
-  branch.
+- A track owns exactly one branch.
 
 ## File layout
 ```text
@@ -53,66 +52,50 @@ A single table is the authority for which tracks exist and where they live:
 
 ```markdown
 ## Track Registry
-| ID | Title | Status | Branch | Worktree | Submodule branch | Base commit | Updated |
-|----|-------|--------|--------|----------|------------------|-------------|---------|
-| F9 | … | active | feat/… | .claude/worktrees/… | feat/… or — | <sha> | 2026-… |
+| ID | Title | Status | Branch | Worktree | Base commit | Updated |
+|----|-------|--------|--------|----------|-------------|---------|
+| F9 | … | active | feat/… | .claude/worktrees/… | <sha> | 2026-… |
 ```
 - `Status` ∈ `active` / `merged` / `abandoned`.
 - A registry row is written at track **creation** and flipped at **merge/close**. These are the
   only two cross-track edits; serialize them with `git pull --rebase` before committing.
 
-## MANDATORY worktree gate (repo + submodule)
+## MANDATORY worktree gate
 **No application code may be generated outside a worktree.** Enforced as a hard, blocking gate.
 
 > **One command does all of this:** `scripts/worktree-setup.sh <track> [--ts] [--py]` creates the
-> worktree, branches the submodule, runs the verification bootstrap (below), and links the main
-> `.env`. Prefer it over the manual steps.
+> worktree, runs the verification bootstrap (below), and links the main `.env`. Prefer it over the
+> manual steps.
 
-1. **Parent repo.** Before Code Generation **Part 2** (actual coding), the track MUST be on its
-   own worktree branch:
-   ```bash
-   git worktree add .claude/worktrees/<track> -b feat/<track>
-   ```
-   If the session is on the default branch (`main`) with uncommitted code changes, **refuse to
-   generate code** and create/switch to the worktree first. Inception/design docs (markdown in
-   `aidlc-docs/tracks/<id>/`) may be authored before the worktree exists; code may not.
+Before Code Generation **Part 2** (actual coding), the track MUST be on its own worktree branch:
+```bash
+git worktree add .claude/worktrees/<track> -b feat/<track>
+```
+If the session is on the default branch (`main`) with uncommitted code changes, **refuse to
+generate code** and create/switch to the worktree first. Inception/design docs (markdown in
+`aidlc-docs/tracks/<id>/`) may be authored before the worktree exists; code may not.
 
-2. **Submodule** (`operator-console/cli` — a separate git repo). The parent worktree does NOT
-   isolate the submodule. If the track changes submodule files:
-   - Create a branch **inside the submodule**: `git -C operator-console/cli switch -c feat/<track>`
-     (never work on a detached HEAD).
-   - Commit submodule changes on that branch.
-   - The parent **gitlink** (the submodule pointer) is committed **only at merge time**, after the
-     submodule branch is merged to its own `main` and pushed. (This is exactly the manual dance
-     that the F7 track had to improvise — now it is a rule.)
-
-3. `/ai-dlc-status` flags a violation: uncommitted code changes in the `main` working tree, or a
-   submodule on a detached HEAD with changes.
+`/ai-dlc-status` flags a violation: uncommitted code changes in the `main` working tree.
 
 ### Verification bootstrap — make the worktree verifiable in place (don't defer typecheck)
-A fresh worktree's submodule has **no `node_modules` and no `tsgo` binary** (both are gitignored
-build output), so `tsgo`/typecheck silently can't run and verification keeps getting punted to
-"the user's machine". This is **cheap to fix, not a heavy network op**: bun's global cache is warm
-(~2.6G) and bun's default backend is hardlinks, so `bun install --frozen-lockfile` in the worktree
-is a near-offline hardlink farm (seconds, ~no disk). The recurring real blockers were (a) `bun` not
-on PATH in a bare shell (it lives at `~/.bun/bin` — same class as the daemon claude-CLI PATH bug),
-and (b) assuming the install needs the network. So:
+A fresh worktree has **no `node_modules` and no `tsgo` binary** for the console
+(`operator-console/cli` — both are gitignored build output), so `tsgo`/typecheck silently can't run
+and verification keeps getting punted to "the user's machine". This is **cheap to fix, not a heavy
+network op**: bun's global cache is warm (~2.6G) and bun's default backend is hardlinks, so
+`bun install --frozen-lockfile` in the worktree is a near-offline hardlink farm (seconds, ~no disk).
+The recurring real blockers were (a) `bun` not on PATH in a bare shell (it lives at `~/.bun/bin` —
+same class as the daemon claude-CLI PATH bug), and (b) assuming the install needs the network. So:
 
-- **TS submodule track**: run `scripts/worktree-setup.sh <track> --ts`. It inits the submodule,
-  branches it, ensures `~/.bun/bin` on PATH, runs `bun install --frozen-lockfile`, and verifies
-  `node_modules/.bin/tsgo` exists. Then typecheck **in the worktree**:
+- **TS console track**: run `scripts/worktree-setup.sh <track> --ts`. It ensures `~/.bun/bin` on
+  PATH, runs `bun install --frozen-lockfile`, and verifies `node_modules/.bin/tsgo` exists. Then
+  typecheck **in the worktree**:
   `(cd .../operator-console/cli && PATH=~/.bun/bin:$PATH bun run typecheck)`. Only defer to the
   user's machine if `bun` is genuinely unavailable or the lockfile changed and the cache is cold.
 - **Python track**: `scripts/worktree-setup.sh <track> --py` symlinks the main `.env` into the
   worktree (pydantic loads it). Run live (paper-account, read-only) checks with the main venv
   python — see the `worktree-live-verification` memory.
-- Quick fallback (caveat): symlinking the main submodule's `node_modules` gives external-dep types
-  but bun's internal workspace symlinks (`node_modules/@opencode-ai/*` → `../packages/...`) resolve
-  into the **main** tree's packages, not the worktree's edits — fine for external-dep-only checks,
-  wrong for verifying edited workspace packages. `bun install` is correct.
 - **Containerized verification (F10, zero prod impact)**: `scripts/worktree-setup.sh <track>
-  --docker-verify` host-inits the submodule (the container's `git` can't — the worktree `.git` is a
-  pointer **outside** the mounted `/app`) and scaffolds `.env.test`, then prints the
+  --docker-verify` scaffolds `.env.test`, then prints the
   `docker compose -f docker-compose.verify.yml run --rm verify {typecheck,unit,smoke}` commands. The
   image bakes the python/bun/claude toolchain; CODE is bind-mounted so it verifies the live worktree.
   Isolation is structural: the container sets `AUTOSTOCK_ENV_FILE=/app/.env.test`, so it loads a
@@ -129,12 +112,11 @@ and (b) assuming the install needs the network. So:
 
 ## Track lifecycle
 1. **Create.** Pick next `Fn`. `mkdir aidlc-docs/tracks/<id>`, copy `_TEMPLATE/{state.md,audit.md}`.
-   Add a registry row (`active`). Create the worktree (and submodule branch if needed) **before**
-   any code generation. (Even a lean hotfix track creates `tracks/<id>/state.md` here — see the
-   note above.)
+   Add a registry row (`active`). Create the worktree **before** any code generation. (Even a lean
+   hotfix track creates `tracks/<id>/state.md` here — see the note above.)
 2. **Work.** All progress + audit go to `tracks/<id>/{state.md,audit.md}` only. Never touch another
    track's files or the root files (except a registry row update if the title/base changes).
-3. **Merge / close.** Merge the branch (and submodule branch first, if any). Flip the registry row
+3. **Merge / close.** Merge the branch. Flip the registry row
    to `merged`. Append a **one-line** summary to the global root `audit.md`. Optionally archive
    `tracks/<id>/` or leave it as record. Remove the worktree (`git worktree remove …`).
 
@@ -147,4 +129,3 @@ and (b) assuming the install needs the network. So:
 - [ ] Am I in a worktree for my track? If coding and on `main` → stop, create worktree.
 - [ ] Does my track have `aidlc-docs/tracks/<id>/{state.md,audit.md}`? If not → create from template + register.
 - [ ] Am I about to edit root `aidlc-state.md`/`audit.md` mid-flight? → Don't. Use my track files.
-- [ ] Touching the submodule? → Branch inside it; defer the parent gitlink commit to merge.

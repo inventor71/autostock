@@ -3,8 +3,7 @@
 # (UID:GID) so every file the container writes onto the bind-mounted worktree is host-owned from
 # the start. That removes the whole class of root-owned-file problems the harness used to paper
 # over after the fact: `git worktree remove` needs no sudo, and in-container git no longer trips
-# git's "dubious ownership" guard on the host-owned .git (which once drove a workaround that
-# destroyed the submodule .git — F22/F25).
+# git's "dubious ownership" guard on the host-owned .git.
 #
 # Why a wrapper instead of compose interpolating $UID directly: bash's $UID is readonly AND not
 # exported, so `${UID}` in compose resolves to empty; and a project-root .env (UID/GID) would be

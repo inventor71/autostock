@@ -2,7 +2,7 @@
 # F10 verification harness entrypoint. Runs inside the verify container (see docker-compose.verify.yml).
 # Modes:  all | typecheck | unit | smoke | attach   (passed as the run arg; default `all`).
 #
-#   typecheck — operator-console (bun) typecheck against the mounted submodule source.
+#   typecheck — operator-console (bun) typecheck against the mounted console source.
 #   unit      — deterministic offline pytest (in-test doubles; never calls the real LLM/Alpaca).
 #   smoke     — REAL claude + read-only Alpaca on the TEST account; asserts it is NOT prod. No orders.
 #   all       — typecheck + unit  (smoke is opt-in: it needs real test keys + the claude mount).
@@ -20,8 +20,8 @@
 # happens if you run compose from the main repo root instead of a worktree).
 #
 # NOTE on git: this runs in a git-worktree whose `.git` points OUTSIDE the /app mount, so in-container
-# `git` fails. We therefore NEVER run `git submodule update` here — the submodule must be initialized
-# on the HOST before building/running (the script errors clearly if its files are absent).
+# `git` fails. The console source ships in the checkout; only the gitignored node_modules/tsgo are
+# absent and are installed by `bun install` below — no in-container git is needed.
 set -euo pipefail
 
 MODE="${1:-all}"
@@ -56,9 +56,7 @@ preflight() {
 run_typecheck() {
   log "operator-console typecheck (bun)"
   [ -f "$CONSOLE_DIR/package.json" ] || fail \
-    "submodule not initialized: $CONSOLE_DIR/package.json missing. Init it on the HOST first:
-     git -C <main-repo> submodule update --init <worktree>/$CONSOLE_DIR
-     (in-container git can't do this — the worktree .git lives outside the mount)."
+    "$CONSOLE_DIR/package.json missing — the worktree checkout is incomplete or corrupt."
   ( cd "$CONSOLE_DIR" && bun install --frozen-lockfile && bun run typecheck )
   log "typecheck OK"
 }
@@ -131,8 +129,7 @@ PY
 # root-owned lands in the bind-mounted worktree.
 run_attach() {
   [ -f "$CONSOLE_DIR/package.json" ] || fail \
-    "submodule not initialized: $CONSOLE_DIR/package.json missing — init it on the HOST first
-     (scripts/worktree-setup.sh <track> --docker-verify)."
+    "$CONSOLE_DIR/package.json missing — the worktree checkout is incomplete or corrupt."
   claude --version >/dev/null 2>&1 || fail \
     "claude CLI not reachable — the daemon's LLM turns need the host ~/.claude mounted (rw)."
 
@@ -147,17 +144,9 @@ run_attach() {
   cp /app/.env.test /app/.env
   log "copied .env.test → .env (daemon + MCP server both read .env)"
 
-  # F27 — removed: the `git config --global --add safe.directory '*'` + the .git mv-aside/restore
-  # workaround. Two things drove that code, only one of which still exists:
-  #   * dubious-ownership: gone. The container runs as the HOST user now, so git no longer flags
-  #     the host-owned mounted repo. No safe.directory needed.
-  #   * gitdir: pointer escaping /app: this was a PATH problem (the submodule .git file points at
-  #     <main>/.git/.../modules/…, outside the /app mount), unrelated to ownership. It is NOT fixed
-  #     by running non-root. We remove the mv-aside because the attach DAEMON path needs no
-  #     in-container submodule git. If the opencode TUI below turns out to call git in
-  #     operator-console/cli (verify at Build&Test), reintroduce a HOST-OWNED, non-destructive
-  #     handler — and KEEP the `[ -f ]` (not `[ -e ]`) guard that protected a standalone .git dir
-  #     from being clobbered into an empty `master` (the F22/F25 data-loss bug). NEVER `rm .git`.
+  # F27 — removed: the `git config --global --add safe.directory '*'` workaround. The container runs
+  # as the HOST user now, so git no longer flags the host-owned mounted repo as dubious-ownership;
+  # no safe.directory is needed. The attach path runs no in-container git at all.
 
   log "installing console deps (bun) — first run only, cached in the node_modules volume"
   ( cd "$CONSOLE_DIR" && bun install --frozen-lockfile )

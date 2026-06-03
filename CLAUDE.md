@@ -88,9 +88,7 @@ workflow start. Non-negotiable rules from it:
   Edit it only at track create/close. **Root `audit.md` = global timeline**, appended **only at
   merge** (one-line summary). Do NOT write per-track detail to either root file mid-flight.
 - **Worktree gate (blocking)**: no application code may be generated outside a worktree. If coding
-  while on `main`, STOP and create the track worktree first. If the track touches the submodule
-  (`operator-console/cli`), branch **inside the submodule** too (no detached HEAD) and commit the
-  parent gitlink **only at merge**.
+  while on `main`, STOP and create the track worktree first.
 
 This OVERRIDES any instruction below that says to write progress/audit to the root
 `aidlc-state.md` / `audit.md` directly — route those to the track's files instead.

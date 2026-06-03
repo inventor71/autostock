@@ -1,0 +1,8 @@
+# Repo-wide git hooks. Enable once per clone with:  pre-commit install
+# (pre-commit is a dev dependency; it downloads and manages the gitleaks binary itself.)
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secret scan)
