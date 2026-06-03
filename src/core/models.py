@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 from pydantic import BaseModel, Field, model_validator
 
-from src.core.types import OrderClass, OrderSide, OrderType, Signal
+from src.core.types import OrderClass, OrderSide, OrderType, PositionSide, Signal
 
 
 class Bar(BaseModel):
@@ -65,6 +65,34 @@ class Order(BaseModel):
                     f"{self.order_class.value} order requires both "
                     f"take_profit_price and stop_loss_price"
                 )
+            # F54: protective-leg geometry depends on the position direction the
+            # order opens/protects. The reference price is the entry limit when
+            # set, else this is validated downstream against the live price.
+            # A short bracket inverts a long's: stop ABOVE, target BELOW entry.
+            ref = self.limit_price
+            if ref is not None:
+                if self.side in (OrderSide.SELL_SHORT, OrderSide.BUY_TO_COVER):
+                    if self.stop_loss_price <= ref:
+                        raise ValueError(
+                            f"short {self.order_class.value}: stop_loss "
+                            f"{self.stop_loss_price} must be > entry {ref}"
+                        )
+                    if self.take_profit_price >= ref:
+                        raise ValueError(
+                            f"short {self.order_class.value}: take_profit "
+                            f"{self.take_profit_price} must be < entry {ref}"
+                        )
+                else:
+                    if self.stop_loss_price >= ref:
+                        raise ValueError(
+                            f"long {self.order_class.value}: stop_loss "
+                            f"{self.stop_loss_price} must be < entry {ref}"
+                        )
+                    if self.take_profit_price <= ref:
+                        raise ValueError(
+                            f"long {self.order_class.value}: take_profit "
+                            f"{self.take_profit_price} must be > entry {ref}"
+                        )
         if self.order_type == OrderType.TRAILING_STOP:
             has_price = self.trail_price is not None
             has_pct = self.trail_percent is not None
@@ -106,6 +134,10 @@ class OpenOrder(BaseModel):
 class Position(BaseModel):
     symbol: str
     qty: float
+    # F54: direction. Defaults to LONG so every existing construction site stays
+    # long without change. A SHORT position holds a positive ``qty`` (shares
+    # owed); the direction lives in ``side``, not in the sign of ``qty``.
+    side: PositionSide = PositionSide.LONG
     avg_entry_price: float
     current_price: float = 0.0
     unrealized_pnl: float = 0.0
@@ -118,7 +150,14 @@ class Position(BaseModel):
     def update_price(self, price: float) -> None:
         self.current_price = price
         self.market_value = self.qty * price
-        self.unrealized_pnl = self.market_value - self.cost_basis
+        # P&L sign depends on direction: a long profits when price rises, a short
+        # profits when price falls. Keeping ``unrealized_pnl`` positive == profit
+        # for both directions lets every downstream consumer (TUI, reviews,
+        # metrics) treat the number uniformly.
+        if self.side == PositionSide.SHORT:
+            self.unrealized_pnl = self.cost_basis - self.market_value
+        else:
+            self.unrealized_pnl = self.market_value - self.cost_basis
 
 
 class PortfolioState(BaseModel):

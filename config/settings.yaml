@@ -187,6 +187,13 @@ risk:
   atr_stop_multiple: 3.0  # default stop = 3x ATR when LLM gives no level
   market_halt_threshold_pct: -0.03  # halt new buys if SPY day-change <= -3%
   default_risk_reward: 2.5  # derived take-profit R:R when LLM gives no target
+  # F54 short-selling risk (all optional; null/omitted → fall back to the long
+  # value above). Shorts carry unbounded loss, so the stop is always mandatory.
+  short_market_halt_threshold_pct: 0.03  # halt new shorts if SPY day-change >= +3%
+  individual_stock_halt_pct: 0.10  # reject a fresh short if the name is up >=10% today
+  short_stop_loss_pct: null  # null → use stop_loss_pct
+  short_take_profit_pct: null  # null → use take_profit_pct
+  short_max_stop_distance_pct: null  # null → use max_stop_distance_pct
 
 backtest:
   start_date: "2020-01-01"

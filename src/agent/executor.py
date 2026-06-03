@@ -25,7 +25,7 @@ from src.agent.journal import Decision, Journal
 from src.agent.steering.jsonl import atomic_write_text
 from src.agent.tools import market
 from src.core.models import Order, TradeSignal
-from src.core.types import OrderClass, OrderSide, OrderType, Signal
+from src.core.types import OrderClass, OrderSide, OrderType, PositionSide, Signal
 from src.risk.exits import run_polled_exits
 
 
@@ -236,12 +236,25 @@ class DecisionExecutor:
         if d.action == "ADJUST_STOP":
             return self._adjust_stop(d)
 
-        # BUY / SELL -> RiskManager -> broker
+        # BUY / SELL / SELL_SHORT / BUY_TO_COVER -> RiskManager -> broker
         portfolio = self.broker.get_portfolio_state()
         try:
             price = self.data_provider.get_latest_price(d.symbol)
         except Exception as e:
             return ExecutionOutcome(d, "error", f"price fetch failed: {e}")
+
+        # F54 auto-flip (BR-6): a directional reversal closes the opposite-side
+        # position FIRST, all-or-nothing. SELL_SHORT over a long → close long
+        # then short; BUY over a short → cover then go long. The close failing
+        # aborts the new entry so the book never ends in an ambiguous state.
+        existing = portfolio.positions.get(d.symbol)
+        if existing is not None:
+            flip = self._maybe_flip(d, existing, price)
+            if flip is not None:
+                if flip.status != "executed":
+                    return flip  # close failed → abort, don't open the new side
+                # Re-snapshot: the closed position is gone now.
+                portfolio = self.broker.get_portfolio_state()
 
         signal = self._to_signal(d)
         order = self.risk_manager.evaluate_signal(signal, price, portfolio)
@@ -257,18 +270,60 @@ class DecisionExecutor:
         self._log_execution(d, filled, decision_index=decision_index)
         return outcome
 
+    def _maybe_flip(self, d: Decision, existing, price: float) -> ExecutionOutcome | None:
+        """If decision ``d`` reverses an existing position's direction, close that
+        position first. Returns the close ExecutionOutcome (executed/error), or
+        None when no flip is needed. Cancels any resting protection before the
+        close so its qty is released."""
+        long_to_short = d.action == "SELL_SHORT" and existing.side == PositionSide.LONG
+        short_to_long = d.action == "BUY" and existing.side == PositionSide.SHORT
+        if not (long_to_short or short_to_long):
+            return None
+
+        # Release resting protective legs so the close isn't short of qty.
+        opens = self.broker.get_open_orders(d.symbol)
+        if opens:
+            self._cancel_and_wait(d.symbol, opens)
+
+        closed = self.broker.close_position(d.symbol)
+        if closed is None or closed.qty <= 0:
+            logger.error(
+                f"Auto-flip aborted for {d.symbol}: close of {existing.side.value} "
+                f"position did not fill"
+            )
+            return ExecutionOutcome(
+                d, "error",
+                f"auto-flip: failed to close existing {existing.side.value} position",
+            )
+        logger.info(
+            f"Auto-flip {d.symbol}: closed {existing.side.value} "
+            f"{closed.qty} @ {closed.filled_price:.2f}, opening opposite side"
+        )
+        self._log_execution(d, closed)
+        return ExecutionOutcome(
+            d, "executed",
+            f"auto-flip close {existing.side.value} {closed.qty} {d.symbol}",
+            order_id=closed.order_id,
+        )
+
     def _to_signal(self, d: Decision) -> TradeSignal:
         confidence = d.confidence if d.confidence is not None else 0.5
-        if d.action == "BUY":
+        # Entries (BUY / SELL_SHORT) carry the LLM's key levels + an ATR fallback
+        # so RiskManager can build a (correctly-oriented) bracket. The level keys
+        # are direction-neutral; RiskManager interprets them per side.
+        if d.action in ("BUY", "SELL_SHORT"):
             metadata: dict[str, Any] = {
                 "key_levels": {"entry": d.limit, "stop_loss": d.stop, "take_profit": d.target}
             }
             atr = self._atr(d.symbol)
             if atr is not None:
                 metadata["atr"] = atr  # lets RiskManager fall back to an ATR stop
-            return TradeSignal(symbol=d.symbol, signal=Signal.BUY, confidence=confidence, metadata=metadata)
+            sig = Signal.BUY if d.action == "BUY" else Signal.SELL_SHORT
+            return TradeSignal(symbol=d.symbol, signal=sig, confidence=confidence, metadata=metadata)
+        # Exits (SELL / BUY_TO_COVER) carry the partial fraction.
+        sig = Signal.BUY_TO_COVER if d.action == "BUY_TO_COVER" else Signal.SELL
         return TradeSignal(
-            symbol=d.symbol, signal=Signal.SELL, confidence=confidence,
+            symbol=d.symbol, signal=sig, confidence=confidence,
             sell_pct=d.sell_pct if d.sell_pct is not None else 1.0,
         )
 
@@ -294,15 +349,22 @@ class DecisionExecutor:
         if position is None:
             return ExecutionOutcome(d, "no_order", "no position to protect")
 
+        # F54: a long is protected by SELL legs (ratchet UP); a short by
+        # BUY_TO_COVER legs (ratchet DOWN). The protective side + ratchet
+        # direction both follow the position's side.
+        is_short = position.side == PositionSide.SHORT
+        protective_side = OrderSide.BUY_TO_COVER if is_short else OrderSide.SELL
+
         opens = self.broker.get_open_orders(d.symbol)
         current_stop = next((o.stop_price for o in opens if o.stop_price is not None), None)
         current_target = next(
-            (o.limit_price for o in opens if o.limit_price is not None and o.side == OrderSide.SELL),
+            (o.limit_price for o in opens
+             if o.limit_price is not None and o.side == protective_side),
             None,
         )
-        # Ratchet: only tighten (raise) the long stop unless widening is intended.
         new_stop = self.risk_manager.ratchet_stop(
-            current_stop if current_stop is not None else d.stop, d.stop
+            current_stop if current_stop is not None else d.stop, d.stop,
+            position_side=position.side,
         )
         target = d.target if d.target is not None else current_target
 
@@ -318,16 +380,16 @@ class DecisionExecutor:
 
         if target is not None:
             order = Order(
-                symbol=d.symbol, side=OrderSide.SELL, qty=position.qty,
+                symbol=d.symbol, side=protective_side, qty=position.qty,
                 order_class=OrderClass.OCO, take_profit_price=target, stop_loss_price=new_stop,
             )
         else:
             order = Order(
-                symbol=d.symbol, side=OrderSide.SELL, qty=position.qty,
+                symbol=d.symbol, side=protective_side, qty=position.qty,
                 order_type=OrderType.STOP, stop_price=new_stop,
             )
         filled = self.broker.submit_order(order)
-        detail = f"{label} {d.symbol} stop->{new_stop:.2f}"
+        detail = f"{label} {d.symbol} ({position.side.value}) stop->{new_stop:.2f}"
         if target is not None:
             detail += f" target {target:.2f}"
         return ExecutionOutcome(d, "executed", detail, order_id=filled.order_id)

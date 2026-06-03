@@ -21,7 +21,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROOT = PROJECT_ROOT / "workspace"
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
-DecisionAction = Literal["BUY", "SELL", "HOLD", "ADJUST_STOP"]
+# F54: SELL_SHORT opens a short (requires a stop — see RiskManager), BUY_TO_COVER
+# closes one. A SELL stays a long-exit only; the executor never reinterprets it.
+DecisionAction = Literal[
+    "BUY", "SELL", "HOLD", "ADJUST_STOP", "SELL_SHORT", "BUY_TO_COVER"
+]
 
 LESSON_CATEGORIES = (
     "entry_timing", "exit_timing", "risk_mgmt", "regime",

@@ -61,7 +61,12 @@ class BaseBroker(ABC):
 
     @abstractmethod
     def submit_order(self, order: Order) -> FilledOrder:
-        """Submit an order for execution."""
+        """Submit an order for execution.
+
+        F54: ``order.side`` may be SELL_SHORT (open a short) or BUY_TO_COVER
+        (close a short) in addition to BUY/SELL. Live brokers map these to their
+        native short sides; the simulated broker tracks the position direction.
+        """
         pass
 
     @abstractmethod

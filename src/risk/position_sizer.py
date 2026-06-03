@@ -24,19 +24,24 @@ class PositionSizer:
         stop_loss_pct: float = 0.05,
         confidence: float = 0.5,
     ) -> int:
-        """Calculate the number of shares to buy.
+        """Calculate the number of shares for an entry (long OR short).
 
-        Uses fixed-fraction position sizing with risk-based adjustment.
+        Uses fixed-fraction position sizing with risk-based adjustment. The math
+        is direction-agnostic: ``stop_loss_pct`` is the absolute distance from
+        entry to stop as a positive fraction (for a long the stop is below entry,
+        for a short above), so the same risk-budget formula sizes both. F54 short
+        entries pass ``(stop - entry) / entry``; longs pass ``(entry - stop) /
+        entry``.
 
         Args:
             symbol: Ticker symbol.
-            price: Current stock price.
+            price: Current stock price (entry reference).
             portfolio: Current portfolio state.
-            stop_loss_pct: Stop loss percentage for risk calculation.
+            stop_loss_pct: Absolute stop distance as a positive fraction of entry.
             confidence: Signal confidence (0-1) to scale position size.
 
         Returns:
-            Number of whole shares to buy.
+            Number of whole shares to trade.
         """
         if price <= 0:
             return 0

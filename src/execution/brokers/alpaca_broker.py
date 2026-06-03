@@ -10,7 +10,7 @@ from src.agent.intraday.records import FillEvent
 from src.agent.trades_log import record_trades
 from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
-from src.core.types import OrderClass, OrderSide, OrderType
+from src.core.types import OrderClass, OrderSide, OrderType, PositionSide
 from src.execution.base import BaseBroker
 from src.execution.brokers.session_timeout import install_session_timeout
 
@@ -103,9 +103,23 @@ class AlpacaBroker(BaseBroker):
             latest = self._client.get_order_by_id(order_id)
         return latest
 
+    # F54: map our OrderSide → Alpaca's side. Alpaca's OrderSide is only BUY/SELL;
+    # it has no explicit short sides — a plain SELL on a flat symbol opens a short
+    # and a plain BUY covers it (direction is account-state driven). So our
+    # explicit SELL_SHORT collapses to Alpaca SELL and BUY_TO_COVER to Alpaca BUY.
+    # We keep the distinction in OUR domain (Decision/Order/Position.side) for
+    # unambiguous intent + audit, and only flatten it at this boundary.
+    @staticmethod
+    def _alpaca_side(side: OrderSide):
+        if side in (OrderSide.BUY, OrderSide.BUY_TO_COVER):
+            return AlpacaSide.BUY
+        if side in (OrderSide.SELL, OrderSide.SELL_SHORT):
+            return AlpacaSide.SELL
+        raise BrokerError(f"unsupported order side: {side!r}")
+
     def submit_order(self, order: Order) -> FilledOrder:
         try:
-            side = AlpacaSide.BUY if order.side == OrderSide.BUY else AlpacaSide.SELL
+            side = self._alpaca_side(order.side)
             request = self._build_request(order, side)
 
             result = self._client.submit_order(request)
@@ -236,16 +250,33 @@ class AlpacaBroker(BaseBroker):
             return TrailingStopOrderRequest(**trail, **base)
         raise BrokerError(f"Unsupported order type: {order.order_type}")
 
+    @staticmethod
+    def _position_side(pos) -> PositionSide:
+        """Map Alpaca's position ``side`` ('long'/'short') to ours. Alpaca reports
+        a short position's ``qty`` as negative; we normalize qty to positive and
+        carry direction in ``side`` (F54 convention)."""
+        raw = str(getattr(pos, "side", "")).split(".")[-1].lower()
+        if raw == "short":
+            return PositionSide.SHORT
+        # Fallback: a negative qty also indicates a short.
+        try:
+            if float(pos.qty) < 0:
+                return PositionSide.SHORT
+        except (TypeError, ValueError):
+            pass
+        return PositionSide.LONG
+
     def get_position(self, symbol: str) -> Position | None:
         try:
             pos = self._client.get_open_position(symbol)
             return Position(
                 symbol=pos.symbol,
-                qty=float(pos.qty),
+                qty=abs(float(pos.qty)),
+                side=self._position_side(pos),
                 avg_entry_price=float(pos.avg_entry_price),
                 current_price=float(pos.current_price),
                 unrealized_pnl=float(pos.unrealized_pl),
-                market_value=float(pos.market_value),
+                market_value=abs(float(pos.market_value)),
             )
         except Exception:
             return None
@@ -393,11 +424,12 @@ class AlpacaBroker(BaseBroker):
             return [
                 Position(
                     symbol=p.symbol,
-                    qty=float(p.qty),
+                    qty=abs(float(p.qty)),
+                    side=self._position_side(p),
                     avg_entry_price=float(p.avg_entry_price),
                     current_price=float(p.current_price),
                     unrealized_pnl=float(p.unrealized_pl),
-                    market_value=float(p.market_value),
+                    market_value=abs(float(p.market_value)),
                 )
                 for p in positions
             ]
