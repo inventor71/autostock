@@ -131,7 +131,7 @@ def _provider(name: str, settings):
         from src.data.providers.alpaca_provider import AlpacaDataProvider
 
         return AlpacaDataProvider(
-            api_key=settings.alpaca_api_key, secret_key=settings.alpaca_secret_key
+            api_key=settings.alpaca_api_key, secret_key=settings.alpaca_api_secret
         )
     from src.data.providers.yfinance_provider import YFinanceProvider
 

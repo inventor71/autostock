@@ -25,7 +25,7 @@ def _broker():
     settings = get_settings()
     return AlpacaBroker(
         api_key=settings.alpaca_api_key,
-        secret_key=settings.alpaca_secret_key,
+        secret_key=settings.alpaca_api_secret,
         paper=settings.broker.paper,
     )
 
