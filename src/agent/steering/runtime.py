@@ -14,6 +14,7 @@ import fnmatch
 import json
 import os
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -36,6 +37,25 @@ from src.agent.steering.turns import ReconcileWorker, TurnCoordinator
 # repo root: src/agent/steering/runtime.py -> parents[3]
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STEERING_DIR = _REPO_ROOT / "steering"
+
+def _resolve_code_version(root: Path) -> str:
+    """The git HEAD SHA of the code THIS daemon process is running (F43 version-skew
+    self-heal). Resolved ONCE at startup so it reflects the in-memory code, not a later
+    merge to the working tree. Stamped into every snapshot; the ``autostock`` launcher
+    compares it against the working-tree HEAD and restarts a daemon left running stale
+    code (which silently rejects new console verbs, e.g. F38 ``research``). Any failure
+    (no git / not a repo) -> ``""``; NEVER raises (a missing stamp must not break boot).
+    The launcher treats a present-but-blank stamp as 'unknown' (fail-open, no restart),
+    so a daemon that simply can't reach git does not trigger a restart loop."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(root), capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
 
 # F25: US equity market-session rule (wall-clock ET). DST is resolved by the TUI
 # using the IANA tz, so only fixed wall times live here.
@@ -100,6 +120,10 @@ class SteeringRuntime:
         # market-aware 12h timeline. Wall-clock ET times (DST handled by the TUI's
         # IANA tz conversion). Overridable via set_market_rule() from settings.
         self._market_rule: dict = dict(_DEFAULT_MARKET_RULE)
+        # F43: git HEAD SHA of the code this process loaded (resolved once at boot).
+        # Stamped into every snapshot so the launcher can detect a daemon left running
+        # stale code after a merge and auto-restart it (version-skew self-heal).
+        self._code_version: str = _resolve_code_version(_REPO_ROOT)
 
     def _load_fills_cursor(self) -> str:
         try:
@@ -236,6 +260,7 @@ class SteeringRuntime:
                 "account": self._account_block(ps),  # F6 FR-2 (reuses equity_log.snapshot)
                 "round_trip": self._round_trip,       # F6 FR-3 (cached, slow-cadence refresh)
                 "recent_fills": self._recent_fills,   # F8 FR-3 (cached, slow-cadence refresh)
+                "code_version": self._code_version,   # F43: launcher version-skew self-heal
             }
             self.last_snapshot = snapshot
             self.channel.publish_snapshot(snapshot)

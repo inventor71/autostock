@@ -157,6 +157,9 @@ def test_publish_snapshot_and_sweep(tmp_path):
         assert _wait(lambda: rt.channel.snapshot_file.exists())
         snap = json.loads(rt.channel.snapshot_file.read_text())
         assert "AAPL" in snap["positions"] and "run_state" in snap and "published_at" in snap
+        # F43: the snapshot carries the daemon's code version (git HEAD or "" off-git) so the
+        # launcher can detect a daemon left running stale code and auto-restart it (AC-1).
+        assert "code_version" in snap and isinstance(snap["code_version"], str)
         # sweep clears day-scoped state without error
         rt.state.lock_symbol("AAPL")
         rt.daily_sweep()
