@@ -35,16 +35,27 @@ mkdir -p operator-console/cli/node_modules operator-console/node_modules \
          steering workspace logs 2>/dev/null || true
 
 COMPOSE=(docker compose -f docker-compose.verify.yml)
+IMAGE=autostock-verify:latest
+# Shared dependency volumes (declared `external` in compose) — ONE copy reused by every worktree.
+DEP_VOLS=(autostock-verify-cli-node-modules autostock-verify-mcp-node-modules)
 
-# G-7: a freshly-created named volume is owned root:root, so the non-root container can't write
-# into it (bun install → EACCES on the node_modules volumes). Before any real run, a one-shot ROOT
-# helper (`init-perms`, the only service WITHOUT `user:`) chowns the volume mountpoints to the host
-# UID:GID. Deterministic — unlike a Dockerfile chmod, it is not shadowed by the /app bind mount.
-# Only needed for the run/up subcommands; build/config/etc. don't touch the volumes.
 case "${1:-}" in
   run|up)
-    "${COMPOSE[@]}" run --rm init-perms >/dev/null 2>&1 \
-      || echo "[verify-run] warning: init-perms (volume chown) failed — first bun install may hit EACCES" >&2
+    # All services pin `image: autostock-verify:latest` so the toolchain image (python+bun+claude;
+    # NOT the console node_modules) is built ONCE and SHARED across worktrees — no silent per-project
+    # rebuild. Build it here if missing — with VISIBLE output, not hidden inside the init-perms step.
+    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+      echo "[verify-run] image '$IMAGE' not built yet — building ONCE (shared by all worktrees; a few minutes, output below):" >&2
+      "${COMPOSE[@]}" build verify || { echo "[verify-run] image build failed" >&2; exit 1; }
+    fi
+    # The shared dep volumes are `external` → create them empty if missing (a runtime bun install
+    # populates them as the host user; init-perms chowns them first so that write succeeds).
+    for v in "${DEP_VOLS[@]}"; do docker volume create "$v" >/dev/null; done
+    # G-7: named volumes are created owned root:root; the non-root container can't write into the
+    # per-worktree state volumes. The one-shot ROOT `init-perms` service chowns the volume
+    # mountpoints to the host UID:GID first. (Quiet stdout — pure chown — but surface failures.)
+    "${COMPOSE[@]}" run --rm init-perms >/dev/null \
+      || echo "[verify-run] warning: init-perms (volume chown) failed — first write may hit EACCES" >&2
     ;;
 esac
 

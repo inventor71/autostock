@@ -30,6 +30,17 @@ CONSOLE_DIR="operator-console/cli"
 log()  { printf '\n\033[1;36m[verify:%s]\033[0m %s\n' "$MODE" "$*"; }
 fail() { printf '\n\033[1;31m[verify:%s] FAIL:\033[0m %s\n' "$MODE" "$*" >&2; exit 1; }
 
+# Console deps live in a SHARED node_modules volume (docker-compose.verify.yml: fixed-name external
+# volume, host-owned via init-perms). `bun install` populates it on the FIRST run (slow, once,
+# global) and is FAST afterward (warm store → it only re-creates the per-package workspace symlinks
+# under operator-console/cli/packages/*/node_modules, which the runtime bind mount otherwise hides).
+# Run as the host user → writes the shared volume without EACCES.
+ensure_console_deps() {
+  local dir="$1"
+  log "bun install in $dir (shared node_modules volume — slow only on the first ever run, then fast)"
+  ( cd "$dir" && bun install --frozen-lockfile )
+}
+
 # preflight — enforce the isolation invariant instead of assuming it (critic HIGH-2). The container
 # runs as root; if any of these are wrong, a run could silently load the production account.
 preflight() {
@@ -39,11 +50,14 @@ preflight() {
     "AUTOSTOCK_ENV_FILE is unset — refusing to run (config.py would fall back to /app/.env = prod)."
   [ -f "$AUTOSTOCK_ENV_FILE" ]    || fail \
     "AUTOSTOCK_ENV_FILE=$AUTOSTOCK_ENV_FILE does not exist — fill the TEST .env.test first."
-  # 2) A production .env must NOT be present in the mount. Its presence means compose was run from the
-  #    main repo root (prod .env bind-mounted at /app/.env), not a worktree — fail closed.
-  if [ -e /app/.env ]; then
-    fail "/app/.env exists in the container — you ran compose from a dir containing a prod .env
-     (run it FROM the verify worktree, which has only .env.test). Refusing for prod safety."
+  # 2) A production .env must NOT be present in the mount. Its presence usually means compose was run
+  #    from the main repo root (prod .env bind-mounted at /app/.env), not a worktree — fail closed.
+  #    EXCEPTION: `attach` copies .env.test → /app/.env (the daemon + MCP server both read .env),
+  #    leaving an identical copy on the worktree that would otherwise block the next run. Allow
+  #    /app/.env only when it is byte-identical to .env.test; a real prod .env differs → still refused.
+  if [ -e /app/.env ] && ! cmp -s /app/.env /app/.env.test; then
+    fail "/app/.env exists and differs from .env.test — you ran compose from a dir containing a prod
+     .env (run it FROM the verify worktree, which has only .env.test). Refusing for prod safety."
   fi
 }
 
@@ -57,7 +71,8 @@ run_typecheck() {
   log "operator-console typecheck (bun)"
   [ -f "$CONSOLE_DIR/package.json" ] || fail \
     "$CONSOLE_DIR/package.json missing — the worktree checkout is incomplete or corrupt."
-  ( cd "$CONSOLE_DIR" && bun install --frozen-lockfile && bun run typecheck )
+  ensure_console_deps "$CONSOLE_DIR"
+  ( cd "$CONSOLE_DIR" && bun run typecheck )
   log "typecheck OK"
 }
 
@@ -148,13 +163,12 @@ run_attach() {
   # as the HOST user now, so git no longer flags the host-owned mounted repo as dubious-ownership;
   # no safe.directory is needed. The attach path runs no in-container git at all.
 
-  log "installing console deps (bun) — first run only, cached in the node_modules volume"
-  ( cd "$CONSOLE_DIR" && bun install --frozen-lockfile )
+  # Console deps are baked in the image + seeded into the volumes; normally a no-op here.
+  ensure_console_deps "$CONSOLE_DIR"
   # F22: mcp-server.ts lives at operator-console/src/ and its deps (@modelcontextprotocol/sdk,
-  # zod) are declared in operator-console/package.json. The cli/ install only populates
-  # cli/node_modules — a separate install at the operator-console level is needed so bun can
-  # resolve the MCP SDK import (else the MCP server exits and the console shows -32000).
-  ( cd /app/operator-console && bun install --frozen-lockfile )
+  # zod) are declared in operator-console/package.json — a separate node_modules from cli/, so the
+  # MCP SDK import resolves (else the MCP server exits and the console shows -32000).
+  ensure_console_deps "/app/operator-console"
 
   log "starting daemon: main.py --mode agent --steering  (TEST paper account; .env=.env.test copy)"
   ( cd /app && unset AUTOSTOCK_ENV_FILE && PYTHONPATH=/app exec python -u main.py --mode agent --steering ) \

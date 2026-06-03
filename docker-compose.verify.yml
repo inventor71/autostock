@@ -23,6 +23,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.verify
+    # Shared image name (NOT project-namespaced) so the ~8G deps image is built ONCE and reused by
+    # every worktree — without this, each compose project (= worktree dir) rebuilds its own image
+    # from scratch (a silent multi-minute bun install). Build once: scripts/verify-run.sh build.
+    image: autostock-verify:latest
     volumes:
       - verify-node-modules:/v/cli-node-modules
       - mcp-node-modules:/v/mcp-node-modules
@@ -36,6 +40,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.verify
+    # Shared image name (NOT project-namespaced) so the ~8G deps image is built ONCE and reused by
+    # every worktree — without this, each compose project (= worktree dir) rebuilds its own image
+    # from scratch (a silent multi-minute bun install). Build once: scripts/verify-run.sh build.
+    image: autostock-verify:latest
     working_dir: /app
     # F27: run as the HOST user so bind-mount writes are host-owned (no sudo to `git worktree
     # remove`). fail-loud (`:?`) — a raw `docker compose` bypassing verify-run.sh errors clearly
@@ -84,6 +92,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.verify
+    # Shared image name (NOT project-namespaced) so the ~8G deps image is built ONCE and reused by
+    # every worktree — without this, each compose project (= worktree dir) rebuilds its own image
+    # from scratch (a silent multi-minute bun install). Build once: scripts/verify-run.sh build.
+    image: autostock-verify:latest
     working_dir: /app
     # F27: run as the HOST user (see verify service). fail-loud if DOCKER_UID/GID unset.
     user: "${DOCKER_UID:?run via scripts/verify-run.sh}:${DOCKER_GID:?run via scripts/verify-run.sh}"
@@ -166,6 +178,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.verify
+    # Shared image name (NOT project-namespaced) so the ~8G deps image is built ONCE and reused by
+    # every worktree — without this, each compose project (= worktree dir) rebuilds its own image
+    # from scratch (a silent multi-minute bun install). Build once: scripts/verify-run.sh build.
+    image: autostock-verify:latest
     working_dir: /app
     # F27: host user so the seeded workspace volume files are host-owned (init-perms chowns the
     # volume first). fail-loud if run outside verify-run.sh.
@@ -181,8 +197,21 @@ services:
     command: []
 
 volumes:
+  # Dependency volumes — FIXED names so they are SHARED across all worktrees/compose projects (one
+  # ~2.8G copy total, not one per worktree). A runtime `bun install` (verify.sh, as the host user)
+  # populates them on the first run and is fast afterward (warm store). `external` so compose treats
+  # them as shared/pre-existing (no per-project ownership warning); verify-run.sh `docker volume
+  # create`s them if missing and init-perms chowns them to the host UID so the install can write.
+  # Safe to share: the console SOURCE is per-worktree (bind mount); only third-party deps are shared,
+  # and bun's per-package workspace symlinks are (re)created per worktree under each worktree's /app.
   verify-node-modules:
+    name: autostock-verify-cli-node-modules
+    external: true
   mcp-node-modules:
+    name: autostock-verify-mcp-node-modules
+    external: true
+  # Runtime-state volumes — NO fixed name → project-namespaced (= per-worktree dir), so independent
+  # parallel experiments never share journal/snapshot/logs.
   attach-steering:
   attach-workspace:
   attach-logs:

@@ -1,0 +1,41 @@
+# Build context hygiene for Dockerfile.verify. Without this the context was ~11G (node_modules,
+# .git, sibling worktrees) shipped to the daemon on every build. The image installs Python deps
+# from pyproject.toml and console deps from manifests (multi-stage) — it never needs node_modules,
+# the worktrees, VCS history, runtime data, or secrets in the context.
+
+# VCS + large dev/build dirs
+.git
+.claude/worktrees
+.turbo
+**/.turbo
+
+# All node_modules — console deps are baked into the image from manifests, not the context.
+**/node_modules
+
+# Python virtualenvs + caches
+venv
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.hypothesis
+
+# Runtime state / data / logs (not needed to build the image)
+logs
+data
+workspace
+**/*.log
+
+# Secrets — NEVER ship to the build context (image only COPYs pyproject + console manifests)
+.env
+.env.*
+!.env.test.example
+
+# Docs (not needed for the build)
+aidlc-docs
+
+# Misc
+*.duckdb
+.DS_Store
