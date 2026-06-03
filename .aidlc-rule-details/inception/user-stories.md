@@ -209,7 +209,7 @@ If the analysis in step 9 reveals ANY ambiguous answers, you MUST:
 - Keep focus on story structure and format decisions
 
 ## Step 12: Log Approval Prompt
-- Before asking for approval, log the prompt with timestamp in `aidlc-docs/audit.md`
+- Before asking for approval, log the prompt with timestamp in the track's `audit.md`
 - Include the complete approval prompt text
 - Use ISO 8601 timestamp format
 
@@ -219,7 +219,7 @@ If the analysis in step 9 reveals ANY ambiguous answers, you MUST:
 - If user requests changes, update the plan and repeat the approval process
 
 ## Step 14: Record Approval Response
-- Log the user's approval response with timestamp in `aidlc-docs/audit.md`
+- Log the user's approval response with timestamp in the track's `audit.md`
 - Include the exact user response text
 - Mark the approval status clearly
 
@@ -240,7 +240,7 @@ If the analysis in step 9 reveals ANY ambiguous answers, you MUST:
 
 ## Step 17: Update Progress
 - [ ] Mark the completed step as [x] in the story generation plan
-- [ ] Update `aidlc-docs/aidlc-state.md` current status
+- [ ] Update the track's `state.md` current status
 - [ ] Save all generated artifacts
 
 ## Step 18: Continue or Complete Generation
@@ -249,7 +249,7 @@ If the analysis in step 9 reveals ANY ambiguous answers, you MUST:
 - [ ] Ensure all mandatory artifacts are generated
 
 ## Step 19: Log Approval Prompt
-- Before asking for approval, log the prompt with timestamp in `aidlc-docs/audit.md`
+- Before asking for approval, log the prompt with timestamp in the track's `audit.md`
 - Include the complete approval prompt text
 - Use ISO 8601 timestamp format
 
@@ -292,12 +292,12 @@ If the analysis in step 9 reveals ANY ambiguous answers, you MUST:
 - If user requests changes, update stories and repeat the approval process
 
 ## Step 22: Record Approval Response
-- Log the user's approval response with timestamp in `aidlc-docs/audit.md`
+- Log the user's approval response with timestamp in the track's `audit.md`
 - Include the exact user response text
 - Mark the approval status clearly
 
 ## Step 23: Update Progress
-- Mark User Stories stage complete in `aidlc-state.md`
+- Mark User Stories stage complete in the track's `state.md`
 - Update the "Current Status" section
 - Prepare for transition to next stage
 

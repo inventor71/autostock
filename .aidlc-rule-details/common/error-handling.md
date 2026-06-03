@@ -1,5 +1,11 @@
 # Error Handling and Recovery Procedures
 
+> **Per-track scope (see `concurrent-tracks.md`)**: throughout this document, unqualified
+> `aidlc-state.md` / `state.md` and `audit.md` mean the **track's** files under
+> `aidlc-docs/tracks/<id>/` (the single-writer working state). The repo-root
+> `aidlc-docs/aidlc-state.md` (Track Registry) and `aidlc-docs/audit.md` (global merge timeline)
+> are referred to explicitly as "root" when meant. Recover the track's files unless stated otherwise.
+
 ## General Error Handling Principles
 
 ### When Errors Occur

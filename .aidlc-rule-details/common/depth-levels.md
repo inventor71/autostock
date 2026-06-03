@@ -35,7 +35,7 @@ The model considers these factors when determining appropriate detail:
 - `requirement-verification-questions.md` (if needed)
 - `requirements.md`
 
-**Note**: User's initial request is captured in `audit.md` (no separate user-intent.md needed)
+**Note**: User's initial request is captured in the track's `audit.md` (no separate user-intent.md needed)
 
 **Detail level varies by complexity**:
 

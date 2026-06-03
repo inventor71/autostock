@@ -26,7 +26,7 @@ This stage generates code for each unit of work through two integrated parts:
 - [ ] Validate unit is ready for code generation
 
 ## Step 2: Create Detailed Unit Code Generation Plan
-- [ ] Read workspace root and project type from `aidlc-docs/aidlc-state.md`
+- [ ] Read workspace root and project type from the track's `state.md`
 - [ ] Determine code location (see Critical Rules for structure patterns)
 - [ ] **Brownfield only**: Review reverse engineering code-structure.md for existing files to modify
 - [ ] Document exact paths (never aidlc-docs/)
@@ -74,7 +74,7 @@ This stage generates code for each unit of work through two integrated parts:
 - [ ] Note total number of steps and estimated scope
 
 ## Step 6: Log Approval Prompt
-- [ ] Before asking for approval, log the prompt with timestamp in `aidlc-docs/audit.md`
+- [ ] Before asking for approval, log the prompt with timestamp in the track's `audit.md`
 - [ ] Include reference to the complete unit code generation plan
 - [ ] Use ISO 8601 timestamp format
 
@@ -84,7 +84,7 @@ This stage generates code for each unit of work through two integrated parts:
 - [ ] If user requests changes, update the plan and repeat approval process
 
 ## Step 8: Record Approval Response
-- [ ] Log the user's approval response with timestamp in `aidlc-docs/audit.md`
+- [ ] Log the user's approval response with timestamp in the track's `audit.md`
 - [ ] Include the exact user response text
 - [ ] Mark the approval status clearly
 
@@ -173,9 +173,9 @@ Per `common/concurrent-tracks.md`, **no application code may be generated outsid
 - If user requests changes, update the code and repeat the approval process
 
 ## Step 16: Record Approval and Update Progress
-- Log approval in audit.md with timestamp
+- Log approval in the track's `audit.md` with timestamp
 - Record the user's approval response with timestamp
-- Mark Code Generation stage as complete for this unit in aidlc-state.md
+- Mark Code Generation stage as complete for this unit in the track's `state.md`
 
 ---
 
@@ -184,7 +184,7 @@ Per `common/concurrent-tracks.md`, **no application code may be generated outsid
 ### Code Location Rules
 - **Application code**: Workspace root only (NEVER aidlc-docs/)
 - **Documentation**: aidlc-docs/ only (markdown summaries)
-- **Read workspace root** from aidlc-state.md before generating code
+- **Read workspace root** from the track's `state.md` before generating code
 
 **Structure patterns by project type**:
 - **Brownfield**: Use existing structure (e.g., `src/main/java/`, `lib/`, `pkg/`)

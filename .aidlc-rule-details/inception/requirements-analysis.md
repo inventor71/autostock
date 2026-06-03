@@ -71,7 +71,7 @@
 ### Step 4: Assess Current Requirements
 
 Analyze whatever the user has provided:
-   - Intent statements or descriptions (already logged in audit.md)
+   - Intent statements or descriptions (already logged in the track's `audit.md`)
    - Existing requirements documents (search workspace if mentioned)
    - Pasted content or file references
    - Convert any non-markdown documents to markdown format 
@@ -95,7 +95,7 @@ Analyze whatever the user has provided:
 **MANDATORY**: Scan all loaded `*.opt-in.md` files (loaded at workflow start from `extensions/` subdirectories) for an `## Opt-In Prompt` section. For each extension that declares one, include that question in the clarifying questions file created in Step 6. Present each opt-in question in the same language as the user's conversation.
 
 After receiving answers:
-1. Record each extension's enablement status in `aidlc-docs/aidlc-state.md` under `## Extension Configuration`:
+1. Record each extension's enablement status in the track's `state.md` under `## Extension Configuration`:
 
 ```markdown
 ## Extension Configuration
@@ -137,7 +137,7 @@ Present the question file to the user and STOP.
 
 ### Step 8: Update State Tracking
 
-Update `aidlc-docs/aidlc-state.md`:
+Update the track's `state.md` (`aidlc-docs/tracks/<id>/state.md`):
 
 ```markdown
 ## Stage Progress
@@ -148,7 +148,7 @@ Update `aidlc-docs/aidlc-state.md`:
 ```
 
 ### Step 9: Log and Proceed
-   - Log approval prompt with timestamp in `aidlc-docs/audit.md`
+   - Log approval prompt with timestamp in the track's `audit.md`
    - Present completion message in this structure:
      1. **Completion Announcement** (mandatory): Always start with this:
 
@@ -187,4 +187,4 @@ Update `aidlc-docs/aidlc-state.md`:
 
    - Wait for explicit user approval before proceeding
    - Record approval response with timestamp
-   - Update Requirements Analysis stage complete in aidlc-state.md
+   - Update Requirements Analysis stage complete in the track's `state.md`

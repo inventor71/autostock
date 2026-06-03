@@ -92,12 +92,12 @@ If the analysis in step 7 reveals ANY ambiguous answers, you MUST:
 - DO NOT PROCEED until user confirms
 
 ## Step 10: Log Approval
-- Log prompt and response in audit.md with timestamp
+- Log prompt and response in the track's `audit.md` with timestamp
 - Use ISO 8601 timestamp format
 - Include complete approval prompt text
 
 ## Step 11: Update Progress
-- Mark Units Planning complete in aidlc-state.md
+- Mark Units Planning complete in the track's `state.md`
 - Update the "Current Status" section
 - Prepare for transition to Units Generation
 
@@ -118,7 +118,7 @@ If the analysis in step 7 reveals ANY ambiguous answers, you MUST:
 
 ## Step 14: Update Progress
 - [ ] Mark the completed step as [x] in the unit of work plan
-- [ ] Update `aidlc-docs/aidlc-state.md` current status
+- [ ] Update the track's `state.md` current status
 - [ ] Save all generated artifacts
 
 ## Step 15: Continue or Complete
@@ -150,12 +150,12 @@ If the analysis in step 7 reveals ANY ambiguous answers, you MUST:
 - If user requests changes, update the units and repeat the approval process
 
 ## Step 18: Record Approval Response
-- Log the user's approval response with timestamp in `aidlc-docs/audit.md`
+- Log the user's approval response with timestamp in the track's `audit.md`
 - Include the exact user response text
 - Mark the approval status clearly
 
 ## Step 19: Update Progress
-- Mark Units Generation stage complete in `aidlc-docs/aidlc-state.md`
+- Mark Units Generation stage complete in the track's `state.md`
 - Update the "Current Status" section
 - Prepare for transition to CONSTRUCTION PHASE
 

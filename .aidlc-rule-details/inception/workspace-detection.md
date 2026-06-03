@@ -2,11 +2,13 @@
 
 **Purpose**: Determine workspace state and check for existing AI-DLC projects
 
-## Step 1: Check for Existing AI-DLC Project
+## Step 1: Check for Existing AI-DLC Work
 
-Check if `aidlc-docs/aidlc-state.md` exists:
-- **If exists**: Resume from last phase (load context from previous phases)
-- **If not exists**: Continue with new project assessment
+Consult the root Track Registry (`aidlc-docs/aidlc-state.md`) and `aidlc-docs/tracks/`:
+- **If a track for this effort exists**: Resume from its last phase — load context from that
+  track's `state.md` and prior-stage artifacts under `aidlc-docs/tracks/<id>/`.
+- **If not**: Continue with new track assessment (the track + worktree are created via
+  `/ai-dlc-request`, registering a row in the root Track Registry).
 
 ## Step 2: Scan Workspace for Existing Code
 
@@ -44,7 +46,10 @@ Check if `aidlc-docs/aidlc-state.md` exists:
 
 ## Step 4: Create Initial State File
 
-Create `aidlc-docs/aidlc-state.md`:
+Initialize the track's `state.md` (`aidlc-docs/tracks/<id>/state.md`, copied from
+`aidlc-docs/tracks/_TEMPLATE/state.md`) with the content below. The repo-root
+`aidlc-docs/aidlc-state.md` only gets a registry row for this track (id/branch/worktree/status) —
+not this stage detail.
 
 ```markdown
 # AI-DLC State Tracking

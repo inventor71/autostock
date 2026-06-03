@@ -47,7 +47,7 @@ All subsequent rule detail file references (e.g., `common/process-overview.md`, 
 - Non-compliance with any applicable enabled extension rule is a **blocking finding** — do NOT present stage completion until resolved
 - When presenting stage completion, include a summary of extension rule compliance (compliant/non-compliant/N/A per rule, with brief rationale for N/A determinations)
 
-**Conditional Enforcement**: Extensions may be conditionally enabled/disabled. See `inception/requirements-analysis.md` for the opt-in mechanism. Before enforcing any extension at ANY stage, check its `Enabled` status in `aidlc-docs/aidlc-state.md` under `## Extension Configuration`. Skip disabled extensions and log the skip in audit.md. Default to enforced if no configuration exists. 
+**Conditional Enforcement**: Extensions may be conditionally enabled/disabled. See `inception/requirements-analysis.md` for the opt-in mechanism. Before enforcing any extension at ANY stage, check its `Enabled` status in the track's `state.md` under `## Extension Configuration`. Skip disabled extensions and log the skip in audit.md. Default to enforced if no configuration exists. 
 
 ## MANDATORY: Content Validation
 **CRITICAL**: Before creating ANY file, you MUST validate content according to `common/content-validation.md` rules:
@@ -77,25 +77,25 @@ All subsequent rule detail file references (e.g., `common/process-overview.md`, 
 
 ## MANDATORY: Concurrent Multi-Track Development (solo, local)
 **CRITICAL**: This project is developed by a single developer running **multiple feature tracks
-concurrently**, each in its own git worktree. To prevent the shared-state races that single
-`aidlc-state.md` / `audit.md` files cause, **load and obey `common/concurrent-tracks.md`** at
-workflow start. Non-negotiable rules from it:
+concurrently**, each in its own git worktree. **Load and obey `common/concurrent-tracks.md`** at
+workflow start. Its non-negotiable rules define where every doc in this workflow lives:
 
-- **Partition, don't lock — one writer per file.** Each track keeps **all of its docs** under
-  `aidlc-docs/tracks/<id>/` — `state.md`, `audit.md`, and every phase artifact (requirements,
-  plans, functional/NFR design, build-and-test) in `inception/`+`construction/` subdirs mirroring
-  the global layout. Single writer = that track's worktree session; author them in the worktree so
-  `main` stays clean. Start from `aidlc-docs/tracks/_TEMPLATE/`. The top-level `aidlc-docs/inception/`
-  + `construction/` dirs are pre-partition/shared artifacts only — don't add per-track docs there.
-- **Root `aidlc-state.md` = Track Registry only** (a table of tracks: id/branch/worktree/status).
-  Edit it only at track create/close. **Root `audit.md` = global timeline**, appended **only at
-  merge** (one-line summary). Do NOT write per-track detail to either root file mid-flight.
+- **One writer per file — partition, don't lock.** Each track keeps **all of its docs** under
+  `aidlc-docs/tracks/<id>/`: `state.md`, `audit.md`, and every phase artifact (requirements,
+  plans, functional/NFR design, build-and-test) in `inception/`+`construction/` subdirs that
+  mirror the global layout. The single writer is that track's worktree session — author the docs
+  in the worktree so `main` stays clean. Start from `aidlc-docs/tracks/_TEMPLATE/`. (The top-level
+  `aidlc-docs/inception/` + `construction/` dirs hold only pre-partition/shared artifacts — never
+  per-track docs.)
+- **Naming convention for the rest of this document**: unqualified **`state.md`** and **`audit.md`**
+  always mean the **track's** files under `aidlc-docs/tracks/<id>/`. The two repo-root files are
+  referred to explicitly as the **root Track Registry** (`aidlc-docs/aidlc-state.md`) and the
+  **root global audit** (`aidlc-docs/audit.md`).
+- **Root files are thin and rarely written.** The root Track Registry is just a table of tracks
+  (id/branch/worktree/status), edited only at track create/close. The root global audit is a
+  merge-time-only timeline (one-line summary per merge). Never write per-track detail to either.
 - **Worktree gate (blocking)**: no application code may be generated outside a worktree. If coding
   while on `main`, STOP and create the track worktree first.
-
-This OVERRIDES any instruction below that writes progress/audit to the root `aidlc-state.md` /
-`audit.md`, or that writes phase docs to top-level `aidlc-docs/inception/` / `construction/` —
-route all of them under `aidlc-docs/tracks/<id>/` instead.
 
 # Adaptive Software Development Workflow
 
@@ -479,7 +479,7 @@ The Operations stage will eventually include:
 - **Adaptive Execution**: Only execute stages that add value
 - **Transparent Planning**: Always show execution plan before starting
 - **User Control**: User can request stage inclusion/exclusion
-- **Progress Tracking**: Update aidlc-state.md with executed and skipped stages
+- **Progress Tracking**: Update the track's `state.md` with executed and skipped stages
 - **Complete Audit Trail**: Log ALL user inputs and AI responses in audit.md with timestamps
   - **CRITICAL**: Capture user's COMPLETE RAW INPUT exactly as provided
   - **CRITICAL**: Never summarize or paraphrase user input in audit log
@@ -498,7 +498,7 @@ The Operations stage will eventually include:
 
 ### Two-Level Checkbox Tracking System
 - **Plan-Level**: Track detailed execution progress within each stage
-- **Stage-Level**: Track overall workflow progress in aidlc-state.md
+- **Stage-Level**: Track overall workflow progress in the track's `state.md`
 - **Update immediately**: All progress updates in SAME interaction where work is completed
 
 ## Prompts Logging Requirements

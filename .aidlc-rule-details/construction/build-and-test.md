@@ -356,7 +356,7 @@ Present completion message in this structure:
 
 ## Step 10: Log Interaction
 
-**MANDATORY**: Log the stage completion in `aidlc-docs/audit.md`:
+**MANDATORY**: Log the stage completion in the track's `audit.md` (`aidlc-docs/tracks/<id>/audit.md`):
 
 ```markdown
 ## Build and Test Stage

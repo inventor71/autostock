@@ -4,6 +4,12 @@
 
 Users may request changes to the execution plan or stage execution during the workflow. This document provides guidance on handling these requests safely and effectively.
 
+> **Per-track scope (see `concurrent-tracks.md`)**: a mid-workflow change happens inside one
+> track's worktree, so unqualified `aidlc-state.md` / `state.md` and `audit.md` below mean that
+> **track's** files under `aidlc-docs/tracks/<id>/`. The repo-root Track Registry
+> (`aidlc-docs/aidlc-state.md`) and root global audit (`aidlc-docs/audit.md`) are only touched at
+> track create/close and merge-time respectively — never for mid-workflow change bookkeeping.
+
 ---
 
 ## Types of Mid-Workflow Changes

@@ -107,7 +107,7 @@ If the analysis in step 8 reveals ANY ambiguous answers, you MUST:
 - Create `aidlc-docs/inception/application-design/application-design.md` that consolidates the multiple design docs created above in a single doc.
 
 ### 11. Log Approval
-- Log approval prompt with timestamp in `aidlc-docs/audit.md`
+- Log approval prompt with timestamp in the track's `audit.md`
 - Include complete approval prompt text
 - Use ISO 8601 timestamp format
 
@@ -137,11 +137,11 @@ If the analysis in step 8 reveals ANY ambiguous answers, you MUST:
 - If user requests changes, update the design and repeat the approval process
 
 ### 14. Record Approval Response
-- Log the user's approval response with timestamp in `aidlc-docs/audit.md`
+- Log the user's approval response with timestamp in the track's `audit.md`
 - Include the exact user response text
 - Mark the approval status clearly
 
 ### 15. Update Progress
-- Mark Application Design stage complete in `aidlc-docs/aidlc-state.md`
+- Mark Application Design stage complete in the track's `state.md`
 - Update the "Current Status" section
 - Prepare for transition to next stage

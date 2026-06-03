@@ -14,7 +14,7 @@ A **blocking PBT finding** means:
 1. The finding MUST be listed in the stage completion message under a "PBT Findings" section with the PBT rule ID and description
 2. The stage MUST NOT present the "Continue to Next Stage" option until all blocking findings are resolved
 3. The model MUST present only the "Request Changes" option with a clear explanation of what needs to change
-4. The finding MUST be logged in `aidlc-docs/audit.md` with the PBT rule ID, description, and stage context
+4. The finding MUST be logged in the track's `audit.md` (`aidlc-docs/tracks/<id>/audit.md`) with the PBT rule ID, description, and stage context
 
 If a PBT rule is not applicable to the current project or unit (e.g., PBT-06 when no stateful components exist), mark it as **N/A** in the compliance summary — this is not a blocking finding.
 
@@ -24,7 +24,7 @@ All rules in this document are **blocking** by default. If any rule's verificati
 
 ### Partial Enforcement Mode
 
-If the user selected **Partial** enforcement during opt-in, only rules PBT-02, PBT-03, PBT-07, PBT-08, and PBT-09 are enforced. All other rules are treated as advisory (non-blocking). Log the enforcement mode in `aidlc-docs/aidlc-state.md` under `## Extension Configuration`.
+If the user selected **Partial** enforcement during opt-in, only rules PBT-02, PBT-03, PBT-07, PBT-08, and PBT-09 are enforced. All other rules are treated as advisory (non-blocking). Log the enforcement mode in the track's `state.md` under `## Extension Configuration`.
 
 ### Verification Criteria Format
 

@@ -2,20 +2,18 @@
 
 ## Why this rule exists
 This is a **single-developer, local** project where **several features are developed
-concurrently**, each in its own git worktree. The original AI-DLC keeps all progress in two
-**shared, mutable, single files** at the repo root — `aidlc-docs/aidlc-state.md` and
-`aidlc-docs/audit.md`. When two tracks run at the same time, both sessions read-then-write
-those files and **clobber each other** (a real "file modified externally" race already
-occurred between the F7 and F8 tracks; see audit.md). This rule removes that hazard.
+concurrently**, each in its own git worktree. Progress state must therefore be partitioned per
+track: if two tracks shared one mutable `aidlc-state.md` / `audit.md`, their sessions would
+read-then-write and clobber each other. This rule removes that hazard.
 
 ## Core principle: partition, don't lock
 > **Every state/audit file has exactly one writer.** No file locks.
 
-A file lock is the wrong tool for a git-backed doc edited by a human+agent loop: stale locks
-when an agent dies, no cross-worktree filesystem semantics, no clean "wait". The robust fix
-is to **eliminate shared mutable state** by giving each track its own files. The only file
-multiple tracks ever touch is the lightweight **Track Registry**, and that is edited just
-twice per track (create + close) — rare enough to resolve with `git pull --rebase`.
+File locks are the wrong tool for a git-backed doc edited by a human+agent loop (stale locks
+when an agent dies, no clean cross-worktree "wait"). Instead, **eliminate shared mutable
+state** by giving each track its own files. The only file multiple tracks ever touch is the
+lightweight **Track Registry**, edited just twice per track (create + close) — rare enough to
+resolve with `git pull --rebase`.
 
 ## What a "track" is
 - A **track** = one feature/refactor/deprecate effort, developed in its own worktree.

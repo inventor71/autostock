@@ -90,6 +90,6 @@ Incorporate NFR requirements into unit design using patterns and logical compone
 - If user requests changes, update the design and repeat the approval process
 
 ### Step 9: Record Approval and Update Progress
-- Log approval in audit.md with timestamp
+- Log approval in the track's `audit.md` with timestamp
 - Record the user's approval response with timestamp
-- Mark NFR Design stage complete in aidlc-state.md
+- Mark NFR Design stage complete in the track's `state.md`

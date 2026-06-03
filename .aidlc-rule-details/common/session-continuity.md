@@ -6,7 +6,7 @@ When a user returns to continue work on an existing AI-DLC project, present this
 ```markdown
 **Welcome back! I can see you have an existing AI-DLC project in progress.**
 
-Based on your aidlc-state.md, here's your current status:
+Based on the track's `state.md`, here's your current status:
 - **Project**: [project-name]
 - **Current Phase**: [INCEPTION/CONSTRUCTION/OPERATIONS]
 - **Current Stage**: [Stage Name]
@@ -22,7 +22,7 @@ B) Review a previous stage ([Show available stages])
 ```
 
 ## MANDATORY: Session Continuity Instructions
-1. **Always read aidlc-state.md first** when detecting existing project
+1. **Identify the track, then read its `state.md` first** when detecting existing work — consult the root Track Registry (`aidlc-docs/aidlc-state.md`) to find the track, then read that track's `aidlc-docs/tracks/<id>/state.md`
 2. **Parse current status** from the workflow file to populate the prompt
 3. **MANDATORY: Load Previous Stage Artifacts** - Before resuming any stage, automatically read all relevant artifacts from previous stages:
    - **Reverse Engineering**: Read architecture.md, code-structure.md, api-documentation.md
@@ -39,7 +39,7 @@ B) Review a previous stage ([Show available stages])
    - **Code Stages**: Load ALL artifacts + existing code files
 5. **Adapt options** based on architectural choice and current phase
 6. **Show specific next steps** rather than generic descriptions
-7. **Log the continuity prompt** in audit.md with timestamp
+7. **Log the continuity prompt** in the track's `audit.md` with timestamp
 8. **Context Summary**: After loading artifacts, provide brief summary of what was loaded for user awareness
 9. **Asking questions**: ALWAYS ask clarification or user feedback questions by placing them in .md files. DO NOT place the multiple-choice questions in-line in the chat session.
 

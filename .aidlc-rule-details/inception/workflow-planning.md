@@ -343,7 +343,8 @@ flowchart TD
 
 ## Step 8: Initialize State Tracking
 
-Update `aidlc-docs/aidlc-state.md`:
+Update the track's `state.md` (`aidlc-docs/tracks/<id>/state.md`; structure follows
+`aidlc-docs/tracks/_TEMPLATE/state.md`):
 
 ```markdown
 # AI-DLC State Tracking
@@ -459,7 +460,7 @@ I recommend skipping [Y] stages:
 
 ## Step 11: Log Interaction
 
-Log in `aidlc-docs/audit.md`:
+Log in the track's `audit.md` (`aidlc-docs/tracks/<id>/audit.md`):
 
 ```markdown
 ## Workflow Planning - Approval

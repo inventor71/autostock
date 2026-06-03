@@ -174,9 +174,13 @@ Generated outputs from executing plans.
 - Examples: `requirements.md`, `stories.md`, `design.md`
 
 ### State Files
-Files tracking workflow progress and status.
-- `aidlc-state.md`: Overall workflow state
-- `audit.md`: Complete audit trail of all interactions
+Files tracking workflow progress and status. Under the concurrent multi-track model (see
+`concurrent-tracks.md`), per-track files are the working state and the two repo-root files are
+thin/global:
+- Track `state.md` (`aidlc-docs/tracks/<id>/state.md`): a track's full workflow state — single writer.
+- Track `audit.md` (`aidlc-docs/tracks/<id>/audit.md`): a track's complete audit trail — single writer.
+- Root `aidlc-state.md` (`aidlc-docs/aidlc-state.md`): the **Track Registry** only (id/branch/worktree/status), edited just at track create/close.
+- Root `audit.md` (`aidlc-docs/audit.md`): the **global timeline**, appended only at merge-time.
 
 ## Common Abbreviations
 

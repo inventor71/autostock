@@ -10,7 +10,7 @@ A **blocking security finding** means:
 1. The finding MUST be listed in the stage completion message under a "Security Findings" section with the SECURITY rule ID and description
 2. The stage MUST NOT present the "Continue to Next Stage" option until all blocking findings are resolved
 3. The model MUST present only the "Request Changes" option with a clear explanation of what needs to change
-4. The finding MUST be logged in `aidlc-docs/audit.md` with the SECURITY rule ID, description, and stage context
+4. The finding MUST be logged in the track's `audit.md` (`aidlc-docs/tracks/<id>/audit.md`) with the SECURITY rule ID, description, and stage context
 
 If a SECURITY rule is not applicable to the current project (e.g., SECURITY-01 when no data stores exist), mark it as **N/A** in the compliance summary — this is not a blocking finding.
 

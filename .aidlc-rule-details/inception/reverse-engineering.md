@@ -279,7 +279,7 @@ Create `aidlc-docs/inception/reverse-engineering/reverse-engineering-timestamp.m
 
 ## Step 11: Update State Tracking
 
-Update `aidlc-docs/aidlc-state.md`:
+Update the track's `state.md` (`aidlc-docs/tracks/<id>/state.md`):
 
 ```markdown
 ## Reverse Engineering Status
@@ -308,4 +308,4 @@ Update `aidlc-docs/aidlc-state.md`:
 ## Step 13: Wait for User Approval
 
 - **MANDATORY**: Do not proceed until user explicitly approves
-- **MANDATORY**: Log user's response in audit.md with complete raw input
+- **MANDATORY**: Log user's response in the track's `audit.md` with complete raw input
