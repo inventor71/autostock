@@ -449,12 +449,18 @@ class DecisionExecutor:
             detail += f" target {target:.2f}"
         return ExecutionOutcome(d, "executed", detail, order_id=filled.order_id)
 
-    def _cancel_and_wait(self, symbol: str, opens, timeout: float = 6.0, interval: float = 0.5) -> None:
+    def _cancel_and_wait(self, symbol: str, opens, timeout: float | None = None, interval: float = 0.5) -> None:
         """Cancel the given orders, then wait for the broker to release the held
         qty before a replacement is submitted. Alpaca cancellation is async, so
-        re-submitting immediately fails with 'insufficient qty available'."""
+        re-submitting immediately fails with 'insufficient qty available'.
+
+        The wait length is broker-tunable via ``cancel_settle_wait`` (a broker
+        that cancels synchronously sets it to 0 to avoid a throttled polling
+        stall — e.g. KIS under its low req/s模의 cap)."""
         for o in opens:
             self.broker.cancel_order(o.order_id)
+        if timeout is None:
+            timeout = getattr(self.broker, "cancel_settle_wait", 6.0)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if not self.broker.get_open_orders(symbol):
@@ -465,19 +471,40 @@ class DecisionExecutor:
     # Reconciliation helpers
     # ------------------------------------------------------------------ #
     def _update_market_halt(self) -> None:
-        """Feed SPY's day-change to the circuit breaker (fail-open on error)."""
+        """Feed the benchmark's day-change to the circuit breaker.
+
+        Uses the broker's ``halt_reference_symbol`` (KIS → KODEX 200). Fail-OPEN
+        on error: a missing benchmark bar leaves the breaker un-tripped so a
+        flaky feed never blocks trading. This is a deliberate exception to the
+        broker's fail-closed posture — the halt is a coarse safety net, not the
+        primary protection — so the swallow is logged at WARNING, not debug.
+        """
+        ref = getattr(self.broker, "halt_reference_symbol", "SPY")
         try:
-            bars = self.data_provider.get_bars("SPY", limit=2)
+            bars = self.data_provider.get_bars(ref, limit=2)
             if bars is not None and len(bars) >= 2:
                 change = bars["close"].iloc[-1] / bars["close"].iloc[-2] - 1
                 self.risk_manager.update_market_halt(float(change))
         except Exception as e:
-            logger.debug(f"Market-halt update skipped: {e}")
+            logger.warning(f"Market-halt update skipped (fail-open, breaker un-tripped): {ref}: {e}")
 
     def protected_symbols(self) -> set[str]:
-        """Symbols that already have a resting order (skip in polled backups)."""
+        """Symbols that have a resting *stop* leg (skip in polled stop backups).
+
+        Coverage is keyed on a STOP-type resting order, not merely *any* open
+        order: an emulated OCO (KIS) can leave only the take-profit LIMIT resting
+        if the stop-loss leg was rejected/cancelled — counting that as
+        "protected" would silently drop the downside stop. Requiring a stop leg
+        keeps the polled backup engaged for those. Atomic-OCO brokers (Alpaca)
+        rest a STOP leg alongside the TP, so they stay protected unchanged.
+        """
+        stop_like = {OrderType.STOP, OrderType.STOP_LIMIT, OrderType.TRAILING_STOP}
         try:
-            return {o.symbol.upper() for o in self.broker.get_open_orders()}
+            return {
+                o.symbol.upper()
+                for o in self.broker.get_open_orders()
+                if o.order_type in stop_like
+            }
         except Exception:
             return set()
 
