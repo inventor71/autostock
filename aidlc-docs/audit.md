@@ -1589,6 +1589,8 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 
 ---
 
+- 2026-06-03 — **F49 merged** (main `00b3559`): synthesis verdict drill-down text overlay fix — add `wrapMode="word"` to `<text>` element (preventing Yoga layout overlapping on long synthesis lines, up to 500 chars). 1 file (+1/-1). 69/69 tests, 19/19 typecheck.
+
 - 2026-06-03 — **F48 merged** (main `a669761`): sidebar cleanup — rebrand "OpenCode" → "AutoStock", remove workspace path/LSP sidebar plugin/session ID hash, compact Context tab to single line. 7 files (6 modified + 1 deleted), 6 insertions, 132 deletions. Rebase clean, typecheck 19/19, test failures pre-existing on main (attention.test.ts rebrand remnants).
 
 - 2026-06-03 — **F38 merged** (main `c395faf`): 운영자 수동 turn 트리거 steering 명령. 자동 스케줄(시장오픈/인터벌)을 기다리지 않고 운영자가 research turn을 즉시 트리거(today_count==0인데 자동 트리거 대기 중인 상황 해소). Python: `SteeringVerb /research` + `_v_research` 핸들러; CommandBus 워커 스레드 블록 방지 위해 `coordinator.start_priority_async`로 off-thread 실행(wake/reconcile 양보, 드롭 없음 started/queued), `on_done→bus emit_outcome` 완료 푸시(corr_id, completed/failed). TS: parser/schema/contract + `mcp-server.ts` help(TURN `/research`) 배선. `/ai-dlc-merge` 큐 3/3(겹침 트랙, base-age 후반 배치): main(7766c6a, F39 머지 반영) 위로 rebase — **F39와 `operator-console/src/mcp-server.ts` 겹쳤으나 자동 3-way 병합 clean**(F39 supervisor-gating L29-82 + F38 research verb help L45 서로 다른 영역, 공존 검증) → verify 재실행 green(pytest 638/0 regress · operator-console own TS suite 145/0; F38은 cli 무변경이라 turbo typecheck 19/19는 동일 base의 F41 실행에서 확인됨) → `--no-ff` 머지. 큐 비어 종료.

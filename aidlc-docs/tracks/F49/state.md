@@ -8,7 +8,7 @@
 - **Track ID**: F49
 - **Title**: synthesis final verdict TUI display bug fix (깨져서 나오는 현상 수정)
 - **Type**: bugfix
-- **Status**: merge-awaiting
+- **Status**: merged → main 00b3559 (2026-06-03)
 - **Branch**: feat/F49
 - **Worktree**: .claude/worktrees/F49
 - **Submodule branch**: — (monorepo, post-F35)
