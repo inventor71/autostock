@@ -177,11 +177,11 @@ def main() -> None:
     args = parser.parse_args()
 
     s = get_settings()
-    broker = AlpacaBroker(api_key=s.alpaca_api_key, secret_key=s.alpaca_secret_key, paper=s.broker.paper)
+    broker = AlpacaBroker(api_key=s.alpaca_api_key, secret_key=s.alpaca_api_secret, paper=s.broker.paper)
     client = broker._client
     try:
         from alpaca.data.historical import StockHistoricalDataClient
-        data_client = StockHistoricalDataClient(s.alpaca_api_key, s.alpaca_secret_key)
+        data_client = StockHistoricalDataClient(s.alpaca_api_key, s.alpaca_api_secret)
     except Exception:
         data_client = None
 

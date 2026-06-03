@@ -16,7 +16,7 @@ def create_data_provider(settings):
         from src.data.providers.alpaca_provider import AlpacaDataProvider
         return AlpacaDataProvider(
             api_key=settings.alpaca_api_key,
-            secret_key=settings.alpaca_secret_key,
+            secret_key=settings.alpaca_api_secret,
         )
     else:
         from src.data.providers.yfinance_provider import YFinanceProvider
@@ -39,7 +39,7 @@ def create_broker(settings):
         from src.execution.brokers.alpaca_broker import AlpacaBroker
         return AlpacaBroker(
             api_key=settings.alpaca_api_key,
-            secret_key=settings.alpaca_secret_key,
+            secret_key=settings.alpaca_api_secret,
             paper=settings.broker.paper,
         )
 
@@ -311,7 +311,7 @@ def run_paper(settings, strategies_config: dict) -> None:
         mode = RealtimeTradingMode(
             engine=engine,
             api_key=settings.alpaca_api_key,
-            secret_key=settings.alpaca_secret_key,
+            secret_key=settings.alpaca_api_secret,
             paper=settings.broker.paper,
         )
     else:

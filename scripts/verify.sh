@@ -112,13 +112,13 @@ def env_file_value(key):
     return ""
 
 s = get_settings()
-if not s.alpaca_api_key or not s.alpaca_secret_key:
+if not s.alpaca_api_key or not s.alpaca_api_secret:
     sys.exit("smoke: ALPACA keys empty in .env.test — fill the TEST paper account keys first.")
 if not s.broker.paper:
     sys.exit("smoke: broker.paper is False — refusing to run smoke against a non-paper account.")
 
 expected = env_file_value("EXPECTED_ACCOUNT_NUMBER")
-client = TradingClient(s.alpaca_api_key, s.alpaca_secret_key, paper=True)
+client = TradingClient(s.alpaca_api_key, s.alpaca_api_secret, paper=True)
 acct = client.get_account()  # read-only
 print(f"  account id     : {acct.id}")
 print(f"  account number : {acct.account_number}")
