@@ -30,6 +30,11 @@ pip install -e ".[dev]"
 # 환경 변수 설정 (Alpaca 페이퍼 트레이딩용)
 export ALPACA_API_KEY="your-api-key"
 export ALPACA_SECRET_KEY="your-secret-key"
+
+# (선택) Broker API 계정 팜으로 거래하려면 — "브로커 provider 전환"(§2-3) 참고
+export BROKER_API_KEY="your-broker-api-key"
+export BROKER_API_SECRET="your-broker-api-secret"
+export BROKER_ACCOUNT_ID="거래할-farm-계정-id"
 ```
 
 Alpaca API 키는 https://app.alpaca.markets 에서 무료로 발급 가능합니다 (Paper Trading 계정).
@@ -115,6 +120,33 @@ autostock
 ```
 
 콘솔의 **사이드바**는 run-state·시장 상태·포지션(+락)·대기 승인과 계좌·라운드트립(승률/실현손익) 요약을 보여주며, 마우스로 폭을 드래그 조절할 수 있습니다. (기능 묶음: F4 파일드롭 콘솔 + F5 `autostock` 런처/데몬 관리·리브랜드 + F6 사이드바.)
+
+### 2-3. 브로커 provider 전환 (Broker API 계정 팜)
+
+기본 실행 경로는 **Alpaca Trading API**(`AlpacaBroker`, 본인 페이퍼 계정 1개)입니다. Trading API는
+소유자당 페이퍼 계정 3개 제한이 있어, 다수의 격리된 거래 환경이 필요하면 **Alpaca Broker API
+sandbox**로 프로그래밍 방식 무제한 생성한 계정 팜(`scripts/broker_create_accounts.py`)에 거래를
+붙일 수 있습니다. 봇의 실행 계층은 `BaseBroker` 포트 뒤에 두 구현체(`AlpacaBroker` /
+`BrokerApiBroker`)를 두므로, **설정·환경변수만 바꾸면 코드 수정 없이 전환**됩니다.
+
+전환 2단계:
+
+1. `config/settings.yaml` — `broker.provider`를 `broker_api`로:
+   ```yaml
+   broker:
+     provider: broker_api   # 기본값: alpaca
+   ```
+2. `.env`(또는 export) — 어느 farm 계정으로 거래할지 지정:
+   ```bash
+   BROKER_API_KEY="..."        # Broker API Legacy 키 (Client Secret/OAuth 아님)
+   BROKER_API_SECRET="..."
+   BROKER_ACCOUNT_ID="..."     # --list 로 확인한 ACTIVE 계정 id
+   ```
+
+이후 `python main.py --mode paper`(또는 `--mode agent`)는 해당 계정으로 주문/포지션/체결을
+처리합니다. 계정 생성·조회·입금은 `scripts/broker_create_accounts.py`(`--list` / `--count N` /
+`--fund $N`)로, Legacy 키 타입·더미 SSN 같은 주의점은 같은 스크립트 헤더와 `config/settings.yaml`
+주석에 정리돼 있습니다.
 
 ### 3. 전략 변경
 
