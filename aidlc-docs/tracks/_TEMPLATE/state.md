@@ -8,7 +8,7 @@
 - **Track ID**: <Fn>
 - **Title**: <one line>
 - **Type**: feature | refactor | deprecate
-- **Status**: active
+- **Status**: active  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
 - **Branch**: feat/<track>
 - **Worktree**: .claude/worktrees/<track>
 - **Submodule branch**: — (or feat/<track> if operator-console/cli is touched)

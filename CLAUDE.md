@@ -436,8 +436,13 @@ This OVERRIDES any instruction below that says to write progress/audit to the ro
    - Performance test instructions (if applicable)
    - Additional test instructions as needed (contract tests, security tests, e2e tests)
 4. Create instruction files in build-and-test/ subdirectory: build-instructions.md, unit-test-instructions.md, integration-test-instructions.md, performance-test-instructions.md, build-and-test-summary.md
-5. **Wait for Explicit Approval**: Ask: "**Build and test instructions complete. Ready to proceed to Operations stage?**" - DO NOT PROCEED until user confirms
-6. **MANDATORY**: Log user's response in audit.md with complete raw input
+5. **MANDATORY: enqueue for merge.** When Build & Test PASSES (all green), set the track's
+   `aidlc-docs/tracks/<id>/state.md` `**Status**:` to **`merge-awaiting`** (see build-and-test.md
+   Step 8 + `common/concurrent-tracks.md`). This is the standard hand-off so `/ai-dlc-merge` sees
+   the track in its queue without a separate manual step. Leave the root Track Registry row `active`
+   (`/ai-dlc-merge` flips it to `merged` at actual merge time). If tests did not pass, keep `active`.
+6. **Wait for Explicit Approval**: Ask: "**Build and test instructions complete. Track marked `merge-awaiting` — run `/ai-dlc-merge` to merge?**" - DO NOT PROCEED until user confirms
+7. **MANDATORY**: Log user's response in audit.md with complete raw input
 
 ---
 

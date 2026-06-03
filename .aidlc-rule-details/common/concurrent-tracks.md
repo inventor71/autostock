@@ -56,7 +56,10 @@ A single table is the authority for which tracks exist and where they live:
 |----|-------|--------|--------|----------|-------------|---------|
 | F9 | … | active | feat/… | .claude/worktrees/… | <sha> | 2026-… |
 ```
-- `Status` ∈ `active` / `merged` / `abandoned`.
+- `Status` ∈ `active` / `merged` / `abandoned`, plus the transient `merge-awaiting` a track sets on
+  **its own** `tracks/<id>/state.md` when Build & Test passes (the standard hand-off — see
+  `construction/build-and-test.md` Step 8). `merge-awaiting` enqueues the track for `/ai-dlc-merge`;
+  the registry row stays `active` until that command flips it to `merged` at actual merge time.
 - A registry row is written at track **creation** and flipped at **merge/close**. These are the
   only two cross-track edits; serialize them with `git pull --rebase` before committing.
 
@@ -116,9 +119,12 @@ same class as the daemon claude-CLI PATH bug), and (b) assuming the install need
    hotfix track creates `tracks/<id>/state.md` here — see the note above.)
 2. **Work.** All progress + audit go to `tracks/<id>/{state.md,audit.md}` only. Never touch another
    track's files or the root files (except a registry row update if the title/base changes).
-3. **Merge / close.** Merge the branch. Flip the registry row
-   to `merged`. Append a **one-line** summary to the global root `audit.md`. Optionally archive
-   `tracks/<id>/` or leave it as record. Remove the worktree (`git worktree remove …`).
+3. **Merge / close.** Prefer **`/ai-dlc-merge`** — a single-runner orchestrator that merges all
+   `merge-awaiting` tracks sequentially (rebase each onto the just-updated main → verify → merge →
+   close), so concurrent tracks can't tangle the shared registry/audit or land on a stale base.
+   It flips the registry row to `merged`, appends a **one-line** summary to the global root
+   `audit.md`, and removes the worktree (`git worktree remove …`) + branch. (Manual single-track
+   merge remains possible, but run the orchestrator from one place to keep merges serialized.)
 
 ## What is still global / shared
 - The **Track Registry** (root `aidlc-state.md`).

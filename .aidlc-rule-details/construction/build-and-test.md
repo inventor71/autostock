@@ -296,11 +296,23 @@ Create `aidlc-docs/construction/build-and-test/build-and-test-summary.md`:
 
 ---
 
-## Step 8: Update State Tracking
+## Step 8: Update State Tracking + enqueue for merge
 
-Update `aidlc-docs/aidlc-state.md`:
-- Mark Build and Test stage as complete
-- Update current status
+> **Partition model (see `common/concurrent-tracks.md`)**: progress lives in the track's own
+> `aidlc-docs/tracks/<id>/state.md` (single writer), NOT the root `aidlc-state.md` (that is the
+> Track Registry only). Update the per-track file here.
+
+Update `aidlc-docs/tracks/<id>/state.md`:
+- Mark the Build and Test stage checkbox as complete (`[x]`), with the actual test results
+  (suite counts / pass-fail) recorded.
+- **If Build & Test PASSED (all green): set the track's `**Status**:` to `merge-awaiting`** to
+  enqueue this track for `/ai-dlc-merge`. This is the standard hand-off — a green Build & Test
+  means the track is ready to merge, so the queue should see it without a separate manual step.
+  - Leave the **root Track Registry row** as `active` — `/ai-dlc-merge` flips it to `merged` only
+    at actual merge time (that command is the single writer of the registry/global audit).
+  - If Build & Test did **not** pass, keep `**Status**: active` and do not enqueue; fix and rerun.
+  - This only *enqueues*; `/ai-dlc-merge` still has its own approval gate before any merge, so
+    setting `merge-awaiting` here cannot cause a premature merge.
 
 ---
 
@@ -333,7 +345,9 @@ Present completion message in this structure:
 > **You may:**
 >
 > 🔧 **Request Changes** - Ask for modifications to the build and test instructions based on your review
-> ✅ **Approve & Continue** - Approve build and test results and proceed to **Operations**
+> ✅ **Approve & Continue** - Approve build and test results. On approval, if all tests passed the
+>   track's `state.md` Status is set to **`merge-awaiting`** (enqueued for `/ai-dlc-merge`); the
+>   Operations phase remains a placeholder.
 
 ---
 ```
