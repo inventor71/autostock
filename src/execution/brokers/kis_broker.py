@@ -119,6 +119,12 @@ class KisBroker(BaseBroker):
 
     halt_reference_symbol = "069500"  # KODEX 200 — KR circuit-breaker benchmark
     cancel_settle_wait = 0.0  # KIS cancel is synchronous; no settle-poll needed
+    # KST trading calendar — AgentTradingMode schedules research/open/close from this
+    # (brokers without it fall back to US/Eastern defaults).
+    market_schedule = {
+        "timezone": "Asia/Seoul",
+        "research": (8, 0), "open": (9, 0), "close": (15, 20),
+    }
 
     def __init__(
         self,
@@ -144,6 +150,11 @@ class KisBroker(BaseBroker):
         self._prdt = prdt or "01"
         self._oco = _OcoStore(Path(oco_journal))
         self._fill_poll_timeout = fill_poll_timeout
+
+    @property
+    def client(self) -> KisRestClient:
+        """Shared transport — reused by KisDataProvider so both honour one token."""
+        return self._c
 
     # -- tr_id helpers (env-aware) -------------------------------------- #
     def _tr(self, real: str, demo: str) -> str:
