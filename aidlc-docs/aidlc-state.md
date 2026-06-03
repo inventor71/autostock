@@ -62,6 +62,7 @@
 | F47 | 급등주 히스토리 기록 및 원인 분석 (Surge Stock History & Root-Cause Analysis) | active | feat/F47 | .claude/worktrees/F47 | — (monorepo) | TBD | 2026-06-03 |
 | F48 | Operator Console Sidebar Cleanup — 브랜딩/불필요 요소 제거 | active | feat/F48 | .claude/worktrees/F48 (TBD) | — (monorepo) | TBD | 2026-06-03 |
 | F49 | synthesis final verdict TUI display bug fix (깨져서 나오는 현상 수정) | active | feat/F49 | TBD | — (monorepo) | TBD | 2026-06-03 |
+| F50 | TUI Status/타임라인 동일선 배치 | active | feat/F50 | TBD | — (monorepo) | TBD | 2026-06-03 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
