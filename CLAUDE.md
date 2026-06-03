@@ -81,17 +81,21 @@ concurrently**, each in its own git worktree. To prevent the shared-state races 
 `aidlc-state.md` / `audit.md` files cause, **load and obey `common/concurrent-tracks.md`** at
 workflow start. Non-negotiable rules from it:
 
-- **Partition, don't lock — one writer per file.** Each track keeps its full state and audit in
-  `aidlc-docs/tracks/<id>/{state.md,audit.md}` (single writer = that track's worktree session).
-  Start from `aidlc-docs/tracks/_TEMPLATE/`.
+- **Partition, don't lock — one writer per file.** Each track keeps **all of its docs** under
+  `aidlc-docs/tracks/<id>/` — `state.md`, `audit.md`, and every phase artifact (requirements,
+  plans, functional/NFR design, build-and-test) in `inception/`+`construction/` subdirs mirroring
+  the global layout. Single writer = that track's worktree session; author them in the worktree so
+  `main` stays clean. Start from `aidlc-docs/tracks/_TEMPLATE/`. The top-level `aidlc-docs/inception/`
+  + `construction/` dirs are pre-partition/shared artifacts only — don't add per-track docs there.
 - **Root `aidlc-state.md` = Track Registry only** (a table of tracks: id/branch/worktree/status).
   Edit it only at track create/close. **Root `audit.md` = global timeline**, appended **only at
   merge** (one-line summary). Do NOT write per-track detail to either root file mid-flight.
 - **Worktree gate (blocking)**: no application code may be generated outside a worktree. If coding
   while on `main`, STOP and create the track worktree first.
 
-This OVERRIDES any instruction below that says to write progress/audit to the root
-`aidlc-state.md` / `audit.md` directly — route those to the track's files instead.
+This OVERRIDES any instruction below that writes progress/audit to the root `aidlc-state.md` /
+`audit.md`, or that writes phase docs to top-level `aidlc-docs/inception/` / `construction/` —
+route all of them under `aidlc-docs/tracks/<id>/` instead.
 
 # Adaptive Software Development Workflow
 
@@ -537,25 +541,16 @@ The Operations stage will eventually include:
 ├── [project-specific structure]    # Varies by project (see code-generation.md)
 │
 ├── aidlc-docs/                     # 📄 DOCUMENTATION ONLY
-│   ├── inception/                  # 🔵 INCEPTION PHASE
-│   │   ├── plans/
-│   │   ├── reverse-engineering/    # Brownfield only
-│   │   ├── requirements/
-│   │   ├── user-stories/
-│   │   └── application-design/
-│   ├── construction/               # 🟢 CONSTRUCTION PHASE
-│   │   ├── plans/
-│   │   ├── {unit-name}/
-│   │   │   ├── functional-design/
-│   │   │   ├── nfr-requirements/
-│   │   │   ├── nfr-design/
-│   │   │   ├── infrastructure-design/
-│   │   │   └── code/               # Markdown summaries only
-│   │   └── build-and-test/
+│   ├── inception/                  # 🔵 shared / pre-partition artifacts only
+│   ├── construction/               # 🟢 shared / pre-partition artifacts only
 │   ├── operations/                 # 🟡 OPERATIONS PHASE (placeholder)
-│   ├── tracks/                      # 🧩 CONCURRENT TRACKS (one dir per feature)
+│   ├── tracks/                      # 🧩 CONCURRENT TRACKS (one dir per feature, SINGLE writer)
 │   │   ├── _TEMPLATE/               # copy to start a track (state.md, audit.md)
-│   │   └── {Fn}/                    # per-track state.md + audit.md (SINGLE writer)
+│   │   └── {Fn}/                    # ALL of a track's docs live here
+│   │       ├── state.md             #   stage progress / scope / extension config
+│   │       ├── audit.md             #   per-track append-only audit
+│   │       ├── inception/           #   requirements/ plans/ user-stories/ application-design/
+│   │       └── construction/        #   plans/ {unit}/{functional-design,nfr-*,code}/ build-and-test/
 │   ├── aidlc-state.md               # Track Registry only (+ archived pre-partition history)
 │   └── audit.md                     # GLOBAL timeline (merge-time appends only)
 ```

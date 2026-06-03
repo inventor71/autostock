@@ -34,10 +34,17 @@ aidlc-docs/
     │   └── audit.md
     ├── F9/
     │   ├── state.md          # F9's full stage progress / extension config / scope.
-    │   │                     #   SINGLE WRITER = the F9 worktree session.
-    │   └── audit.md          # F9's append-only audit log. SINGLE WRITER.
+    │   ├── audit.md          # F9's append-only audit log.
+    │   ├── inception/        # F9's requirements/ plans/ user-stories/ application-design/
+    │   └── construction/     # F9's plans/ {unit}/{functional-design,nfr-*,code}/ build-and-test/
+    │                         #   ALL of the above: SINGLE WRITER = the F9 worktree session.
     └── …
 ```
+- **Per-track docs all live under `tracks/<id>/`**: `state.md`, `audit.md`, and every phase
+  artifact (requirements, plans, functional/NFR design, build-and-test) in `inception/`+
+  `construction/` subdirs mirroring the global layout. Author them in the worktree so `main`
+  stays clean (no stray uncommitted docs when `/ai-dlc-merge` starts). The top-level
+  `aidlc-docs/inception/` + `construction/` dirs are shared/pre-partition only.
 - **Per-track `state.md`**: everything that used to go in an `aidlc-state.md` feature-track
   section — stage progress checkboxes, extension config, construction scope, design notes.
 - **Per-track `audit.md`**: every user input / approval / AI action for this track, append-only,
@@ -117,8 +124,9 @@ same class as the daemon claude-CLI PATH bug), and (b) assuming the install need
 1. **Create.** Pick next `Fn`. `mkdir aidlc-docs/tracks/<id>`, copy `_TEMPLATE/{state.md,audit.md}`.
    Add a registry row (`active`). Create the worktree **before** any code generation. (Even a lean
    hotfix track creates `tracks/<id>/state.md` here — see the note above.)
-2. **Work.** All progress + audit go to `tracks/<id>/{state.md,audit.md}` only. Never touch another
-   track's files or the root files (except a registry row update if the title/base changes).
+2. **Work.** All progress, audit, and phase docs go under `tracks/<id>/` only (state/audit +
+   `inception/`+`construction/` artifacts). Never touch another track's files or the root files
+   (except a registry row update if the title/base changes).
 3. **Merge / close.** Prefer **`/ai-dlc-merge`** — a single-runner orchestrator that merges all
    `merge-awaiting` tracks sequentially (rebase each onto the just-updated main → verify → merge →
    close), so concurrent tracks can't tangle the shared registry/audit or land on a stale base.
@@ -135,3 +143,4 @@ same class as the daemon claude-CLI PATH bug), and (b) assuming the install need
 - [ ] Am I in a worktree for my track? If coding and on `main` → stop, create worktree.
 - [ ] Does my track have `aidlc-docs/tracks/<id>/{state.md,audit.md}`? If not → create from template + register.
 - [ ] Am I about to edit root `aidlc-state.md`/`audit.md` mid-flight? → Don't. Use my track files.
+- [ ] Am I writing a phase doc to top-level `inception/`/`construction/`? → Don't. Put it under `tracks/<id>/`.
