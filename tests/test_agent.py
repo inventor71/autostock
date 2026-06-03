@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import uuid
 from datetime import date, datetime
 from types import SimpleNamespace
@@ -322,6 +324,45 @@ class TestAgentSession:
         # resolves even though cwd is the workspace
         from src.agent.session import _REPO_ROOT
         assert runner.calls[0]["env"]["PYTHONPATH"].startswith(str(_REPO_ROOT))
+
+    def test_agent_path_includes_daemon_interpreter_bin(self, tmp_path):
+        """F46: the spawned agent env PATH must have the daemon's own venv bin dir
+        prepended so `python`/`python3` resolve to the same interpreter (venv,
+        which has alpaca-py), not the system python (yfinance OK, alpaca missing →
+        account tool down)."""
+        runner = _FakeRunner(_ok_payload("account snapshot"))
+        sess = AgentSession(workspace=tmp_path / "ws", runner=runner)
+        sess.run_turn("check account")
+
+        env = runner.calls[0]["env"]
+        path = env["PATH"]
+        expected_bin = os.path.dirname(sys.executable)
+        # The daemon's interpreter bin dir is the first entry on PATH.
+        assert path.startswith(expected_bin)
+        # Existing PATH entries are preserved after the injection.
+        assert os.pathsep in path
+        # The venv bin dir contains the actual `python` binary.
+        assert os.path.isfile(os.path.join(expected_bin, "python")) or \
+            os.path.isfile(os.path.join(expected_bin, "python3"))
+
+    def test_agent_path_when_inherited_path_empty(self, tmp_path, monkeypatch):
+        """F46: when `scrub_agent_env` returns a dict with no PATH (e.g. minimal
+        container), the injection produces a single-element PATH = daemon's bin dir."""
+        from src.agent.session import AgentSession as AS
+
+        runner = _FakeRunner(_ok_payload())
+        sess = AS(workspace=tmp_path / "ws", runner=runner)
+
+        # `scrub_agent_env` is imported locally inside `_invoke`; patch at its
+        # definition site so the local import resolves to our stub.
+        monkeypatch.setattr(
+            "src.agent.steering.security.scrub_agent_env",
+            lambda env: {"FAKE_ENV": "1"},  # no PATH at all
+        )
+        sess.run_turn("check account")
+        captured_env = runner.calls[0]["env"]
+        assert captured_env["PATH"] == os.path.dirname(sys.executable)
+        assert "PYTHONPATH" in captured_env
 
     def test_second_turn_resumes(self, tmp_path):
         runner = _FakeRunner(_ok_payload())
