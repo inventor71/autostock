@@ -258,3 +258,9 @@ intraday:
     cache_seconds: 60.0 # ATR/volume bar-input cache TTL
   price:
     cache_seconds: 3.0  # latest-price cache TTL (keeps the 5s detector non-blocking)
+
+# F47: EOD surge/dive detection. Scans the universe after market close and
+# records stocks that moved beyond the threshold. The agent analyses each one
+# during the EOD review turn.
+surge:
+  threshold_pct: 7.0      # absolute daily return to qualify as surge/dive (%)

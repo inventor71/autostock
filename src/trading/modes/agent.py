@@ -224,15 +224,44 @@ class AgentTradingMode:
         except Exception as exc:
             logger.warning(f"Quality report failed (non-fatal): {exc}")
 
+    def _run_surge_scan(self) -> int:
+        """EOD surge/dive scan — runs before the EOD review so the agent can
+        analyse the results.  Returns the number of surge records written."""
+        try:
+            from src.surge.detector import SurgeDetector
+            from src.surge.settings import SurgeDetectionConfig
+            from src.surge.store import SurgeStore
+            from config.config import get_settings
+
+            config = SurgeDetectionConfig.from_settings(get_settings().model_dump())
+            detector = SurgeDetector(self.executor.data_provider, config)
+            records = detector.scan(list(self.executor.universe))
+            store = SurgeStore(base_dir=self.executor.journal.root / "surge")
+            written = store.write_records(records)
+            if written > 0:
+                logger.info(f"surge scan: {written} new record(s) written")
+            return written
+        except Exception:
+            logger.exception("surge scan failed (non-fatal)")
+            return 0
+
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
         from src.agent.equity_log import fetch_benchmark, record_equity
         from src.agent.review import outcome_lines
 
+        # F47: scan for surge/dive stocks before the EOD review so the agent
+        # can run ``surge-list`` / ``surge-analyze`` during the review turn.
+        surge_count = self._run_surge_scan()
+
         if not self._paused():
             decisions = self.executor.journal.read_decisions()
             outcomes = outcome_lines(decisions, self.executor.broker, self.executor.data_provider)
-            self._scheduled_turn(lambda: self.orchestrator.run_eod_review(outcomes=outcomes))
+            self._scheduled_turn(
+                lambda: self.orchestrator.run_eod_review(
+                    outcomes=outcomes, surge_count=surge_count,
+                )
+            )
             self._funnel(self.executor.execute_pending)
             self._save_quality_report()
 

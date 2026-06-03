@@ -454,3 +454,80 @@ def macro(provider=None) -> dict:
 
     out["as_of"] = date.today().isoformat()
     return out
+
+
+# -- F47: surge stock tools ------------------------------------------------- #
+
+
+def _surge_store():
+    """Resolve the surge store under the agent's workspace root."""
+    import os
+    from pathlib import Path
+    from src.surge.store import SurgeStore
+
+    root = os.environ.get("AGENT_JOURNAL_ROOT")
+    if root:
+        return SurgeStore(base_dir=Path(root) / "surge")
+    return SurgeStore()
+
+
+def surge_list(date_str: str | None = None) -> list[dict]:
+    """Read today's surge/dive records from ``workspace/surge/history.jsonl``.
+
+    Called by the PM agent via ``python -m src.agent.tools surge-list``.
+    """
+    store = _surge_store()
+    d = date.fromisoformat(date_str) if date_str else date.today()
+    records = store.read_records(d)
+    return [
+        {
+            "symbol": r.symbol,
+            "direction": r.direction,
+            "change_pct": r.change_pct,
+            "volume_ratio": r.volume_ratio,
+            "close_prev": r.close_prev,
+            "close_today": r.close_today,
+        }
+        for r in records
+    ]
+
+
+def surge_analyze(
+    symbol: str,
+    date_str: str,
+    cause: str,
+    leading_indicators: str,
+    information_gap: str,
+) -> dict:
+    """Submit a root-cause analysis for a surge/dive stock.
+
+    Called by the PM agent via
+    ``python -m src.agent.tools surge-analyze <SYMBOL> <DATE> <CAUSE> "<LEADING>" "<GAP>"``.
+    """
+    from datetime import datetime
+
+    from src.surge.records import SurgeAnalysis, SurgeCause
+
+    try:
+        estimated_cause = SurgeCause(cause)
+    except ValueError:
+        valid = ", ".join(c.value for c in SurgeCause)
+        return {"status": "error", "message": f"Invalid cause '{cause}'. Valid: {valid}"}
+
+    d = date.fromisoformat(date_str)
+    analysis = SurgeAnalysis(
+        symbol=symbol.upper(),
+        trading_date=d,
+        estimated_cause=estimated_cause,
+        leading_indicators=leading_indicators,
+        information_gap=information_gap,
+        analyzed_at=datetime.now(),
+    )
+
+    store = _surge_store()
+    try:
+        store.append_analysis(analysis)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
+
+    return {"status": "ok", "symbol": symbol.upper(), "date": date_str}

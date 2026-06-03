@@ -304,6 +304,7 @@ Cross-validate their findings:
 def eod_review_prompt(
     outcomes: list[str] | None = None,
     quality_summary: str | None = None,
+    surge_count: int = 0,
 ) -> str:
     """End-of-day turn: grade calls against outcomes, distill lessons, write note.
 
@@ -314,6 +315,9 @@ def eod_review_prompt(
     ``quality_summary`` is an optional compact digest of decision quality metrics
     (direction hit rate, MAE/MFE, stop quality, confidence calibration) injected
     when enough data exists (>= 5 decisions).
+
+    ``surge_count`` is the number of surge/dive stocks detected today (F47).
+    When > 0 the agent is instructed to analyse each one.
     """
     lines = ["End-of-day review turn (continuing today's session)."]
     if outcomes:
@@ -322,6 +326,32 @@ def eod_review_prompt(
     if quality_summary is not None:
         lines.append("## Decision Quality Metrics (statistical, from your track record):")
         lines.append(quality_summary)
+    if surge_count > 0:
+        lines.append("## Today's Surge / Dive Stocks")
+        lines.append(
+            f"{surge_count} stock(s) surged or dived beyond the threshold today. "
+            "Run `python -m src.agent.tools surge-list` to see them."
+        )
+        lines.append(
+            "For EACH surge/dive stock, run "
+            "`python -m src.agent.tools surge-analyze <SYMBOL> <DATE> <CAUSE> "
+            "\"<LEADING_INDICATORS>\" \"<INFORMATION_GAP>\"` where:"
+        )
+        lines.append(
+            "- CAUSE: earnings | news | sector | technical | after_hours | mna | macro | unknown"
+        )
+        lines.append(
+            "- LEADING_INDICATORS: What signals preceded this move "
+            "that autostock could have detected?"
+        )
+        lines.append(
+            "- INFORMATION_GAP: What data would have helped predict this, "
+            "that autostock doesn't currently capture?"
+        )
+        lines.append(
+            "After analysing, write a daily surge summary to surge/YYYY-MM-DD.md "
+            "with key takeaways and recurring information gaps."
+        )
     lines.append(
         "Cross-check with decisions.jsonl and your position theses. For each call, "
         "compare what you intended to what actually happened and append a "

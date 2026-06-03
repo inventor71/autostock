@@ -78,6 +78,17 @@ def main(argv: list[str] | None = None) -> int:
     ws_clear.add_argument("id")
     wsub.add_parser("list")
 
+    # F47: surge stock tools
+    sl = sub.add_parser("surge-list")
+    sl.add_argument("--date", default=None, help="Trading date YYYY-MM-DD (default: today)")
+
+    sa = sub.add_parser("surge-analyze")
+    sa.add_argument("symbol")
+    sa.add_argument("date")
+    sa.add_argument("cause")
+    sa.add_argument("leading_indicators")
+    sa.add_argument("information_gap")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "quote":
@@ -138,6 +149,13 @@ def main(argv: list[str] | None = None) -> int:
             out = {"cleared": args.id}
         else:  # list
             out = {"active": [t.model_dump(mode="json") for t in store.active()]}
+    elif args.cmd == "surge-list":
+        out = market.surge_list(args.date)
+    elif args.cmd == "surge-analyze":
+        out = market.surge_analyze(
+            args.symbol, args.date, args.cause,
+            args.leading_indicators, args.information_gap,
+        )
     else:  # pragma: no cover - argparse enforces choices
         parser.error(f"unknown command: {args.cmd}")
 
