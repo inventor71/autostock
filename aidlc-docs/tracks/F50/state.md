@@ -8,7 +8,7 @@
 - **Track ID**: F50
 - **Title**: TUI Status/타임라인 동일선 배치
 - **Type**: feature
-- **Status**: merge-awaiting
+- **Status**: merged → main 3f3b725 (2026-06-03)
 - **Branch**: feat/F50
 - **Worktree**: .claude/worktrees/F50
 - **Submodule branch**: — (monorepo, post-F35)

@@ -1589,6 +1589,8 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 
 ---
 
+- 2026-06-03 — **F50 merged** (main `3f3b725`): TUI status+timeline single-line layout — merge StatusRow into NavRow (queue/working items + nav bar on same line). 1 file, 22 insertions, 36 deletions. 69/69 tests, 19/19 typecheck.
+
 - 2026-06-03 — **F49 merged** (main `00b3559`): synthesis verdict drill-down text overlay fix — add `wrapMode="word"` to `<text>` element (preventing Yoga layout overlapping on long synthesis lines, up to 500 chars). 1 file (+1/-1). 69/69 tests, 19/19 typecheck.
 
 - 2026-06-03 — **F48 merged** (main `a669761`): sidebar cleanup — rebrand "OpenCode" → "AutoStock", remove workspace path/LSP sidebar plugin/session ID hash, compact Context tab to single line. 7 files (6 modified + 1 deleted), 6 insertions, 132 deletions. Rebase clean, typecheck 19/19, test failures pre-existing on main (attention.test.ts rebrand remnants).
