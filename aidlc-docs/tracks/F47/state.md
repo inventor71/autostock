@@ -8,7 +8,7 @@
 - **Track ID**: F47
 - **Title**: 급등주 히스토리 기록 및 원인 분석 (Surge Stock History & Root-Cause Analysis)
 - **Type**: feature
-- **Status**: active
+- **Status**: merged → main 3eee516 (2026-06-03)
 - **Branch**: feat/F47
 - **Worktree**: .claude/worktrees/F47
 - **Submodule branch**: — (monorepo)
@@ -62,7 +62,8 @@
 - [x] NFR Requirements — 완료 2026-06-03 (Minimal depth, 0 new deps)
 - [x] NFR Design — 완료 2026-06-03 (Minimal depth, 6 patterns, 9 logical components)
 - [x] Infrastructure Design — SKIP (local daemon, no infra)
-- [~] Code Generation — Part 1 (plan)
+- [x] Code Generation — 완료 2026-06-03 (Part 1+2, 680 tests green, 31 new surge tests)
+- [x] Build & Test — 완료 2026-06-03 (680 passed, 0 regressions, merge-awaiting)
 
 ### 🟡 OPERATIONS PHASE
 - [ ] Operations — PLACEHOLDER

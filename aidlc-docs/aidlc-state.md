@@ -59,7 +59,7 @@
 | F44 | 진행 중 turn 라벨(TUI) + 동일 type turn이 in-flight면 큐잉 대신 "already in progress" 반환 | merged | feat/F44 → main dc73fcb | — (제거됨) | — (monorepo) | bc25f93 | 2026-06-03 |
 | F45 | 타임라인 12h 윈도우 자동 전환(현재시각 포함) + [<]/[>] 12h 네비 (현행 정규장-중심 ±1일 → 로컬 12h 절반) | merged | feat/F45 → main 007aa11 | — (제거됨) | — (monorepo) | 777cf40 | 2026-06-03 |
 | F46 | 에이전트 `account` 툴 작동불가 — 스폰된 에이전트의 `python3`에 alpaca-py 없음 (PATH 구멍) | merged | feat/F46 → main fb06517 | — (제거됨) | — (monorepo) | 777cf40 | 2026-06-03 |
-| F47 | 급등주 히스토리 기록 및 원인 분석 (Surge Stock History & Root-Cause Analysis) | active | feat/F47 | .claude/worktrees/F47 | — (monorepo) | TBD | 2026-06-03 |
+| F47 | 급등주 히스토리 기록 및 원인 분석 (Surge Stock History & Root-Cause Analysis) | merged | feat/F47 (3eee516) | — (제거됨) | — (monorepo) | 3eee516 | 2026-06-03 |
 | F48 | Operator Console Sidebar Cleanup — 브랜딩/불필요 요소 제거 | merged | feat/F48 (a669761) | — (제거됨) | — (monorepo) | a669761 | 2026-06-03 |
 | F49 | synthesis final verdict TUI display bug fix (깨져서 나오는 현상 수정) | merged | feat/F49 (00b3559) | — (제거됨) | — (monorepo) | 00b3559 | 2026-06-03 |
 | F50 | TUI Status/타임라인 동일선 배치 | merged | feat/F50 (3f3b725) | — (제거됨) | — (monorepo) | 3f3b725 | 2026-06-03 |

@@ -1589,6 +1589,8 @@ F19 merged (F9 follow-up #1): submodule `feat/F19` → fork `main` `bc82b71` (pu
 
 ---
 
+- 2026-06-03 — **F47 merged** (main `3eee516`): surge stock history detection & root-cause analysis — 급등주 자동 감지·원인 분류·기록. `src/surge/` (records/detector/store/settings) + 2 agent tools (surge-list/surge-analyze). 15 files (+939/-4), 31 new tests, 680 full regression green, 0 new runtime deps. Rebase clean (no file overlap with F48/F49/F50 TS changes).
+
 - 2026-06-03 — **F50 merged** (main `3f3b725`): TUI status+timeline single-line layout — merge StatusRow into NavRow (queue/working items + nav bar on same line). 1 file, 22 insertions, 36 deletions. 69/69 tests, 19/19 typecheck.
 
 - 2026-06-03 — **F49 merged** (main `00b3559`): synthesis verdict drill-down text overlay fix — add `wrapMode="word"` to `<text>` element (preventing Yoga layout overlapping on long synthesis lines, up to 500 chars). 1 file (+1/-1). 69/69 tests, 19/19 typecheck.
