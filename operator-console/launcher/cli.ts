@@ -16,7 +16,76 @@ function die(code: number, msg: string): never {
   process.exit(code);
 }
 
+const isSupervisorArg = (a: string) => a === "--supervisor" || a.startsWith("--supervisor=");
+const isHelpArg = (a: string) => a === "-h" || a === "--help";
+
+/** Single source of truth for launcher arg handling. `--supervisor` is the launcher's only
+ *  OWNED flag → strip it so it never leaks to opencode's `.strict()` parser (it would reject it).
+ *  `-h`/`--help` is DETECTED but KEPT in consoleArgs: the launcher prints its own section, then
+ *  forwards the flag so opencode appends its full yargs help below (F40 loose-fuse). Everything
+ *  else passes through untouched (opencode owns it; its `.strict()` rejects genuine unknowns). */
+export function classifyArgs(userArgs: string[]): { supervisor: boolean; help: boolean; consoleArgs: string[] } {
+  return {
+    supervisor: userArgs.some(isSupervisorArg),
+    help: userArgs.some(isHelpArg),
+    consoleArgs: userArgs.filter((a) => !isSupervisorArg(a)),
+  };
+}
+
+/** The launcher-owned help section (stderr). Documents the ONLY launcher flag (`--supervisor`)
+ *  and the pass-through contract; opencode's own yargs help is printed right after (loose-fuse).
+ *  Never emits secrets (BR-6). */
+export function launcherHelpSection(): string {
+  return [
+    "autostock — AI 트레이딩 운영 콘솔 런처",
+    "",
+    "런처 옵션:",
+    "  --supervisor   supervisor(read-only, 전체 코드 읽기) 프로파일로 진입.",
+    "                 셸 접근이 있는 개발자 전용. 평상시엔 생략.",
+    "  -h, --help     이 도움말을 표시.",
+    "",
+    "그 외 모든 인자는 opencode 콘솔로 그대로 전달됩니다 (예: autostock -s ses_x → 세션 재개).",
+    "아래는 opencode 콘솔 자체 도움말입니다:",
+    "─".repeat(60),
+  ].join("\n");
+}
+
+/** F40 help path: print the launcher section, then hand the help flag to opencode so its full
+ *  yargs help follows (loose-fuse). Runs BEFORE preflight/daemon — help must work even when the
+ *  daemon is down. resolveConfig failure must NOT hard-fail help; we still exit 0. */
+async function runHelp(consoleArgs: string[]): Promise<never> {
+  process.stderr.write(launcherHelpSection() + "\n");
+  let cfg;
+  try {
+    cfg = resolveConfig({ launcherDir: import.meta.dir });
+  } catch (e) {
+    process.stderr.write(`autostock: (opencode 도움말 표시 불가 — config 오류: ${(e as Error).message})\n`);
+    process.exit(EXIT.OK);
+  }
+  try {
+    // @ts-ignore Bun global
+    const proc = Bun.spawn(["bun", "run", "dev", "--", ...consoleArgs], {
+      cwd: cfg.consoleCwd,
+      env: consoleEnv(cfg, process.env, false),
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const code = await proc.exited;
+    process.exit(code === 0 ? EXIT.OK : code);
+  } catch (e) {
+    process.stderr.write(`autostock: (opencode 도움말 실행 실패: ${(e as Error).message})\n`);
+    process.exit(EXIT.OK);
+  }
+}
+
 export async function main(): Promise<void> {
+  // 0. help (F40): short-circuit BEFORE preflight/daemon — `autostock -h` / `--help` prints the
+  //    launcher section then forwards the flag to opencode for its full yargs help (loose-fuse).
+  //    (supervisor is irrelevant here; --supervisor is already stripped from consoleArgs.)
+  const helpArgs = classifyArgs(process.argv.slice(2));
+  if (helpArgs.help) await runHelp(helpArgs.consoleArgs);
+
   // 1. config
   let cfg;
   try {
@@ -54,11 +123,8 @@ export async function main(): Promise<void> {
   //    renders on the home route (F5 option ②), so it is sidebar-first without resuming a session.
   // F26: `--supervisor` is the ONLY entry to the elevated (whole-codebase read) profile.
   // It requires shell access here (developer-only, FR-4②); the daemon/autonomous paths
-  // never pass it. STRIP it from consoleArgs so it never leaks to opencode's CLI.
-  const userArgs = process.argv.slice(2);
-  const isSupervisorArg = (a: string) => a === "--supervisor" || a.startsWith("--supervisor=");
-  const supervisor = userArgs.some(isSupervisorArg);
-  const consoleArgs = userArgs.filter((a) => !isSupervisorArg(a));
+  // never pass it. classifyArgs STRIPS it from consoleArgs so it never leaks to opencode's CLI.
+  const { supervisor, consoleArgs } = classifyArgs(process.argv.slice(2));
   const env = consoleEnv(cfg, process.env, supervisor);
   if (supervisor) process.stderr.write("autostock: ⚠ SUPERVISOR 모드 (전체 코드 읽기, read-only)\n");
   let code: number;
