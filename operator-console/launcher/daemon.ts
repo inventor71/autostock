@@ -245,6 +245,13 @@ export class DaemonService {
    */
   async ensureRunning(): Promise<HealthResult> {
     if (this.isFreshNow()) {
+      // F43: a fresh snapshot means SOME daemon is publishing — but it may be running
+      // STALE code (booted before a merge), which silently rejects new console verbs
+      // (e.g. F38 `research` → endless "skipping unparseable command line"). The wedge
+      // path never catches this (a stale daemon is perfectly healthy). Detect a
+      // code-version skew and restart ONCE before attaching. Fail-open (see detectCodeSkew).
+      const skew = await this.detectCodeSkew();
+      if (skew.stale) return await this.restartForStaleCode(skew.reason);
       const advancing = await this.probeAdvance(ATTACH_PROBE_MS);
       return {
         healthy: true,
@@ -282,6 +289,66 @@ export class DaemonService {
       );
     }
     return health;
+  }
+
+  /** F43: the working-tree HEAD SHA via the injected runner (testable). "" on any failure —
+   *  which makes detectCodeSkew fail-OPEN (no restart). Fixed-arg array (no shell): SECURITY-01. */
+  async gitHead(): Promise<string> {
+    const r = await this.run(["git", "-C", this.cfg.autostockRoot, "rev-parse", "HEAD"]);
+    return r.code === 0 ? r.stdout.trim() : "";
+  }
+
+  /**
+   * F43 version-skew detection: is the publishing daemon running code OLDER than the working tree?
+   * Compares the snapshot's stamped `code_version` against the launcher's HEAD. Decision table —
+   * biased fail-OPEN so a restart LOOP is impossible:
+   *  - launcher HEAD unknown (git failed / not a repo) → NOT stale (G-1: never restart on doubt).
+   *  - snapshot has NO `code_version` key → stale (a pre-F43 daemon; ONE restart upgrades it to a
+   *    stamping daemon, after which the key is always present — so this fires at most once).
+   *  - key present but blank ("") → NOT stale. The daemon IS an F43 daemon that simply couldn't
+   *    resolve its own SHA; we can't compare, so we must not restart (else: restart forever).
+   *  - SHA present and ≠ HEAD → stale. Equal → not stale.
+   */
+  async detectCodeSkew(): Promise<{ stale: boolean; reason: string }> {
+    const head = await this.gitHead();
+    if (!head) return { stale: false, reason: "launcher HEAD unknown — skew check skipped" };
+    const snap = this.readSnapshot();
+    if (!snap || !("code_version" in snap)) {
+      return { stale: true, reason: "daemon predates version stamping (no code_version)" };
+    }
+    const stamped = typeof snap["code_version"] === "string" ? (snap["code_version"] as string) : "";
+    if (!stamped) return { stale: false, reason: "daemon code_version blank (git unresolved) — skew check skipped" };
+    if (stamped !== head) {
+      return { stale: true, reason: `daemon code ${stamped.slice(0, 7)} ≠ working-tree ${head.slice(0, 7)}` };
+    }
+    return { stale: false, reason: "code_version matches working tree" };
+  }
+
+  /**
+   * F43: restart a daemon caught running stale code, then health-wait. Mirrors the wedge path's
+   * one-shot `systemctl restart` + RESTART_HEALTH_MS wait. UNCONDITIONAL by design (user decision):
+   * no market / in-flight-turn gating — picking up merged code wins over protecting a turn. The new
+   * daemon publishes a snapshot stamped with the current SHA, so the next `autostock` run matches
+   * and attaches without restarting.
+   */
+  async restartForStaleCode(reason: string): Promise<HealthResult> {
+    this.warn(`daemon running stale code (${reason}) — auto-restarting to load current code`);
+    const r = await this.sc(["restart", this.unitName]);
+    if (r.code !== 0) {
+      throw new DaemonStartError(
+        `stale-code auto-restart failed (systemctl exit ${r.code}). ${r.stderr || ""}`.trim() +
+          `\n      → journalctl --user -u ${this.unitName} -n 50`,
+      );
+    }
+    const after = await this.healthWait(RESTART_HEALTH_MS);
+    if (!after.healthy) {
+      throw new DaemonStartError(
+        `daemon was running stale code; auto-restarted but snapshot not advancing within ` +
+          `${Math.round(RESTART_HEALTH_MS / 1000)}s.\n` +
+          `      → journalctl --user -u ${this.unitName} -n 50`,
+      );
+    }
+    return { healthy: true, reason: `auto-restarted (was running stale code: ${reason})` };
   }
 
   /**
