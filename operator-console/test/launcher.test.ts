@@ -9,6 +9,7 @@ import { buildPermissionProfile, consoleEnv, parseDotenv, resolveConfig, TOKEN_K
 import { formatReport, runPreflight } from "../launcher/preflight";
 import { renderUnit } from "../launcher/unit-template";
 import { DaemonService, DaemonStartError, publishedAtMs, type DaemonDeps } from "../launcher/daemon";
+import { classifyArgs, launcherHelpSection } from "../launcher/cli";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "f5-"));
@@ -431,5 +432,57 @@ describe("daemon.publishedAtMs (review #6 — Python microsecond ISO must not Na
   test("6-digit microsecond naive-local string parses to a real epoch", () => {
     const ms = publishedAtMs({ published_at: "2026-05-30T18:27:38.102467" });
     expect(Number.isNaN(ms)).toBe(false);
+  });
+});
+
+describe("cli.classifyArgs (F40 — launcher arg handling)", () => {
+  test("--supervisor: detected and STRIPPED from consoleArgs (never leaks to opencode)", () => {
+    const r = classifyArgs(["--supervisor"]);
+    expect(r.supervisor).toBe(true);
+    expect(r.help).toBe(false);
+    expect(r.consoleArgs).not.toContain("--supervisor");
+    expect(r.consoleArgs).toEqual([]);
+  });
+
+  test("--supervisor=on form also stripped", () => {
+    const r = classifyArgs(["--supervisor=on", "-s", "x"]);
+    expect(r.supervisor).toBe(true);
+    expect(r.consoleArgs).toEqual(["-s", "x"]);
+  });
+
+  test("-h / --help: detected but KEPT in consoleArgs (forwarded to opencode for loose-fuse)", () => {
+    for (const flag of ["-h", "--help"]) {
+      const r = classifyArgs([flag]);
+      expect(r.help).toBe(true);
+      expect(r.consoleArgs).toContain(flag);
+    }
+  });
+
+  test("--supervisor + -h + passthrough: supervisor stripped, help flag + rest kept", () => {
+    const r = classifyArgs(["--supervisor", "-h", "-s", "x"]);
+    expect(r.supervisor).toBe(true);
+    expect(r.help).toBe(true);
+    expect(r.consoleArgs).toEqual(["-h", "-s", "x"]);
+  });
+
+  test("plain opencode args: no launcher flags, passed through untouched", () => {
+    const r = classifyArgs(["-s", "ses_x", "--print-logs"]);
+    expect(r.supervisor).toBe(false);
+    expect(r.help).toBe(false);
+    expect(r.consoleArgs).toEqual(["-s", "ses_x", "--print-logs"]);
+  });
+});
+
+describe("cli.launcherHelpSection (F40)", () => {
+  test("documents --supervisor and the pass-through contract", () => {
+    const s = launcherHelpSection();
+    expect(s).toContain("--supervisor");
+    expect(s).toContain("opencode");
+  });
+
+  test("never emits secret env keys", () => {
+    const s = launcherHelpSection();
+    expect(s).not.toContain(TOKEN_KEY);
+    expect(s).not.toContain("TOKEN");
   });
 });
