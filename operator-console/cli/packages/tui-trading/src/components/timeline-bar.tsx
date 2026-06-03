@@ -100,21 +100,18 @@ export function TimelineBar(props: TimelineBarProps) {
   const queued = () => (isToday() ? (props.monitor()?.queued ?? 0) : 0)
 
   return (
-    <box width={props.width} height={4} flexDirection="column">
+    <box width={props.width} height={3} flexDirection="column">
       <Show when={!disconnected()} fallback={<text fg="gray">{"  Monitor disconnected"}</text>}>
-        {/* F44 Row 0: in-flight turn progress label (blinks like the now-cursor) */}
-        <StatusRow
-          currentTurn={isToday() ? props.currentTurn() : null}
-          queued={queued()}
-          blinkOn={blinkOn()}
-        />
-        {/* Row 1: date nav + current market-phase badge + cost */}
+        {/* F50: status + date nav on the same row */}
         <NavRow
           label={windowLabel()}
           isLive={isLive()}
           phase={phase()}
           width={props.width}
           todayCost={isLive() ? (props.monitor()?.turns?.today_cost_usd ?? 0) : 0}
+          currentTurn={isToday() ? props.currentTurn() : null}
+          queued={queued()}
+          blinkOn={blinkOn()}
           onPrev={goPrev}
           onNext={goNext}
           onToday={goToday}
@@ -141,47 +138,36 @@ export function TimelineBar(props: TimelineBarProps) {
   )
 }
 
-// F44: a one-line status row above the timeline. While a turn is in flight it shows
-// "● {type} · {elapsed} · +{N} queued" (the bullet blinks green like the now-cursor,
-// and elapsed re-renders on the blink tick). Idle / historical dates show a dim "idle".
-function StatusRow(props: {
-  currentTurn: CurrentTurn | null
-  queued: number
-  blinkOn: boolean
-}) {
-  const t = () => props.currentTurn
-  return (
-    <Show when={t()} fallback={<text fg="#555555">{"  idle"}</text>}>
-      {(turn) => {
-        // Read blinkOn so this row re-renders ~2x/s → the elapsed clock ticks live.
-        const label = () => {
-          void props.blinkOn // track the blink tick so the elapsed clock re-renders live
-          return fmtTurnLabel(turn(), props.queued, Date.now()) ?? ""
-        }
-        return (
-          <box>
-            <text fg={props.blinkOn ? "green" : "#2f6f4f"}>{"  ● "}</text>
-            <text fg="white">{label()}</text>
-          </box>
-        )
-      }}
-    </Show>
-  )
-}
-
 function NavRow(props: {
   label: string
   isLive: boolean
   phase: string | null
   width: number
   todayCost: number
+  currentTurn: CurrentTurn | null
+  queued: number
+  blinkOn: boolean
   onPrev: () => void
   onNext: () => void
   onToday: () => void
 }) {
   const displayLabel = () => props.isLive ? `${props.label} (Live)` : props.label
+  const turn = () => props.currentTurn
   return (
     <box width={props.width} flexDirection="row" gap={1} paddingLeft={1}>
+      {/* F50: status inline — was separate StatusRow above the nav bar */}
+      <Show when={turn()} fallback={<text fg="#555555">{"idle"}</text>}>
+        {(t) => {
+          void props.blinkOn // track blink tick so the elapsed clock re-renders live
+          const label = () => fmtTurnLabel(t(), props.queued, Date.now()) ?? ""
+          return (
+            <box>
+              <text fg={props.blinkOn ? "green" : "#2f6f4f"}>{"● "}</text>
+              <text fg="white">{label()}</text>
+            </box>
+          )
+        }}
+      </Show>
       <box onMouseUp={(e: any) => { props.onPrev(); e.stopPropagation?.() }}>
         <text fg="cyan">{"[ < ]"}</text>
       </box>
