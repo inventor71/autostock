@@ -180,9 +180,33 @@ export function buildPermissionProfile(cfg: LauncherConfig, supervisor: boolean)
   };
 }
 
+/**
+ * F39 — operator-agent instruction files injected via `OPENCODE_CONFIG_CONTENT`
+ * (opencode merges the partial config at load: flag.ts → config.ts:666 → instructions
+ * arrays UNION at config.ts:57-58). These ABSOLUTE paths are appended to whatever
+ * project AGENTS.md opencode auto-loads, and — because `config.instructions` are added
+ * LAST in `instruction.system()` — they sit at the tail of the system prompt (highest
+ * salience), so the operator persona overrides the fork's dev-guide `cli/AGENTS.md`.
+ *
+ * - `operator.md`  : operator persona (BOTH profiles) — "this is a trading ops console,
+ *                    not a coding session; ignore dev guides".
+ * - `normal-guard.md`: normal ONLY — refuse source/implementation questions, don't attempt
+ *                    source reads or speculate (supervisor mode is never mentioned, FR-4/Q4).
+ *
+ * Supervisor keeps the code-analysis posture (F26/F29), so it gets the persona only.
+ * We do NOT set OPENCODE_DISABLE_PROJECT_CONFIG — that would also skip the project
+ * `opencode.json` (F26 permission base + MCP grants), far too broad.
+ */
+export function buildInstructions(cfg: LauncherConfig, supervisor: boolean): string[] {
+  const promptsDir = join(cfg.autostockRoot, "operator-console", "prompts");
+  const files = supervisor ? ["operator.md"] : ["operator.md", "normal-guard.md"];
+  return files.map((f) => join(promptsDir, f));
+}
+
 /** The env set the console MUST inherit so opencode's {env:...} MCP wiring resolves
  *  (critic2 #2): AUTOSTOCK_ROOT + STEERING_DIR + STEERING_OPERATOR_TOKEN, all absolute.
- *  F26: also injects the supervisor flag + the per-profile permission set. */
+ *  F26: also injects the supervisor flag + the per-profile permission set.
+ *  F39: also injects per-profile operator instructions via OPENCODE_CONFIG_CONTENT. */
 export function consoleEnv(
   cfg: LauncherConfig,
   base: Record<string, string | undefined> = process.env,
@@ -206,5 +230,8 @@ export function consoleEnv(
   if (supervisor) out.AUTOSTOCK_SUPERVISOR = "on";
   else delete out.AUTOSTOCK_SUPERVISOR; // never inherit a stale value from the parent env
   out.OPENCODE_PERMISSION = JSON.stringify(buildPermissionProfile(cfg, supervisor));
+  // F39: operator persona (both) + normal-mode code-refusal guard (normal only). Merged
+  // with project config; instructions arrays union, so this ADDS to any auto-loaded AGENTS.md.
+  out.OPENCODE_CONFIG_CONTENT = JSON.stringify({ instructions: buildInstructions(cfg, supervisor) });
   return out;
 }

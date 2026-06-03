@@ -128,8 +128,12 @@ export function handleStructured(
 // `log` returns just the log tail; turns/decisions return their slice.
 const MONITOR_VERBS: Record<string, string> = { turns: "turns", decisions: "decisions", log: "log" };
 
-/** Read-only path (status/positions/orders/...). No order authority; not gated. */
-export function handleSteerRead(command: string, fd: FileDrop): string {
+/** Read-only path (status/positions/orders/...). No order authority; not gated.
+ *  `supervisor` (F39) gates the codebase-introspection verb: only supervisor-launched
+ *  consoles may read the project tree; normal mode gets a generic refusal that does NOT
+ *  mention supervisor mode (FR-4/Q4). Defaults false so any non-supervisor caller is denied
+ *  (fail-closed, SECURITY-15). mcp-server passes process.env.AUTOSTOCK_SUPERVISOR === "on". */
+export function handleSteerRead(command: string, fd: FileDrop, supervisor = false): string {
   let draft;
   try {
     draft = parseCommand(command);
@@ -141,7 +145,10 @@ export function handleSteerRead(command: string, fd: FileDrop): string {
   }
   // F29: codebase tree lives in its own file (generated once at daemon startup,
   // not periodically refreshed like monitor/snapshot).
+  // F39: codebase introspection is supervisor-only. Normal mode refuses generically
+  // (no mention of supervisor mode — it stays a developer-only capability).
   if (draft.verb === "codebase") {
+    if (!supervisor) return "codebase introspection is not available in this console.";
     const cb = fd.readCodebase();
     if (!cb) return "(no codebase tree yet — daemon may not have published it)";
     return `codebase tree:\n${cb.tree ?? JSON.stringify(cb)}`;

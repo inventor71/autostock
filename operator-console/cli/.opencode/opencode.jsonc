@@ -22,7 +22,17 @@
         "STEERING_DIR": "{env:AUTOSTOCK_ROOT}/steering",
         "STEERING_OPERATOR_TOKEN": "{env:STEERING_OPERATOR_TOKEN}",
         "ALPACA_API_KEY": "{env:ALPACA_API_KEY}",
-        "ALPACA_API_SECRET": "{env:ALPACA_API_SECRET}"
+        "ALPACA_API_SECRET": "{env:ALPACA_API_SECRET}",
+        // F39: the MCP server gates /codebase on supervisor mode (steer-handler). The MCP
+        // child env is `{...process.env, ...environment}` (mcp/index.ts), so this entry
+        // OVERLAYS the inherited value with the {env:}-substituted one. In normal launches
+        // the launcher deletes AUTOSTOCK_SUPERVISOR from the console env (config.ts), so the
+        // substitution yields "" (variable.ts) and this overlay pins it to "" — the handler's
+        // `=== "on"` is then false → fail-closed deny, even if a stale "on" was exported in the
+        // parent shell. (A bare `bun dev` with AUTOSTOCK_SUPERVISOR=on exported is a deliberate
+        // developer action at the same trust level as `autostock --supervisor` — F26's
+        // developer-only guard already requires shell access — not a model/daemon-reachable path.)
+        "AUTOSTOCK_SUPERVISOR": "{env:AUTOSTOCK_SUPERVISOR}"
       }
     }
   },

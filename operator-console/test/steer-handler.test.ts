@@ -105,6 +105,27 @@ test("handleSteerRead: /ui-legend with unknown element returns a not-found error
   expect(parsed.error).toContain("not found");
 });
 
+// ---- F39 /codebase supervisor gating ------------------------------------- #
+test("handleSteerRead: /codebase is refused in normal mode (default), no tree, no 'supervisor' word", () => {
+  writeFileSync(join(dir, "codebase.json"), JSON.stringify({ tree: "src/\n  agent/" }));
+  const out = handleSteerRead("/codebase", fd); // supervisor defaults false (fail-closed)
+  expect(out).not.toContain("codebase tree:");
+  expect(out).not.toContain("src/");
+  expect(out.toLowerCase()).not.toContain("supervisor"); // FR-4/Q4: never reveal the mode
+});
+
+test("handleSteerRead: /codebase returns the tree in supervisor mode (F29 preserved)", () => {
+  writeFileSync(join(dir, "codebase.json"), JSON.stringify({ tree: "src/\n  agent/" }));
+  const out = handleSteerRead("/codebase", fd, true);
+  expect(out).toContain("codebase tree:");
+  expect(out).toContain("src/");
+});
+
+test("handleSteerRead: other read verbs unaffected by the supervisor flag", () => {
+  // /status must still answer in normal mode (operational reads stay open, FR-6)
+  expect(handleSteerRead("/status", fd, false)).toContain("snapshot");
+});
+
 // ---- F9 structured order path -------------------------------------------- #
 function records(): Array<{ verb: string; args: Record<string, unknown>; token: string }> {
   try {
