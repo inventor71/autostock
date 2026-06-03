@@ -84,9 +84,7 @@ workflow start. Its non-negotiable rules define where every doc in this workflow
   `aidlc-docs/tracks/<id>/`: `state.md`, `audit.md`, and every phase artifact (requirements,
   plans, functional/NFR design, build-and-test) in `inception/`+`construction/` subdirs that
   mirror the global layout. The single writer is that track's worktree session — author the docs
-  in the worktree so `main` stays clean. Start from `aidlc-docs/tracks/_TEMPLATE/`. (The top-level
-  `aidlc-docs/inception/` + `construction/` dirs hold only pre-partition/shared artifacts — never
-  per-track docs.)
+  in the worktree so `main` stays clean. Start from `aidlc-docs/tracks/_TEMPLATE/`.
 - **Naming convention for the rest of this document**: unqualified **`state.md`** and **`audit.md`**
   always mean the **track's** files under `aidlc-docs/tracks/<id>/`. The two repo-root files are
   referred to explicitly as the **root Track Registry** (`aidlc-docs/aidlc-state.md`) and the
@@ -541,9 +539,6 @@ The Operations stage will eventually include:
 ├── [project-specific structure]    # Varies by project (see code-generation.md)
 │
 ├── aidlc-docs/                     # 📄 DOCUMENTATION ONLY
-│   ├── inception/                  # 🔵 shared / pre-partition artifacts only
-│   ├── construction/               # 🟢 shared / pre-partition artifacts only
-│   ├── operations/                 # 🟡 OPERATIONS PHASE (placeholder)
 │   ├── tracks/                      # 🧩 CONCURRENT TRACKS (one dir per feature, SINGLE writer)
 │   │   ├── _TEMPLATE/               # copy to start a track (state.md, audit.md)
 │   │   └── {Fn}/                    # ALL of a track's docs live here
