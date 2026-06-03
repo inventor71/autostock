@@ -35,6 +35,11 @@ allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git status:*), Bash(git workt
      (특히 Build & Test) → **후보**로 올리되 "추정"으로 표시.
 2. **트랙별 준비 증거**를 모은다: 앞선 커밋 수, base commit, `git merge-base feat/<id> main`,
    변경 파일 목록, state.md의 verification 섹션 요약.
+   **또한 각 후보 트랙의 `state.md`에서 `## Merge Risk Notes` 섹션을 읽는다**:
+   - 공유 파일, API/시그니처 변경, 알려진 동시 변경 트랙 정보가 있으면 큐 구성에 반영.
+   - 이 정보는 트랙 작성자가 직접 기록한 것으로, `git diff --name-only` 자동 겹침 분석을
+     **보완**한다(자동 분석은 파일 레벨이지만 Risk Notes는 함수/시그니처 레벨 위험을 포착).
+   - Risk Notes가 비어 있어도 무방 — 자동 diff 분석만으로 충분한 경우가 대부분.
 3. **사전 게이트(자동 제외)** — 다음은 큐에서 빼고 사유를 함께 보고:
    - base가 **F35 monorepo 통합(2253029) 이전**이면 제외 → 서브모듈 경계를 넘는 자동 rebase는
      위험(메모리 [[submodule-merge-workflow]] / F16 후속 노트). 수동 cherry-pick 필요로 안내.
@@ -69,6 +74,22 @@ allowed-tools: Read, Edit, Write, Glob, Grep, Bash(git status:*), Bash(git workt
     수정 등)은 직접 해결하고 `git -C W rebase --continue`.
   - **의미적 충돌**(두 트랙이 같은 로직을 서로 다른 의도로 바꿈)은 **멈춤** → 사용자에게
     충돌 내용을 제시하고 판단을 받는다.
+- **⚠️ 충돌 해결 후 교차-로직 검증 (MANDATORY, 충돌 발생 시에만):**
+  충돌이 발생한 모든 파일에 대해, rebase를 계속하기 **전에** 다음을 수행한다:
+  1. **충돌 해결된 파일을 전체 읽고**, rebase된 트랙이 추가한 모든 새 코드(함수 호출, 변수
+     참조, prop 전달, import 사용)에서 참조하는 **식별자(identifier)를 목록화**한다.
+  2. **각 식별자가 병합 결과 파일에서 실제로 정의/import 되었는지 확인**한다:
+     - 함수/변수: 파일 내에 정의가 존재하는가?
+     - import: import 문에 포함되어 있는가?
+     - prop: 전달 대상 컴포넌트의 인터페이스에 존재하는가?
+     - 타입/인터페이스 필드: 정의를 찾을 수 있는가?
+  3. **특히 주의할 패턴** — 직전 트랙(main 쪽)이 리팩토링(rename, 시그니처 변경, 함수 분할)을
+     가한 파일에서 충돌이 났다면, rebase 트랙의 코드가 **리팩토링된 API에 맞게 조정되었는지**
+     확인한다. 예: main에서 `pinnedDate()`→`pinnedStart()`로 rename → rebase 트랙의
+     `isToday()` 정의가 `pinnedDate()`를 참조하고 있다면 `pinnedStart()` 기반으로 재작성 필요.
+  4. 위 검증을 통과하지 못한 식별자가 하나라도 있으면 → 파일에서 수정 후 재확인.
+     **절대 "git이 충돌 마커만 제거했으니 됐다"고 가정하지 말 것.**
+     git은 양쪽 변경을 텍스트로 합칠 뿐, **로직 정합성은 검증하지 않는다**.
 
 ### 2) verify 재실행 (실패 시 원인 분석·수정)
 - W에서 트랙의 검증을 **실제로 다시** 돌린다(rebase로 코드가 바뀌었을 수 있으므로 필수):

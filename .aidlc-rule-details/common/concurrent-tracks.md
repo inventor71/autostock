@@ -44,7 +44,10 @@ aidlc-docs/
   stays clean (no stray uncommitted docs when `/ai-dlc-merge` starts). The top-level
   `aidlc-docs/inception/` + `construction/` dirs are shared/pre-partition only.
 - **Per-track `state.md`**: everything that used to go in an `aidlc-state.md` feature-track
-  section — stage progress checkboxes, extension config, construction scope, design notes.
+  section — stage progress checkboxes, extension config, construction scope, design notes,
+  and a `## Merge Risk Notes` section (filled when transitioning to `merge-awaiting`) that
+  records shared files / API changes / known concurrent tracks to help `/ai-dlc-merge`
+  resolve conflicts beyond what `git diff --name-only` can see.
 - **Per-track `audit.md`**: every user input / approval / AI action for this track, append-only,
   ISO 8601 timestamps, raw user input (never summarized) — same format as before, just scoped.
 - **Root `aidlc-state.md`**: demoted to the **Track Registry** (table below) plus archived

@@ -22,6 +22,14 @@
 ## Scope
 <what this track will build/change; link related memories with [[name]] if useful>
 
+## Merge Risk Notes
+> 트랙이 `merge-awaiting` 전환 시 작성. `/ai-dlc-merge`가 큐 구성·충돌 해결 시 참조.
+> 비워두면 `/ai-dlc-merge`가 `git diff --name-only`로 자동 추론.
+
+- **공유 파일 (주의)**: <다른 활성 트랙과 겹칠 가능성 높은 파일 — 예: `src/agent/steering/runtime.py`>
+- **API/시그니처 변경**: <rename, 삭제, 함수 분할 — 다른 트랙 rebase 시 수동 조정 필요한 부분>
+- **알려진 동시 변경**: <같은 파일을 건드리는 게 확실한 다른 트랙 ID (예: F44)>
+
 ## Stage Progress
 - [ ] Workspace Detection
 - [ ] Requirements Analysis — <depth>
