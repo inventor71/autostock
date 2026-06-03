@@ -8,7 +8,7 @@
 - **Track ID**: F48
 - **Title**: Operator Console Sidebar Cleanup — 브랜딩/불필요 요소 제거
 - **Type**: feature
-- **Status**: active → merge-awaiting
+- **Status**: merged → main a669761 (2026-06-03)
 - **Branch**: feat/F48
 - **Worktree**: .claude/worktrees/F48
 - **Submodule branch**: —
