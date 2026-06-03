@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
 # worktree-setup.sh — bootstrap an AI-DLC track worktree so it is *verifiable in place*.
 #
-# Why this exists: each git worktree gets its own checkout, and the submodule's
-# node_modules (~2.8G) + the tsgo binary are gitignored build output that never lands
-# in a fresh worktree — so `tsgo`/typecheck silently can't run and verification keeps
-# getting deferred to "the user's machine". The fix is cheap: bun's global cache is warm
-# (~2.6G) and bun's default backend is hardlinks, so `bun install --frozen-lockfile` in a
-# worktree is a near-offline hardlink farm (seconds, ~no disk), NOT a network download.
-# This also injects the main .env so live (paper-account) checks work from the worktree.
+# Why this exists: each git worktree gets its own checkout, and the console's
+# node_modules (~2.8G) + the tsgo binary are gitignored build output that never lands in a fresh
+# worktree — so `tsgo`/typecheck silently can't run and verification keeps getting deferred to
+# "the user's machine". The fix is cheap: bun's global cache is warm (~2.6G) and bun's default
+# backend is hardlinks, so `bun install --frozen-lockfile` in a worktree is a near-offline hardlink
+# farm (seconds, ~no disk), NOT a network download. This also injects the main .env so live
+# (paper-account) checks work from the worktree.
 # See .aidlc-rule-details/common/concurrent-tracks.md and the worktree-live-verification memory.
 #
 # Usage:
 #   scripts/worktree-setup.sh <track> [--ts] [--py] [--docker-verify]
 #     <track>          track id / slug (e.g. F9, console-foo). Worktree = .claude/worktrees/<track>,
-#                      parent branch + submodule branch = feat/<track>.
-#     --ts             TS submodule track: init submodule, branch it, bun install, verify tsgo.
+#                      branch = feat/<track>.
+#     --ts             TS console track: bun install + verify tsgo.
 #     --py             Python track: symlink the main .env into the worktree (pydantic loads it).
-#     --docker-verify  Containerized verification (F10): init submodule on the HOST (the container
-#                      can't — worktree .git is outside the mount) + provision .env.test (COPIED from
+#     --docker-verify  Containerized verification (F10): provision .env.test (COPIED from
 #                      ${MAIN_ROOT}/.env.test if present, else from the example), then print the
 #                      `scripts/verify-run.sh` commands (F27 wrapper → host-user run). ZERO prod impact:
 #                      the container loads .env.test only (a TEST paper account), never prod .env.
@@ -27,7 +26,7 @@
 set -euo pipefail
 
 MAIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUBMODULE="operator-console/cli"
+CONSOLE_DIR="operator-console/cli"
 BUN_BIN="$HOME/.bun/bin"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -64,33 +63,22 @@ else
   note "worktree created"
 fi
 
-# 2) TS submodule: init + branch + install + verify tsgo ------------------------
+# 2) TS console: bun install + verify tsgo ---------------------------------------
 if [ "$DO_TS" -eq 1 ]; then
-  echo "▶ TS submodule (${SUBMODULE})"
-  # init the submodule inside the worktree if not yet populated
-  if [ ! -e "${WT}/${SUBMODULE}/package.json" ]; then
-    note "initializing submodule in worktree"
-    git -C "$WT" submodule update --init "$SUBMODULE"
-  fi
-  # branch the submodule (never leave it detached — concurrent-tracks rule)
-  if git -C "${WT}/${SUBMODULE}" show-ref --verify --quiet "refs/heads/${BRANCH}"; then
-    git -C "${WT}/${SUBMODULE}" switch "$BRANCH"
-  else
-    git -C "${WT}/${SUBMODULE}" switch -c "$BRANCH"
-  fi
-  note "submodule on ${BRANCH}"
+  echo "▶ TS console (${CONSOLE_DIR})"
+  [ -e "${WT}/${CONSOLE_DIR}/package.json" ] || die "console source missing at ${WT}/${CONSOLE_DIR}"
   # ensure bun is on PATH (the recurring blocker: bun lives under ~/.bun/bin and a
   # bare shell doesn't have it — same class of issue as the daemon claude-CLI PATH bug)
   [ -x "${BUN_BIN}/bun" ] || die "bun not found at ${BUN_BIN}/bun — install bun or fix PATH"
   export PATH="${BUN_BIN}:${PATH}"
   note "bun $(bun --version) on PATH"
   # cache-warm, hardlinked install — cheap, near-offline
-  ( cd "${WT}/${SUBMODULE}" && bun install --frozen-lockfile )
-  if [ -x "${WT}/${SUBMODULE}/node_modules/.bin/tsgo" ]; then
-    note "tsgo ready → typecheck:  (cd ${WT}/${SUBMODULE} && PATH=${BUN_BIN}:\$PATH bun run typecheck)"
+  ( cd "${WT}/${CONSOLE_DIR}" && bun install --frozen-lockfile )
+  if [ -x "${WT}/${CONSOLE_DIR}/node_modules/.bin/tsgo" ]; then
+    note "tsgo ready → typecheck:  (cd ${WT}/${CONSOLE_DIR} && PATH=${BUN_BIN}:\$PATH bun run typecheck)"
     note "F20: if this track adds Alpaca read tools, set ALPACA_API_KEY + ALPACA_API_SECRET in env before running MCP server"
   else
-    die "tsgo still missing after install — check ${SUBMODULE}/package.json devDeps"
+    die "tsgo still missing after install — check ${CONSOLE_DIR}/package.json devDeps"
   fi
 fi
 
@@ -119,14 +107,7 @@ if [ "$DO_DOCKER_VERIFY" -eq 1 ]; then
   [ -e "${WT}/docker-compose.verify.yml" ] || die \
     "docker-compose.verify.yml missing in ${WT} — the harness lives on feat/docker-verify; \
 merge/rebase it into this track first."
-  # Submodule must be initialized on the HOST: the worktree's .git is a pointer OUTSIDE the
-  # mounted /app, so in-container `git submodule update` fails. typecheck needs these files.
-  if [ ! -e "${WT}/${SUBMODULE}/package.json" ]; then
-    note "initializing submodule on host (container can't reach the worktree .git)"
-    git -C "$WT" submodule update --init "$SUBMODULE"
-  else
-    note "submodule already initialized"
-  fi
+  [ -e "${WT}/${CONSOLE_DIR}/package.json" ] || die "console source missing at ${WT}/${CONSOLE_DIR}"
   # Provision .env.test (TEST paper account). The canonical TEST creds live at the MAIN repo root
   # `${MAIN_ROOT}/.env.test` — reuse them by COPYING into the worktree (a symlink would dangle
   # inside the container, which mounts only the worktree). COPY, never the prod `.env` — that is the

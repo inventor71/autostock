@@ -31,8 +31,7 @@ CLAUDE.md의 INCEPTION → CONSTRUCTION 흐름을 그대로 따른다. 요약하
    - 루트 `aidlc-docs/aidlc-state.md`의 **Track Registry** 테이블에 행 추가(`active`).
    - **worktree 게이트**: 실제 코드 생성(Code Gen Part 2) 전에 반드시
      `git worktree add .claude/worktrees/<track> -b feat/<track>`. `main`에서 코드 변경 금지.
-     서브모듈(`operator-console/cli`)을 건드리면 그 안에서도 `feat/<track>` 브랜치를 따고,
-     부모 gitlink는 **머지 시점에만** 커밋. (설계/문서 단계는 worktree 전이라도 진행 가능.)
+     (설계/문서 단계는 worktree 전이라도 진행 가능.)
 
 3. **요청 기록.** 사용자의 **원문 그대로**를 **그 트랙의** `aidlc-docs/tracks/<id>/audit.md`에
    append(루트 audit.md 아님; 덮어쓰기 금지).

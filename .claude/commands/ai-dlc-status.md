@@ -37,7 +37,6 @@ allowed-tools: Read, Glob, Grep, Bash(git status:*), Bash(git diff --stat:*), Ba
 5. **작업 트리 & worktree 위반.** `git worktree list`로 트랙별 worktree 존재 확인,
    `git status`(요약)·`git diff --stat`으로 미커밋 변경 규모. **위반 감지**:
    - `main` 작업 트리에 미커밋 **코드** 변경이 있으면(worktree 게이트 위반) ⚠️ 표시.
-   - 서브모듈(`operator-console/cli`)이 detached HEAD인데 변경이 있으면 ⚠️ 표시.
 
 ## 출력 형식
 
@@ -45,7 +44,7 @@ allowed-tools: Read, Glob, Grep, Bash(git status:*), Bash(git diff --stat:*), Ba
 # AI-DLC Status — <project>
 
 Tracks (registry): <id:status …>
-⚠️ worktree 위반: <main에 미커밋 코드 / submodule detached — 없으면 생략>
+⚠️ worktree 위반: <main에 미커밋 코드 — 없으면 생략>
 
 ── <id> · <title> ── [<branch> @ <worktree>]
 Phase: <…>   |   Stage: <…>   |   Unit: <…>

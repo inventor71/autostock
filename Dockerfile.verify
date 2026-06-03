@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # /usr/bin/node-gyp on PATH for the non-root runtime user too (paired with build-essential above).
 RUN npm install -g @anthropic-ai/claude-code node-gyp && claude --version && node-gyp --version
 
-# bun — for the operator-console submodule typecheck.
+# bun — for the operator-console typecheck.
 RUN curl -fsSL https://bun.sh/install | bash && bun --version
 
 # Python deps only (NOT the package — code is bind-mounted; PYTHONPATH=/app makes the worktree win).

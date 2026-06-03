@@ -1,0 +1,64 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Project opencode override — wires the autostock steering MCP + the default-deny
+  // lockdown. Committed & portable: paths come from {env:AUTOSTOCK_ROOT} and the token
+  // from {env:STEERING_OPERATOR_TOKEN} (opencode substitutes {env:...} across the whole
+  // config before parsing), so no machine path or secret is baked in.
+  //
+  // The operator exports both before launch (they live in the gitignored cli/.env):
+  //   set -a; . ./.env; set +a    # AUTOSTOCK_ROOT, STEERING_DIR, STEERING_OPERATOR_TOKEN
+  //   bun dev
+  //
+  // WHY absolute paths (via AUTOSTOCK_ROOT): `bun dev` runs opencode with cwd
+  // packages/opencode, and the local-MCP subprocess inherits that cwd. A relative
+  // command path (../src/...) resolves to packages/src and fails ("Module not found"),
+  // which leaves autostock_steer unregistered — the model then says it "can't place
+  // orders" because the tool is absent, not denied. An absolute command path fixes it.
+  "mcp": {
+    "autostock": {
+      "type": "local",
+      "command": ["bun", "run", "{env:AUTOSTOCK_ROOT}/operator-console/src/mcp-server.ts"],
+      "environment": {
+        "STEERING_DIR": "{env:AUTOSTOCK_ROOT}/steering",
+        "STEERING_OPERATOR_TOKEN": "{env:STEERING_OPERATOR_TOKEN}",
+        "ALPACA_API_KEY": "{env:ALPACA_API_KEY}",
+        "ALPACA_SECRET_KEY": "{env:ALPACA_SECRET_KEY}"
+      }
+    }
+  },
+  "permission": {
+    "*": "deny",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "lsp": "allow",
+    "autostock_steer": "ask",
+    "autostock_steer_read": "allow",
+    // F19 (F9 follow-up): structured Alpaca-shaped order tools — `ask`-gated (human confirm
+    // before the file-drop write). Without these the default-deny "*" hides them from the
+    // console AI, which then falls back to the market-only /buy shorthand.
+    "autostock_place_stock_order": "ask",
+    "autostock_cancel_order_by_id": "ask",
+    "autostock_cancel_all_orders": "ask",
+    "autostock_replace_order_by_id": "ask",
+    "autostock_close_position": "ask",
+    "autostock_close_all_positions": "ask",
+    "autostock_get_account_info": "allow",
+    "autostock_get_all_positions": "allow",
+    "autostock_get_open_position": "allow",
+    "autostock_get_portfolio_history": "allow",
+    "autostock_get_asset": "allow",
+    "autostock_get_all_assets": "allow",
+    "autostock_get_calendar": "allow",
+    "autostock_get_market_clock": "allow",
+    "autostock_get_stock_bars": "allow",
+    "autostock_get_stock_latest_bar": "allow",
+    "autostock_get_stock_latest_quote": "allow",
+    "autostock_get_stock_latest_trade": "allow",
+    "autostock_get_stock_quote": "allow",
+    "autostock_get_stock_snapshot": "allow",
+    "autostock_get_stock_trades": "allow",
+    "autostock_get_orders": "allow"
+  }
+}

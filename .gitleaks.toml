@@ -1,0 +1,16 @@
+# gitleaks config for the secret-scan pre-commit hook (.pre-commit-config.yaml).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Non-secret fixtures and templates that the default rules flag as false positives."
+paths = [
+  # Example/template env files are meant to hold placeholders, not real secrets.
+  '''.*\.env\.example$''',
+  # opencode test suites use deliberately fake credentials to exercise redaction/recording.
+  '''operator-console/cli/packages/http-recorder/test/.*''',
+  '''operator-console/cli/packages/llm/test/.*''',
+]
+regexes = [
+  '''xoxb-your-bot-token''',    # slack template placeholder token
+]

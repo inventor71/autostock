@@ -102,9 +102,6 @@ Per `common/concurrent-tracks.md`, **no application code may be generated outsid
 - [ ] Confirm the session is on this track's worktree branch (`.claude/worktrees/<track>`,
       `feat/<track>`). If on `main` with uncommitted code changes → **STOP**, create the worktree
       (`git worktree add .claude/worktrees/<track> -b feat/<track>`) and switch before any coding.
-- [ ] If this unit changes the submodule (`operator-console/cli`): branch inside the submodule
-      (`git -C operator-console/cli switch -c feat/<track>`, never detached HEAD). The parent
-      gitlink is committed ONLY at merge time.
 - [ ] Progress + audit for this track go to `aidlc-docs/tracks/<id>/{state.md,audit.md}` — NOT the
       root files (root `aidlc-state.md` = registry, root `audit.md` = merge-time only).
 
