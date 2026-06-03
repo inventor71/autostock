@@ -49,6 +49,7 @@
 | F34 | 타임라인 라벨(OPEN/PRE/AFT) z-order 수정 — 라벨을 마커 위로, 가려진 마커도 클릭 유지 | merged | feat/F34 | .claude/worktrees/F34 | feat/F34 → fork main 43423df | 378a98b→a366545 / 66c6edc→43423df | 2026-06-02 |
 | F35 | CLI 서브모듈을 autostock 단일 repo로 통합 (de-submodule / monorepo) | merged | feat/F35 → main 2253029 | — | — (서브모듈 제거 완료) | 0f26b48→1ac4879 | 2026-06-03 |
 | F36 | 타임라인 과거날짜 마커 클릭 시 'Turn not found' — 오버레이가 라이브 monitor만 조회(과거 세션 미조회) + 마커 깜박임 | merged | feat/F36 → main cb8c9ad | — | N/A (monorepo, F35 이후) | 2253029→e15dd5c→cb8c9ad | 2026-06-03 |
+| F37 | `.env` 키 네이밍 정합화 — `ALPACA_SECRET_KEY` → `ALPACA_API_SECRET` | merged | feat/F37 → main f26ab6a | — | N/A (monorepo) | 1553dc0→fd5cd5b→f26ab6a | 2026-06-03 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
