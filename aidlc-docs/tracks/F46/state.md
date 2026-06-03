@@ -8,9 +8,9 @@
 - **Track ID**: F46
 - **Title**: Agent `account` tool down — spawned agent's `python3` lacks alpaca-py (PATH gap)
 - **Type**: feature (bug fix)
-- **Status**: merge-awaiting
-- **Branch**: feat/F46
-- **Worktree**: .claude/worktrees/F46
+- **Status**: merged → main fb06517 (2026-06-03)
+- **Branch**: feat/F46 (merged, deleted)
+- **Worktree**: — (제거됨)
 - **Submodule branch**: — (monorepo, post-F35; fix is in `src/`, not the console)
 - **Base commit**: 777cf40
 - **Start Date**: 2026-06-03
