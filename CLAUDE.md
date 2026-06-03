@@ -123,7 +123,7 @@ workflow start. Its non-negotiable rules define where every doc in this workflow
 1. **MANDATORY**: Log initial user request in audit.md with complete raw input
 2. Load all steps from `inception/workspace-detection.md`
 3. Execute workspace detection:
-   - Check for existing aidlc-state.md (resume if found)
+   - Check for existing track (consult root Track Registry + `aidlc-docs/tracks/`; resume if found)
    - Scan workspace for existing code
    - Determine if brownfield or greenfield
    - Check for existing reverse engineering artifacts
