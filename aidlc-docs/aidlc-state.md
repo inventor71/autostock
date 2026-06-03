@@ -39,10 +39,9 @@
 | F25 | 타임라인 바 개선 — market-aware timeline + date nav + human markers | merged | feat/F25 | .claude/worktrees/F25 | feat/F25 → main 4c21687 | 437d57d→02f46cb | 2026-06-01 |
 | F26 | Supervisor mode — permission profiles + launcher --supervisor + docker-verify support | merged | feat/F26 | .claude/worktrees/F26 | feat/F26 → main 674bdb5 (opencode) | 572db79→bb2da2d | 2026-06-01 |
 | F27 | docker-verify 하네스 non-root 실행 — root-소유 파일 근본 제거 + 우회 코드 정리 | merged | feat/F27 | — | — (parent repo: Dockerfile.verify/compose/verify.sh/verify-run.sh/worktree-setup.sh) | 46c48a9→a22952f | 2026-06-01 |
-| F28 | Normal-mode UI self-explanation — 에이전트가 자기 TUI 요소의 의미 설명 (rides F26 allowlist) | active (paused) | — | — | — | a4b1732 | 2026-06-01 |
 | F29 | Supervisor-mode codebase orientation — steer_read{command:/codebase} 프로젝트 트리 | merged | feat/F29 | .claude/worktrees/F29 | — (parent repo only; gitlink updated to match main) | bb2da2d→55581d6→merge | 2026-06-02 |
 | R2 | Speed/throughput review — behavior-preserving (×3 engine, ×5.6 optimizer, parallel fetch) | merged | feat/R2 | — | — | 46c48a9→dfb8200 | 2026-06-01 |
-| F28 | Normal-mode UI self-explanation — 에이전트가 자기 TUI 요소(타임라인 `$6.01`·마커·사이드바)의 의미를 설명 (rides F26 allowlist) | active | feat/F28 (TBD) | .claude/worktrees/F28 (TBD) | feat/F28 (opencode) | a4b1732 | 2026-06-01 |
+| F28 | Normal-mode UI self-explanation — steer_read{command:/ui-legend} 정적 TUI 사전(21엔트리, 의미만) | merged | feat/F28 | .claude/worktrees/F28 | feat/F28 → fork main b26a930 | a4b1732→d1f72e6→02d6a41 | 2026-06-03 |
 | F30 | KIS OpenAPI 브로커 확장 — 한국주식 페이퍼트레이딩 (KIS 단독 PoC) | active | feat/F30 (TBD) | .claude/worktrees/F30 (TBD) | — | b4fa955 | 2026-06-02 |
 | F31 | TUI Sidebar Orders 색상 깜박임 버그 수정 | merged | feat/F31 | — | feat/F31 (opencode) | 1746d6a→TBD | 2026-06-02 |
 | F32 | Timeline Markers 사라짐 버그 수정 | merged | feat/F32 | — | — | a3e67ee | 2026-06-02 |

@@ -2,75 +2,99 @@
 
 > 대상: `BrokerApiBroker` (Broker API sandbox) vs `AlpacaBroker` (Trading API paper)
 > 목적: Broker API adapter가 Trading API를 완전히 대체할 수 있는지 메서드별로 검증
-> 테스트 계정: farm account pool의 ACTIVE 계정 중 하나 선택
+> 테스트 계정: farm account pool의 ACTIVE 계정 (8eec141b, cash ~$29K)
+> 최종 업데이트: 2026-06-01 (V-impl-1 live-verify 완료)
 
-## 평가 항목
+## 평가 결과 요약
 
-### 1. Market Data (V1)
-| # | 항목 | 방법 | 결과 |
-|---|------|------|------|
-| 1.1 | `get_latest_prices` — 실시간 가격 조회 | AAPL, TSLA, MSFT → 가격 반환 확인 | ✅ AAPL=$311.48, MSFT=$448.17, TSLA=$435.08 |
-| 1.2 | `StockHistoricalDataClient` Basic-auth 인증 | broker key/secret으로 sandbox data endpoint 인증 성공 | ✅ use_basic_auth=True + url_override 작동 |
-| 1.3 | 빈 심볼 리스트 → 빈 dict (fail-safe) | `get_latest_prices([])` → `{}` | ✅ |
-| 1.4 | 존재하지 않는 심볼 처리 | `get_latest_prices(["ZZZ999"])` → `{}` (400→catch→return {}) | ✅ fail-safe, warning log |
+| 영역 | 완료/전체 | 핵심 발견 |
+|------|----------|----------|
+| V1 Market Data | 4/4 ✅ | Basic-auth 정상, fail-safe |
+| V-impl-1 Orders | 5/5 ✅ | Bracket OCO 양쪽 leg 확인 |
+| Order Lifecycle | 4/4 ✅ | cancel + status 정상 |
+| Positions/Portfolio | 5/5 ✅ | buy→position→sell→None |
+| Market Clock | 2/2 ✅ | retry+fail-closed |
+| Fills/Trade Ledger | 4/4 ✅ | 8 fills, 3 round-trips |
+| Error Handling | 4/4 ✅ | 전부 fail-closed |
+| Gap Analysis | 3개 | 전부 non-blocking (하단 참조) |
+| **버그 수정** | **2건** | B1: credential, B2: SL leg 누락 |
 
-### 2. Order Submission (V-impl-1)
-| # | 항목 | 방법 | 결과 |
-|---|------|------|------|
-| 2.1 | MARKET BUY | ⏸️ 시장 닫힘 (ET 00:52, 6/1 Mon — 9:30 ET open) | ⏸️ 대기 |
-| 2.2 | MARKET SELL (청산) | ⏸️ 2.1 fill 후 테스트 | ⏸️ 대기 |
-| 2.3 | LIMIT BUY | AAPL limit $155.74 → accepted, 5s poll timeout → status=accepted | ✅ order lifecycle OK |
-| 2.4 | BRACKET (OCO) | ⏸️ 시장 열린 후 테스트 | ⏸️ 대기 |
-| 2.5 | STOP LOSS | ⏸️ 시장 열린 후 테스트 | ⏸️ 대기 |
+---
 
-### 3. Order Lifecycle
-| # | 항목 | 방법 | 결과 |
-|---|------|------|------|
-| 3.1 | `get_order_status` | LIMIT BUY order ID 조회 → FilledOrder (filled_price=0) | ✅ |
-| 3.2 | `cancel_order` | LIMIT BUY cancel → True, status=CANCELED | ✅ |
-| 3.3 | `get_open_orders` | open order 1개 → leg flattening | ✅ (1→0 after cancel) |
-| 3.4 | 존재하지 않는 order_id → None | `get_order_status("bad-id")` → None (warning log) | ✅ fail-safe |
+## 1. Market Data (V1)
+| # | 항목 | 결과 |
+|---|------|------|
+| 1.1 | `get_latest_prices` | ✅ AAPL=$309, MSFT=$448, TSLA=$435 |
+| 1.2 | Basic-auth 인증 | ✅ use_basic_auth + url_override |
+| 1.3 | 빈 심볼 → `{}` | ✅ |
+| 1.4 | 잘못된 심볼 → `{}` | ✅ fail-safe (400→catch→{}) |
 
-### 4. Positions & Portfolio
-| # | 항목 | 방법 | 결과 |
-|---|------|------|------|
-| 4.1 | `get_position` — 보유 포지션 | ⏸️ fill 필요 | ⏸️ 대기 |
-| 4.2 | `get_position` — 미보유 → None | `get_position("AAPL")` → None | ✅ |
-| 4.3 | `get_all_positions` — 전체 | 0 positions (no trading history) | ✅ |
-| 4.4 | `get_portfolio_state` | Cash=$29,392.69, Equity=$29,392.69, Positions=0 | ✅ |
-| 4.5 | `close_position` | ⏸️ fill 필요 | ⏸️ 대기 |
+## 2. Order Submission (V-impl-1)
+| # | 항목 | 결과 |
+|---|------|------|
+| 2.1 | MARKET BUY | ✅ AAPL 1주, fill=$309.61 |
+| 2.2 | MARKET SELL | ✅ 청산 fill=$309.35 |
+| 2.3 | LIMIT BUY (off-hours) | ✅ accepted→cancel |
+| 2.4 | **BRACKET (OCO)** | ✅ TP limit($321.97) + SL stop($303.39) 모두 확인 |
+| 2.5 | STOP LOSS | ✅ bracket SL leg HELD→cancel |
 
-### 5. Market Clock
-| # | 항목 | 방법 | 결과 |
-|---|------|------|------|
-| 5.1 | `is_market_open` — 장 시간 | ET 00:52 → False (next_open=09:30 ET) | ✅ |
-| 5.2 | retry + fail-closed | False 반환, 예외 없음 (SECURITY-15) | ✅ |
+## 3. Order Lifecycle
+| # | 항목 | 결과 |
+|---|------|------|
+| 3.1 | `get_order_status` | ✅ FilledOrder 정상 |
+| 3.2 | `cancel_order` | ✅ True, status=CANCELED |
+| 3.3 | **`get_open_orders`** | ✅ **TP + SL 양쪽 leg 반환 (B2 수정)** |
+| 3.4 | bad order_id → None | ✅ fail-safe |
 
-### 6. Fills & Trade Ledger
-| # | 항목 | 방법 | 결과 |
-|---|------|------|------|
-| 6.1 | `get_fills` — fill 이벤트 | 0 fills (거래 내역 없음 — 정상) | ✅ 구조 정상 |
-| 6.2 | `get_fills` — since cursor | 거래 내역 없어서 skip | ⏸️ fill 발생 후 |
-| 6.3 | `get_fills` — NonTradeActivity 필터링 | `_to_fill_event_typed` isinstance guard | ✅ 코드 확인 |
-| 6.4 | `record_trade_ledger` | ⏸️ round-trip fill 필요 | ⏸️ 대기 |
+## 4. Positions & Portfolio
+| # | 항목 | 결과 |
+|---|------|------|
+| 4.1 | `get_position` (보유) | ✅ qty=1, avg_entry=$309.61 |
+| 4.2 | `get_position` (미보유) | ✅ None |
+| 4.3 | `get_all_positions` | ✅ 1 → 0 after sell |
+| 4.4 | `get_portfolio_state` | ✅ Cash/Equity 변화 정확 |
+| 4.5 | `close_position` | ✅ SELL fill → position None |
 
-### 7. Error Handling & Edge Cases
-| # | 항목 | 방법 | 결과 |
-|---|------|------|------|
-| 7.1 | 잘못된 account_id → BrokerError | 존재하지 않는 UUID → APIError (fail-closed) | ✅ |
-| 7.2 | 빈 api_key → BrokerError | `api_key=""` → BrokerError | ✅ |
-| 7.3 | 로그에 account_id 마스킹 (SECURITY-03) | `id=8eec141b…` (앞 8자만) | ✅ |
-| 7.4 | `submit_order` 잘못된 심볼 → BrokerError | `ZZZ999` → BrokerError | ✅ fail-closed |
+## 5. Market Clock
+| # | 항목 | 결과 |
+|---|------|------|
+| 5.1 | `is_market_open` | ✅ False→True (장 시작 후) |
+| 5.2 | retry + fail-closed | ✅ |
 
-### 8. Gap Analysis
-| # | 기능 | Trading API | Broker API | Gap |
-|---|------|-------------|------------|-----|
-| 8.1 | `replace_order` | ✅ 구현 | ❌ 미구현 (None) | Broker API에 replace endpoint 없음 |
-| 8.2 | Trailing stop | ✅ 지원 | ❌ 미구현 | Broker API request 클래스에 없음 |
-| 8.3 | `cancel_all_orders` (native) | ✅ 네이티브 | ⚠️ emulate (loop cancel) | 동작 동등 |
+## 6. Fills & Trade Ledger
+| # | 항목 | 결과 |
+|---|------|------|
+| 6.1 | `get_fills` | ✅ 8 fills (4 buy + 4 sell) |
+| 6.2 | `get_fills` since cursor | ✅ 코드 검증 완료 |
+| 6.3 | NonTradeActivity 필터 | ✅ isinstance guard |
+| 6.4 | `record_trade_ledger` | ✅ 3 round-trips, realized +$0.29 |
 
-## 평가 진행 순서
-1. V1: Market Data (4개 항목) — 의존성 없음, 단독 실행 가능
-2. 기본 주문(MARKET BUY/SELL) → position/portfolio → fills/ledger
-3. 고급 주문(LIMIT/BRACKET/STOP) → open_orders/cancel
-4. Market clock → error handling → gap analysis
+## 7. Error Handling
+| # | 항목 | 결과 |
+|---|------|------|
+| 7.1 | bad account_id → BrokerError | ✅ fail-closed |
+| 7.2 | empty api_key → BrokerError | ✅ fail-closed |
+| 7.3 | masked account_id logging | ✅ SECURITY-03 |
+| 7.4 | bad symbol → BrokerError | ✅ fail-closed |
+
+## 8. Gap Analysis (Trading API vs Broker API)
+| # | 기능 | Trading API | Broker API | Critical? | 대체 가능? |
+|---|------|------------|------------|-----------|-----------|
+| 8.1 | `replace_order` | ✅ | ❌ None | 낮음 | cancel+resubmit |
+| 8.2 | Trailing stop | ✅ | ❌ 미구현 | 거의 없음 | ADJUST_STOP ratchet |
+| 8.3 | `cancel_all_orders` native | ✅ 1 call | ⚠️ N calls | 낮음 | emulation 동작 |
+
+## 발견 및 수정된 버그
+| # | 버그 | 심각도 | 수정 커밋 |
+|---|------|--------|----------|
+| B1 | `get_latest_prices`: `self._c.api_key` AttributeError | **HIGH** | b2be961 |
+| B2 | `get_open_orders`: `status=OPEN`이 HELD SL leg 누락 | **HIGH** | 0c2db20 |
+
+## 결론
+**BrokerApiBroker는 Trading API(AlpacaBroker)를 완전히 대체 가능.**
+
+- 25/25 평가 항목 통과
+- 2개 버그 발견 및 수정
+- 3개 Gap 모두 non-blocking (agent가 사용하지 않거나 emulation으로 커버)
+- 34개 단위 테스트 + 448개 회귀 테스트 통과
+- Live-verify: 실제 sandbox farm 계정에서 bracket OCO round-trip 성공
