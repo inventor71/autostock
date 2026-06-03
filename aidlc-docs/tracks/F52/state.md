@@ -8,7 +8,7 @@
 - **Track ID**: F52
 - **Title**: Research Turn SELL 결정 미실행 근본 원인 분석 (Broker Tool Unavailable / Lesson #11)
 - **Type**: bug investigation (root-cause analysis)
-- **Status**: merge-awaiting
+- **Status**: merged → main 4e64781 (2026-06-04)
 - **Branch**: feat/F52
 - **Worktree**: .claude/worktrees/F52
 - **Submodule branch**: —
