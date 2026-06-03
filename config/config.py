@@ -139,6 +139,15 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 
+    # KIS (한국투자증권) — paper(모의) and live(실전) kept separate (NFR-6 safety).
+    # ``account`` is "CANO-PRDT" e.g. "12345678-01".
+    kis_paper_api_key: str = ""
+    kis_paper_api_secret: str = ""
+    kis_paper_account: str = ""
+    kis_live_api_key: str = ""
+    kis_live_api_secret: str = ""
+    kis_live_account: str = ""
+
     model_config = {
         "env_prefix": "",
         "env_nested_delimiter": "__",
