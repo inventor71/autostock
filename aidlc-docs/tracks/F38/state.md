@@ -8,7 +8,7 @@
 - **Track ID**: F38
 - **Title**: 운영자가 데몬에 research turn(및 잠재적 다른 turn)을 수동 트리거하는 steering 명령
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build&Test green → /ai-dlc-merge 큐 등록. 루트 레지스트리 행은 active 유지(머지 시점에 /ai-dlc-merge가 merged로 전환) -->
+- **Status**: merged → main c395faf (2026-06-03)  <!-- /ai-dlc-merge: rebased onto 7766c6a (F39 머지 반영, mcp-server.ts 자동병합 clean — F39 supervisor-gating + F38 research verb 공존), verify green (pytest 638/0 · operator-console TS 145/0), --no-ff merged -->
 - **Branch**: feat/F38 (b215499, b0b1275=F42핫픽스 위 리베이스)
 - **Worktree**: .claude/worktrees/F38 (Code Gen Part 2 전 생성)
 - **Submodule branch**: — (monorepo, post-F35)

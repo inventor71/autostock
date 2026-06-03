@@ -50,7 +50,7 @@
 | F35 | CLI 서브모듈을 autostock 단일 repo로 통합 (de-submodule / monorepo) | merged | feat/F35 → main 2253029 | — | — (서브모듈 제거 완료) | 0f26b48→1ac4879 | 2026-06-03 |
 | F36 | 타임라인 과거날짜 마커 클릭 시 'Turn not found' — 오버레이가 라이브 monitor만 조회(과거 세션 미조회) + 마커 깜박임 | merged | feat/F36 → main cb8c9ad | — | N/A (monorepo, F35 이후) | 2253029→e15dd5c→cb8c9ad | 2026-06-03 |
 | F37 | `.env` 키 네이밍 정합화 — `ALPACA_SECRET_KEY` → `ALPACA_API_SECRET` | merged | feat/F37 → main f26ab6a | — | N/A (monorepo) | 1553dc0→fd5cd5b→f26ab6a | 2026-06-03 |
-| F38 | 운영자 수동 turn 트리거 steering 명령 (research turn 등 on-demand 실행) | active | feat/F38 (fc8ee7e, 미머지) | .claude/worktrees/F38 | — (monorepo) | b0b1275 (F42 위로 리베이스) | 2026-06-03 |
+| F38 | 운영자 수동 turn 트리거 steering 명령 (research turn 등 on-demand 실행) | merged | feat/F38 → main c395faf | — | — (monorepo) | b0b1275→rebased 7766c6a→c395faf | 2026-06-03 |
 | F39 | Normal 모드 코드 질문 차단 — supervisor 아닐 때 소스/내부 구현 질문 거부 (운영 질문은 steering 데이터로 응답) | merged | feat/F39 → main f6569ea | — | — (monorepo) | 72aba01→rebased c49e4fd→f6569ea | 2026-06-03 |
 | F40 | autostock 런처 `-h`/`--help` 핸들러 — `--supervisor` 등 런처 고유 옵션 노출 + opencode help loose-fuse | merged | feat/F40 → main 65e65ab | — | — (monorepo) | 72aba01→2a17322→65e65ab | 2026-06-03 |
 | F41 | Research turn 마커 오버레이 정보 강화 (multi-agent 평가 노출 + summary 버그 수정) | merged | feat/F41 → main f330370 | — | — (monorepo) | 72aba01→rebased 7c62527→f330370 | 2026-06-03 |
