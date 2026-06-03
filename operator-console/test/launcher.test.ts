@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildPermissionProfile, consoleEnv, parseDotenv, resolveConfig, TOKEN_KEY } from "../launcher/config";
+import { buildInstructions, buildPermissionProfile, consoleEnv, parseDotenv, resolveConfig, TOKEN_KEY } from "../launcher/config";
 import { formatReport, runPreflight } from "../launcher/preflight";
 import { renderUnit } from "../launcher/unit-template";
 import { DaemonService, DaemonStartError, publishedAtMs, type DaemonDeps } from "../launcher/daemon";
@@ -115,6 +115,32 @@ describe("F26 supervisor mode — consoleEnv + buildPermissionProfile", () => {
     expect(readKeys).toContain("secrets/**");
     expect(readKeys).toContain("**/secrets/**");
     expect(readKeys).toContain("*.key"); // dotall → matches root AND nested
+  });
+
+  test("F39 normal: OPENCODE_CONFIG_CONTENT injects operator persona + normal-guard", () => {
+    const root = fakeRoot("t");
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: root } });
+    const env = consoleEnv(cfg, {});
+    const instr = JSON.parse(env.OPENCODE_CONFIG_CONTENT).instructions as string[];
+    const promptsDir = join(root, "operator-console", "prompts");
+    expect(instr).toEqual([join(promptsDir, "operator.md"), join(promptsDir, "normal-guard.md")]);
+  });
+
+  test("F39 supervisor: persona only — NO normal-guard (code analysis preserved)", () => {
+    const root = fakeRoot("t");
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: root } });
+    const env = consoleEnv(cfg, {}, true);
+    const instr = JSON.parse(env.OPENCODE_CONFIG_CONTENT).instructions as string[];
+    expect(instr).toEqual([join(root, "operator-console", "prompts", "operator.md")]);
+    expect(instr.some((p) => p.endsWith("normal-guard.md"))).toBe(false);
+  });
+
+  test("F39 buildInstructions: absolute paths under operator-console/prompts", () => {
+    const root = fakeRoot("t");
+    const cfg = resolveConfig({ env: { AUTOSTOCK_ROOT: root } });
+    for (const p of buildInstructions(cfg, false)) {
+      expect(p.startsWith(join(root, "operator-console", "prompts"))).toBe(true);
+    }
   });
 
   test("stale AUTOSTOCK_SUPERVISOR in the parent env is scrubbed when launching normal", () => {

@@ -26,6 +26,9 @@ import { FileDrop } from "./filedrop";
 import { handleSteer, handleSteerRead, handleStructured } from "./steer-handler";
 
 const fd = new FileDrop(process.env.STEERING_DIR ?? "./steering");
+// F39: codebase introspection is supervisor-only. The launcher forwards AUTOSTOCK_SUPERVISOR
+// into this MCP process's env (opencode.jsonc mcp.environment); unset/"" → normal (fail-closed).
+const supervisor = process.env.AUTOSTOCK_SUPERVISOR === "on";
 const client = new AlpacaDataClient(); // fail-fast: missing keys → process.exit(1) (Q1=B)
 const server = new McpServer({ name: "autostock", version: "0.0.0" });
 const txt = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
@@ -61,16 +64,21 @@ server.registerTool(
       "SNAPSHOT verbs: /status · /agent-trace · /why — daemon-internal state ONLY available here.\n" +
       "MONITOR verbs (deep view, from monitor.json): /turns (turn cost/activity) · /decisions (recent " +
       "decisions) · /log (agent log tail).\n" +
-      "CODEBASE verb: /codebase — project directory tree with package descriptions. " +
-      "Use this FIRST when asked about autostock's code or implementation; all source paths " +
-      "are relative to $AUTOSTOCK_ROOT (run `echo $AUTOSTOCK_ROOT` to resolve).\n" +
+      // F39: the CODEBASE verb is supervisor-only. Advertise it ONLY in supervisor mode;
+      // in normal mode it is gated (and the operator persona declines code questions), so
+      // exposing it here would just invite denied calls.
+      (supervisor
+        ? "CODEBASE verb: /codebase — project directory tree with package descriptions. " +
+          "Use this FIRST when asked about autostock's code or implementation; all source paths " +
+          "are relative to $AUTOSTOCK_ROOT (run `echo $AUTOSTOCK_ROOT` to resolve).\n"
+        : "") +
       "LEGEND verb: /ui-legend [element] — what a TUI element means (timeline markers, " +
       "topbar $cost, date nav, sidebar account/positions/round-trip/fills, RUNNING/MKT status). " +
       "Use this when asked what something ON THE SCREEN is. Omit element for the full list, or " +
       "pass an id (e.g. /ui-legend topbar.today_cost) for one.",
     inputSchema: { command: z.string().describe("a read command, e.g. /status or /turns") },
   },
-  async ({ command }) => ({ content: [{ type: "text", text: handleSteerRead(command, fd) }] }),
+  async ({ command }) => ({ content: [{ type: "text", text: handleSteerRead(command, fd, supervisor) }] }),
 );
 
 // ---- F9 structured Alpaca-shaped order tools (MUTATING, opencode `ask`-gated) ---- #
