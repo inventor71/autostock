@@ -52,12 +52,12 @@ class AlpacaDataProvider(BaseDataProvider):
 
     def get_bars(
         self,
-        symbol: str,
+        symbol: str | list[str],
         timeframe: TimeFrame = TimeFrame.DAY_1,
         start: datetime | None = None,
         end: datetime | None = None,
         limit: int = 100,
-    ) -> pd.DataFrame:
+    ) -> pd.DataFrame | dict[str, pd.DataFrame]:
         try:
             amount, unit = TIMEFRAME_MAP[timeframe]
             alpaca_tf = AlpacaTimeFrame(amount, TimeFrameUnit[unit])
@@ -76,16 +76,35 @@ class AlpacaDataProvider(BaseDataProvider):
             if df.empty:
                 raise DataProviderError(f"No data returned for {symbol}")
 
-            # Flatten multi-index if present
-            if isinstance(df.index, pd.MultiIndex):
-                df = df.droplevel("symbol")
-
             df.columns = [c.lower() for c in df.columns]
             df = df[["open", "high", "low", "close", "volume"]]
             df.index.name = "timestamp"
 
-            logger.debug(f"Fetched {len(df)} bars for {symbol} from Alpaca")
-            return df
+            if isinstance(symbol, list):
+                # Multi-symbol: split multi-index into per-symbol DataFrames
+                if isinstance(df.index, pd.MultiIndex):
+                    result: dict[str, pd.DataFrame] = {}
+                    for sym in symbol:
+                        try:
+                            sym_df = df.xs(sym, level="symbol")
+                            if not sym_df.empty:
+                                result[sym] = sym_df
+                        except KeyError:
+                            continue
+                    logger.debug(
+                        f"Fetched bars for {len(result)}/{len(symbol)} symbols from Alpaca"
+                    )
+                    return result
+                else:
+                    raise DataProviderError(
+                        f"Expected MultiIndex for multi-symbol request, got {type(df.index)}"
+                    )
+            else:
+                # Single-symbol: flatten multi-index if present (existing behavior)
+                if isinstance(df.index, pd.MultiIndex):
+                    df = df.droplevel("symbol")
+                logger.debug(f"Fetched {len(df)} bars for {symbol} from Alpaca")
+                return df
 
         except DataProviderError:
             raise

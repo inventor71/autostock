@@ -264,3 +264,14 @@ intraday:
 # during the EOD review turn.
 surge:
   threshold_pct: 7.0      # absolute daily return to qualify as surge/dive (%)
+
+early_session:
+  enabled: true                       # master switch
+  threshold_pct: 5.0                  # ±% trigger (Q1=D)
+  window_minutes: 10                  # detection lookback (minutes)
+  dump_before_minutes: 15             # bars to dump BEFORE the trigger
+  dump_after_minutes: 45              # bars to dump AFTER the trigger
+  poll_interval_seconds: 30           # bar-fetch cadence
+  buffer_retention_minutes: 20        # circular-buffer capacity (minutes)
+  monitor_start_et: "09:30"           # ET market-open
+  monitor_end_et: "10:30"             # ET end of monitoring window
