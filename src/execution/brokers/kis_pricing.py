@@ -43,11 +43,13 @@ def round_to_tick(price: float) -> int:
     """
     if price <= 0:
         return 0
-    tick = tick_size(price)
-    snapped = round(price / tick) * tick
-    out_tick = tick_size(snapped)
-    if out_tick != tick:
-        snapped = round(snapped / out_tick) * out_tick
+    snapped = float(price)
+    for _ in range(4):  # iterate to a true fixed point; converges in ≤2 for the table
+        tick = tick_size(snapped)
+        nxt = round(snapped / tick) * tick
+        if nxt == snapped:
+            break
+        snapped = nxt
     return int(snapped)
 
 

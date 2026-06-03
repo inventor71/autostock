@@ -325,7 +325,7 @@ def run_paper(settings, strategies_config: dict) -> None:
         broker=broker,
         strategies=strategies,
         risk_manager=risk_manager,
-        universe=resolve_universe(settings),
+        universe=resolve_universe(settings, client=getattr(broker, "client", None)),
         timeframe=timeframe,
     )
 
@@ -410,7 +410,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         use_bracket_orders=True,
     )
 
-    universe = resolve_universe(settings)
+    universe = resolve_universe(settings, client=getattr(broker, "client", None))
     session = AgentSession(model=settings.agent.model, timeout=settings.agent.turn_timeout)
     research_signals = settings.research.get("signals") if settings.research else None
     reflection_cfg = settings.research.get("reflection", {}) if settings.research else {}

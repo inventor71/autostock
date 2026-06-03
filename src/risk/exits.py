@@ -77,8 +77,18 @@ def run_polled_exits(
         if price is not None:
             position.update_price(price)
 
+    # Per-symbol stop levels for brokers that emulate the stop off-exchange (KIS
+    # paper): the polled exit then fires at the agent's level, not the flat pct.
+    stop_overrides: dict[str, float] = {}
+    getter = getattr(broker, "get_protective_stops", None)
+    if getter is not None:
+        try:
+            stop_overrides = getter()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"get_protective_stops failed: {e}")
+
     exit_orders = (
-        risk_manager.check_stop_loss(portfolio, protected_symbols)
+        risk_manager.check_stop_loss(portfolio, protected_symbols, stop_overrides)
         + risk_manager.check_take_profit(portfolio, protected_symbols)
     )
 

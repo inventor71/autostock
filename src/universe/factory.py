@@ -11,7 +11,7 @@ from collections.abc import Sequence
 
 
 def resolve_universe(settings, *, override: Sequence[str] | None = None,
-                     market: str | None = None) -> list[str]:
+                     market: str | None = None, client=None) -> list[str]:
     ucfg = getattr(settings, "universe", None) or {}
     override = override or ucfg.get("override")  # --symbols (set in main)
     if override:
@@ -25,11 +25,14 @@ def resolve_universe(settings, *, override: Sequence[str] | None = None,
     snap_dir = CONFIG_DIR / "universe"
 
     if market == "kr":
-        from src.execution.brokers.kis_rest import KisRestClient
         from src.universe.kr_provider import KRUniverseProvider
 
-        client = KisRestClient(
-            settings.kis_paper_api_key, settings.kis_paper_api_secret, paper=True)
+        if client is None:
+            # No shared broker client (e.g. backtest): make one. In the live agent
+            # path main passes broker.client so both honour the 1-token/min cap.
+            from src.execution.brokers.kis_rest import KisRestClient
+            client = KisRestClient(
+                settings.kis_paper_api_key, settings.kis_paper_api_secret, paper=True)
         provider = KRUniverseProvider(
             client, snapshot_path=snap_dir / "kr_base.json",
             themes=themes, enabled_themes=enabled)

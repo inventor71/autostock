@@ -108,7 +108,9 @@ class BaseUniverseProvider(ABC):
     def _save_snapshot(self, symbols: list[str]) -> None:
         try:
             self._snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-            self._snapshot_path.write_text(json.dumps(symbols, ensure_ascii=False, indent=2))
+            tmp = self._snapshot_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(symbols, ensure_ascii=False, indent=2))
+            tmp.replace(self._snapshot_path)  # atomic — never leaves a half-written snapshot
         except Exception as e:  # noqa: BLE001
             logger.warning(f"{self.market}: snapshot save failed ({e})")
 

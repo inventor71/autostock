@@ -38,6 +38,7 @@ _CANCEL_PATH = "/uapi/domestic-stock/v1/trading/order-rvsecncl"
 _BALANCE_PATH = "/uapi/domestic-stock/v1/trading/inquire-balance"
 _OPENORD_PATH = "/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl"
 _PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-price"
+_CCLD_PATH = "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
 
 # ORD_DVSN
 _DVSN_LIMIT = "00"
@@ -69,6 +70,7 @@ class OcoGroup:
     entry_odno: str | None = None
     tp_odno: str | None = None
     sl_odno: str | None = None
+    tp_price: float = 0.0
     stop_price: float = 0.0
     state: str = "ARMED"  # PENDING_ENTRY | ARMED | RESOLVED
 
@@ -213,32 +215,40 @@ class KisBroker(BaseBroker):
 
     def _submit_bracket(self, order: Order, pdno: str, qty: int) -> FilledOrder:
         group = self._oco.new_group(pdno, qty)
-        filled: FilledOrder
+        group.tp_price = float(round_to_tick(order.take_profit_price or 0))
+        group.stop_price = float(round_to_tick(order.stop_loss_price or 0))
 
         if order.order_class is OrderClass.BRACKET:
-            # Entry leg (market/limit), then confirm fill before arming protection (Q4=A).
+            # Place the entry; DEFER the take-profit/stop arming to reconcile, once
+            # the *actual* filled position is observed. This sizes the TP to the real
+            # fill (not the requested qty — KIS fills can be partial/lagging) and
+            # avoids a 5s-reconcile cancelling a TP placed before the balance reflects
+            # the entry (F30 critic HIGH-1/HIGH-3). The journalled stop_price is honced
+            # honoured by the polled exit from when the group exists (get_protective_stops).
             if order.order_type is OrderType.MARKET:
                 entry_odno, _ = self._raw_order(order.side, pdno, qty, _DVSN_MARKET, 0)
             else:
                 entry_odno, _ = self._raw_order(order.side, pdno, qty, _DVSN_LIMIT,
                                                 round_to_tick(order.limit_price or 0))
             group.entry_odno = entry_odno
-            filled = self._confirm_fill(entry_odno, pdno, order.side, qty)
-            armed_qty = int(filled.qty) or qty
-        else:  # OCO on an existing position
-            armed_qty = qty
-            filled = self._pending(pdno, OrderSide.SELL, qty)
+            group.state = "PENDING_ENTRY"
+            self._oco.save()
+            return self._confirm_fill(entry_odno, pdno, order.side, qty)
 
-        # Take-profit: a real resting LIMIT sell (served on both domains).
-        tp_odno, _ = self._raw_order(
-            OrderSide.SELL, pdno, armed_qty, _DVSN_LIMIT, round_to_tick(order.take_profit_price or 0))
-        group.tp_odno = tp_odno
-        group.qty = armed_qty
-        # Stop-loss: env-specific (paper=polled, real=exchange).
-        self._arm_stop(group, OrderSide.SELL, round_to_tick(order.stop_loss_price or 0), armed_qty)
-        group.state = "ARMED"
+        # OCO on an existing position: arm immediately against the held qty.
+        self._arm_group(group, qty)
         self._oco.save()
-        return filled
+        return self._pending(pdno, OrderSide.SELL, qty)
+
+    def _arm_group(self, group: OcoGroup, qty: int) -> None:
+        """Place the resting take-profit LIMIT + the (env-specific) stop-loss leg."""
+        if not group.tp_odno and group.tp_price > 0:
+            tp_odno, _ = self._raw_order(
+                OrderSide.SELL, group.symbol, qty, _DVSN_LIMIT, int(group.tp_price))
+            group.tp_odno = tp_odno
+        group.qty = qty
+        self._arm_stop(group, OrderSide.SELL, int(group.stop_price), qty)
+        group.state = "ARMED"
 
     @abstractmethod
     def _arm_stop(self, group: OcoGroup, side: OrderSide, stop_price: int, qty: int) -> None:
@@ -335,11 +345,35 @@ class KisBroker(BaseBroker):
         return orders
 
     def get_order_status(self, order_id: str) -> FilledOrder | None:
-        """Best-effort (PoC): an order still resting in open-orders is pending;
-        otherwise treat as filled. Exact per-fill detail needs inquire-daily-ccld."""
-        for o in self.get_open_orders():
-            if o.order_id == order_id:
-                return None  # still resting → unfilled
+        """Today's fill state for an order via inquire-daily-ccld. Returns a
+        FilledOrder with the executed qty/avg price, or None if unfilled/unknown."""
+        today = datetime.now(_KST).strftime("%Y%m%d")
+        params = {
+            "CANO": self._cano, "ACNT_PRDT_CD": self._prdt,
+            "INQR_STRT_DT": today, "INQR_END_DT": today, "SLL_BUY_DVSN_CD": "00",
+            "PDNO": "", "CCLD_DVSN": "00", "INQR_DVSN": "00", "INQR_DVSN_3": "00",
+            "ORD_GNO_BRNO": "", "ODNO": order_id, "INQR_DVSN_1": "",
+            "CTX_AREA_FK100": "", "CTX_AREA_NK100": "",
+        }
+        try:
+            res = self._c.get(_CCLD_PATH, self._tr("TTTC0081R", "VTTC0081R"), params)
+        except BrokerError:
+            return None
+        if res.get("rt_cd") != "0":
+            return None
+        for row in res.get("output1") or []:
+            if row.get("odno") != order_id:
+                continue
+            ccld = _f(row, "tot_ccld_qty")
+            if ccld <= 0:
+                return None  # accepted but not yet filled
+            avg = _f(row, "avg_prvs")
+            if avg <= 0:
+                avg = _f(row, "tot_ccld_amt") / ccld if ccld else 0.0
+            return FilledOrder(
+                order_id=order_id, symbol=row.get("pdno", ""),
+                side=OrderSide.SELL if row.get("sll_buy_dvsn_cd") == "01" else OrderSide.BUY,
+                qty=ccld, filled_price=avg, filled_at=datetime.now(_KST))
         return None
 
     def get_latest_prices(self, symbols: list[str]) -> dict[str, float]:
@@ -396,21 +430,40 @@ class KisBroker(BaseBroker):
 
     # -- OCO reconcile -------------------------------------------------- #
     def reconcile_oco(self) -> None:
-        """Cancel the dangling leg once a group's position has exited or its TP
-        filled. The polled stop-loss (모의) fires in run_polled_exits; here we
-        clean up the now-obsolete resting take-profit."""
+        """Drive the OCO state machine:
+        - PENDING_ENTRY: once the entry fills (position observed), arm TP/SL sized
+          to the real held qty → ARMED. If the entry order is gone with no position
+          (rejected/cancelled), resolve.
+        - ARMED: once the position exits (TP filled or polled stop sold), cancel the
+          dangling leg and resolve.
+        """
         if not self._oco.groups:
             return
         held = {p.symbol.upper(): p.qty for p in self.get_all_positions()}
+        open_odnos = {o.order_id for o in self.get_open_orders()}
         for gid in list(self._oco.groups):
             g = self._oco.groups[gid]
-            if g.state != "ARMED":
-                continue
-            if held.get(g.symbol.upper(), 0) <= 0:
-                # Position gone (TP filled or polled SL exited) → cancel remaining legs.
+            h = held.get(g.symbol.upper(), 0)
+            if g.state == "PENDING_ENTRY":
+                if h > 0:
+                    self._arm_group(g, int(h))  # entry (partly) filled → arm TP/SL
+                elif g.entry_odno and g.entry_odno not in open_odnos:
+                    self._oco.resolve(gid)  # entry gone, no position → rejected
+                # else: entry still resting — wait
+            elif g.state == "ARMED" and h <= 0:
                 self._cancel_group_legs(g)
                 self._oco.resolve(gid)
         self._oco.save()
+
+    def get_protective_stops(self) -> dict[str, float]:
+        """Per-symbol stop levels for the polled exit. 모의 has no exchange stop,
+        so run_polled_exits enforces the agent's journalled stop at this price
+        (not the flat risk.stop_loss_pct) — see RiskManager.check_stop_loss."""
+        return {
+            g.symbol.upper(): g.stop_price
+            for g in self._oco.groups.values()
+            if g.stop_price > 0 and g.state in ("PENDING_ENTRY", "ARMED")
+        }
 
     def _cancel_group_legs(self, g: OcoGroup) -> None:
         for odno in (g.tp_odno, g.sl_odno):

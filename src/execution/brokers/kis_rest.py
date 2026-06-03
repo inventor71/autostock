@@ -46,7 +46,8 @@ class KisRestClient:
         self._timeout = (connect_timeout, read_timeout)
         self._min_interval = 1.0 / rate_limit_per_sec if rate_limit_per_sec > 0 else 0.0
         self._session = requests.Session()
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()          # serializes token issuance
+        self._throttle_lock = threading.Lock()  # serializes the per-sec spacing
         self._token: str | None = None
         self._token_ts = 0.0
         self._last_issue_attempt = 0.0
@@ -60,10 +61,13 @@ class KisRestClient:
     def _throttle(self) -> None:
         if self._min_interval <= 0:
             return
-        wait = self._min_interval - (time.monotonic() - self._last_call)
-        if wait > 0:
-            time.sleep(wait)
-        self._last_call = time.monotonic()
+        # Serialize the read-modify-write of _last_call so concurrent seconds-jobs
+        # can't both slip a call inside the min interval (EGW00201 guard).
+        with self._throttle_lock:
+            wait = self._min_interval - (time.monotonic() - self._last_call)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_call = time.monotonic()
 
     def _ensure_token(self) -> str:
         """Lazy token: (re)issue when older than the TTL. Respects KIS's 1/min

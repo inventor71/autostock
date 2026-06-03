@@ -13,13 +13,15 @@ from src.execution.brokers.kis_broker import KisBroker, KisPaperBroker, _OcoStor
 class FakeKis:
     """Records calls; returns canned KIS responses."""
 
-    def __init__(self, positions=None):
+    def __init__(self, positions=None, open_orders=None, ccld=None):
         self.posts = []
         self.gets = []
         self._seq = 0
         self._positions = positions if positions is not None else [
             {"pdno": "005930", "hldg_qty": "10", "pchs_avg_pric": "70000", "prpr": "71000"}
         ]
+        self.open_orders = open_orders or []  # rows for inquire-psbl-rvsecncl
+        self.ccld = ccld or {}                # odno -> {tot_ccld_qty, avg_prvs, pdno, sll_buy_dvsn_cd}
 
     def post(self, path, tr, body):
         self.posts.append((path, tr, body))
@@ -34,7 +36,10 @@ class FakeKis:
             return {"rt_cd": "0", "output1": self._positions,
                     "output2": [{"dnca_tot_amt": "1000000", "tot_evlu_amt": "1710000"}]}
         if path.endswith("inquire-psbl-rvsecncl"):
-            return {"rt_cd": "0", "output": []}
+            return {"rt_cd": "0", "output": self.open_orders}
+        if path.endswith("inquire-daily-ccld"):
+            row = self.ccld.get(params.get("ODNO"))
+            return {"rt_cd": "0", "output1": [row] if row else []}
         return {"rt_cd": "0", "output": {}}
 
 
@@ -126,3 +131,65 @@ def test_oco_journal_survives_reload(tmp_path):
 
 def test_is_market_open_returns_bool(tmp_path):
     assert isinstance(make_broker(tmp_path).is_market_open(), bool)
+
+
+# --- HIGH-1/HIGH-3 hardening: deferred bracket arming ---------------------- #
+
+def _bracket(b, qty=10):
+    b.submit_order(Order(symbol="005930", side=OrderSide.BUY, qty=qty, order_type=OrderType.MARKET,
+                         order_class=OrderClass.BRACKET, take_profit_price=80000, stop_loss_price=65000))
+
+
+def test_bracket_defers_tp_until_entry_fills(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis(positions=[])  # entry not yet reflected in balance
+    _bracket(b)
+    g = next(iter(b._oco.groups.values()))
+    assert g.state == "PENDING_ENTRY"
+    assert g.entry_odno and g.tp_odno is None          # TP NOT placed yet
+    assert g.stop_price == 65000                        # stop known immediately
+    assert b.get_protective_stops() == {"005930": 65000.0}  # polled stop covers the gap
+    assert not any(p[2].get("ORD_DVSN") == "00" for p in b._c.posts)  # no TP limit posted
+
+
+def test_reconcile_arms_tp_sized_to_actual_fill(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis(positions=[])
+    _bracket(b, qty=10)
+    # entry partially fills: only 4 shares show up in the balance
+    b._c._positions = [{"pdno": "005930", "hldg_qty": "4", "pchs_avg_pric": "70000", "prpr": "71000"}]
+    b.reconcile_oco()
+    g = next(iter(b._oco.groups.values()))
+    assert g.state == "ARMED" and g.tp_odno is not None
+    assert g.qty == 4  # TP sized to the REAL fill, not the requested 10
+    tp = [p for p in b._c.posts if p[2].get("ORD_DVSN") == "00"][-1]
+    assert tp[2]["ORD_QTY"] == "4"
+
+
+def test_reconcile_waits_while_entry_still_resting(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis(positions=[])
+    _bracket(b)
+    g = next(iter(b._oco.groups.values()))
+    # entry still open (resting limit), no position yet → must NOT resolve/cancel
+    b._c.open_orders = [{"odno": g.entry_odno, "pdno": "005930", "sll_buy_dvsn_cd": "02",
+                         "ordng_qty": "10", "tot_ccld_qty": "0", "ord_unpr": "60000"}]
+    b.reconcile_oco()
+    assert g.group_id in b._oco.groups and b._oco.groups[g.group_id].state == "PENDING_ENTRY"
+
+
+def test_reconcile_resolves_when_entry_gone_and_no_position(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis(positions=[], open_orders=[])  # entry not open, no fill → rejected
+    _bracket(b)
+    b.reconcile_oco()
+    assert not b._oco.groups  # group resolved (no orphan)
+
+
+def test_get_order_status_parses_ccld(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis(ccld={"O9": {"odno": "O9", "pdno": "005930", "sll_buy_dvsn_cd": "02",
+                                "tot_ccld_qty": "7", "avg_prvs": "70500"}})
+    fo = b.get_order_status("O9")
+    assert fo is not None and fo.qty == 7 and fo.filled_price == 70500
+    assert b.get_order_status("UNKNOWN") is None
