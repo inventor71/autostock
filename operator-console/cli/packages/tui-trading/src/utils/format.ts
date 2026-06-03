@@ -106,6 +106,29 @@ export function fmtDuration(ms: number | null): string {
   return `${Math.round(ms / 1000)}s`
 }
 
+// F44: live-elapsed clock for the in-flight turn label (minutes/hours aware, unlike
+// fmtDuration which only ever prints whole seconds). e.g. 9s · 3m12s · 1h02m.
+export function fmtElapsedClock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`
+  return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`
+}
+
+// F44: the in-flight turn progress label, e.g. "research · 3m12s · +1 queued".
+// Returns null when no turn is in flight (caller renders an idle state). Pure so the
+// formatting is unit-testable; the component supplies nowMs (blink-driven re-render).
+export function fmtTurnLabel(
+  turn: { type: string; started_at: string } | null,
+  queued: number,
+  nowMs: number = Date.now(),
+): string | null {
+  if (!turn) return null
+  const elapsed = fmtElapsedClock(nowMs - Date.parse(turn.started_at))
+  const q = queued > 0 ? ` · +${queued} queued` : ""
+  return `${turn.type} · ${elapsed}${q}`
+}
+
 export function fmtPnl(pnl: number): { text: string; color: string } {
   const sign = pnl >= 0 ? "+" : ""
   return {

@@ -471,6 +471,16 @@ class CommandHandler:
             self._emit(cmd, "queued",
                        "research queued — runs right after the in-flight turn "
                        "(completion will report)")
+        elif status == "already_running":
+            # F44: a research turn (auto or manual) is already in flight — don't stack
+            # a duplicate; the running one will report on completion.
+            self._emit(cmd, "already_running",
+                       "research already in progress — not queued "
+                       "(the running turn will report on completion)")
+        elif status == "already_queued":
+            self._emit(cmd, "already_queued",
+                       "research already queued — not re-queued "
+                       "(it runs right after the in-flight turn)")
         else:  # unknown_turn or any unexpected status
             self._emit(cmd, "error", f"research not started ({status})")
 

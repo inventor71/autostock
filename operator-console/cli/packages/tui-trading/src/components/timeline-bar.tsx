@@ -6,7 +6,7 @@ import type { SessionData } from "../hooks/use-session-data"
 import { readSessionData, readHistoricalSession } from "../hooks/use-session-data"
 import {
   markerGlyph, markerColor, interventionGlyph, interventionColor, fmtCost,
-  phaseLabel, phaseShort, phaseColor, fmtWindowRange,
+  phaseLabel, phaseShort, phaseColor, fmtWindowRange, fmtTurnLabel,
 } from "../utils/format"
 
 export interface TimelineBarProps {
@@ -94,10 +94,19 @@ export function TimelineBar(props: TimelineBarProps) {
   // F45: now-label text for the NavRow (e.g. "06-04 20:00 → 06-05 08:00").
   const windowLabel = () => fmtWindowRange(viewStart(), viewEnd())
 
+  // F44: queued count (live session only) for the in-flight turn label's "+N queued".
+  const queued = () => (isToday() ? (props.monitor()?.queued ?? 0) : 0)
+
   return (
-    <box width={props.width} height={3} flexDirection="column">
+    <box width={props.width} height={4} flexDirection="column">
       <Show when={!disconnected()} fallback={<text fg="gray">{"  Monitor disconnected"}</text>}>
-        {/* Row 0: window-range label + nav + phase badge + cost */}
+        {/* F44 Row 0: in-flight turn progress label (blinks like the now-cursor) */}
+        <StatusRow
+          currentTurn={isToday() ? props.currentTurn() : null}
+          queued={queued()}
+          blinkOn={blinkOn()}
+        />
+        {/* Row 1: date nav + current market-phase badge + cost */}
         <NavRow
           label={windowLabel()}
           isLive={isLive()}
@@ -127,6 +136,34 @@ export function TimelineBar(props: TimelineBarProps) {
         />
       </Show>
     </box>
+  )
+}
+
+// F44: a one-line status row above the timeline. While a turn is in flight it shows
+// "● {type} · {elapsed} · +{N} queued" (the bullet blinks green like the now-cursor,
+// and elapsed re-renders on the blink tick). Idle / historical dates show a dim "idle".
+function StatusRow(props: {
+  currentTurn: CurrentTurn | null
+  queued: number
+  blinkOn: boolean
+}) {
+  const t = () => props.currentTurn
+  return (
+    <Show when={t()} fallback={<text fg="#555555">{"  idle"}</text>}>
+      {(turn) => {
+        // Read blinkOn so this row re-renders ~2x/s → the elapsed clock ticks live.
+        const label = () => {
+          void props.blinkOn // track the blink tick so the elapsed clock re-renders live
+          return fmtTurnLabel(turn(), props.queued, Date.now()) ?? ""
+        }
+        return (
+          <box>
+            <text fg={props.blinkOn ? "green" : "#2f6f4f"}>{"  ● "}</text>
+            <text fg="white">{label()}</text>
+          </box>
+        )
+      }}
+    </Show>
   )
 }
 

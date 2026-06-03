@@ -13,6 +13,7 @@ function contentSig(d: MonitorData): string {
     s: d.session_et_date,
     m: d.market,
     c: d.current_turn,
+    q: d.queued,          // F44: queue-count changes are meaningful (refresh the label)
     t: d.turns,
     i: d.interventions,
     de: d.decisions,
@@ -52,6 +53,7 @@ export function useMonitorData(steeringDir: string, intervalMs = 1500) {
   return {
     monitor,
     currentTurn: () => monitor()?.current_turn ?? null,
+    queued: () => monitor()?.queued ?? 0,
     recentTurns: () => monitor()?.turns?.recent ?? [],
     recentDecisions: () => monitor()?.decisions ?? [],
     todayCount: () => monitor()?.turns?.today_count ?? 0,
