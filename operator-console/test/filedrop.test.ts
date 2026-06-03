@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileDrop, NoTokenError } from "../src/filedrop";
@@ -7,7 +7,13 @@ import type { SteeringCommand } from "../src/schema";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "fd-")); });
-afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => {
+  // Clean up the shared workspace/positions directory (derived from steeringDir
+  // as join(steeringDir, "..", "workspace", "positions") which is shared when
+  // steeringDir is a temp path).
+  try { rmSync(join(dir, "..", "workspace"), { recursive: true, force: true }); } catch {}
+  rmSync(dir, { recursive: true, force: true });
+});
 
 test("build attaches token + confirmed + human source + hex id", () => {
   const fd = new FileDrop(dir, "tok-123");
@@ -51,4 +57,26 @@ test("readSnapshot parses or returns null", () => {
   expect(fd.readSnapshot()).toBeNull(); // absent
   writeFileSync(fd.snapshotFile, JSON.stringify({ run_state: { paused: false }, positions: {} }));
   expect(fd.readSnapshot()).toMatchObject({ run_state: { paused: false } });
+});
+
+// F53: position thesis file reads
+test("readThesis returns null for missing file, content for existing", () => {
+  const fd = new FileDrop(dir, "tok");
+  expect(fd.readThesis("UNKNOWN")).toBeNull(); // no file
+  // create workspace/positions/AAPL.md
+  mkdirSync(fd.positionsDir, { recursive: true });
+  writeFileSync(join(fd.positionsDir, "AAPL.md"), "# AAPL Thesis\n\nBuy thesis here.", "utf8");
+  expect(fd.readThesis("aapl")).toBe("# AAPL Thesis\n\nBuy thesis here."); // lowercased symbol ok
+});
+
+test("listTheses returns symbols or empty", () => {
+  // Ensure clean state — afterEach cleans workspace/ but be defensive.
+  try { rmSync(join(dir, "..", "workspace"), { recursive: true, force: true }); } catch {}
+  const fd = new FileDrop(dir, "tok");
+  expect(fd.listTheses()).toEqual([]); // no dir yet
+  mkdirSync(fd.positionsDir, { recursive: true });
+  writeFileSync(join(fd.positionsDir, "AAPL.md"), "...", "utf8");
+  writeFileSync(join(fd.positionsDir, "MSFT.md"), "...", "utf8");
+  writeFileSync(join(fd.positionsDir, "notes.txt"), "not a thesis", "utf8"); // non-.md ignored
+  expect(fd.listTheses()).toEqual(["AAPL", "MSFT"]); // sorted
 });

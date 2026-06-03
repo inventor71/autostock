@@ -14,7 +14,9 @@ export type SteeringVerb =
   // F9 structured Alpaca-shaped order/management verbs (emitted by the new
   // structured MCP tools, NOT the deterministic parser).
   | "place_order" | "cancel_order" | "cancel_all" | "replace_order"
-  | "close_position" | "close_all";
+  | "close_position" | "close_all"
+  // F53: position thesis read verbs (read-only, served by steer_read)
+  | "thesis" | "theses";
 
 // verbs that mutate the book/lifecycle → require human confirm before write (BR-B1)
 export const TRADE_VERBS = new Set<SteeringVerb>(["buy", "sell", "flatten", "flatten_all", "stop"]);
@@ -57,6 +59,7 @@ export const ALL_VERBS = [
   "research",
   "place_order", "cancel_order", "cancel_all", "replace_order",
   "close_position", "close_all",
+  "thesis", "theses",
 ] as const satisfies readonly SteeringVerb[];
 
 // F9 (NFR-3) — per-verb structured arg names, pinned across languages by the

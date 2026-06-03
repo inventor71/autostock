@@ -28,6 +28,8 @@ export const READ_VERBS = new Set([
   "codebase",
   // F28: static UI legend — explain TUI elements (timeline/sidebar/status) in normal mode
   "ui-legend",
+  // F53: position thesis read — agent's thesis/plan/call-vs-outcome for a symbol
+  "thesis", "theses",
 ]);
 
 const VERB_ALIASES: Record<string, SteeringVerb> = {

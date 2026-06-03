@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileDrop } from "../src/filedrop";
@@ -13,7 +13,13 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "mcp-"));
   fd = new FileDrop(dir, "tok");
 });
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(() => {
+  // Clean up the shared workspace/positions directory (derived from steeringDir
+  // as join(steeringDir, "..", "workspace", "positions") which is shared when
+  // steeringDir is a temp path).
+  try { rmSync(join(dir, "..", "workspace"), { recursive: true, force: true }); } catch {}
+  rmSync(dir, { recursive: true, force: true });
+});
 
 function verbs(): string[] {
   try {
@@ -185,4 +191,41 @@ test("handleStructured: close_position with symbol only writes (qty/percentage r
     { symbol: "AAPL" }, fd);
   expect(out).toContain("OK close_position");
   expect(records()).toHaveLength(1);
+});
+
+// ---- F53 position thesis read -------------------------------------------- #
+
+test("handleSteerRead: /thesis <SYMBOL> returns file content", () => {
+  mkdirSync(fd.positionsDir, { recursive: true });
+  writeFileSync(join(fd.positionsDir, "AAPL.md"), "# AAPL Thesis\n\nBuy thesis.", "utf8");
+  const out = handleSteerRead("/thesis AAPL", fd);
+  expect(out).toContain("thesis AAPL:");
+  expect(out).toContain("# AAPL Thesis");
+  expect(out).toContain("Buy thesis.");
+});
+
+test("handleSteerRead: /thesis with no file returns graceful message", () => {
+  const out = handleSteerRead("/thesis UNKNOWN", fd);
+  expect(out).toContain("no thesis file found for UNKNOWN");
+});
+
+test("handleSteerRead: /thesis with no symbol shows usage", () => {
+  const out = handleSteerRead("/thesis", fd);
+  expect(out).toContain("symbol required");
+});
+
+test("handleSteerRead: /theses lists symbols", () => {
+  mkdirSync(fd.positionsDir, { recursive: true });
+  writeFileSync(join(fd.positionsDir, "MSFT.md"), "...", "utf8");
+  writeFileSync(join(fd.positionsDir, "AAPL.md"), "...", "utf8");
+  const out = handleSteerRead("/theses", fd);
+  expect(out).toContain("theses:");
+  expect(out).toContain("AAPL, MSFT");
+});
+
+test("handleSteerRead: /theses with no files returns graceful message", () => {
+  // Ensure clean state — afterEach cleans workspace/ but be defensive.
+  try { rmSync(join(dir, "..", "workspace"), { recursive: true, force: true }); } catch {}
+  const out = handleSteerRead("/theses", fd);
+  expect(out).toContain("no thesis files found");
 });

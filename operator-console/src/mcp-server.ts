@@ -76,7 +76,10 @@ server.registerTool(
       "LEGEND verb: /ui-legend [element] — what a TUI element means (timeline markers, " +
       "topbar $cost, date nav, sidebar account/positions/round-trip/fills, RUNNING/MKT status). " +
       "Use this when asked what something ON THE SCREEN is. Omit element for the full list, or " +
-      "pass an id (e.g. /ui-legend topbar.today_cost) for one.",
+      "pass an id (e.g. /ui-legend topbar.today_cost) for one.\n" +
+      "THESIS verbs (F53 — agent position thesis from workspace/positions/): " +
+      "/thesis <SYMBOL> (read a symbol's thesis markdown — investment thesis, plan, stop/target, " +
+      "call-vs-outcome log) · /theses (list all symbols that have a thesis file).",
     inputSchema: { command: z.string().describe("a read command, e.g. /status or /turns") },
   },
   async ({ command }) => ({ content: [{ type: "text", text: handleSteerRead(command, fd, supervisor) }] }),

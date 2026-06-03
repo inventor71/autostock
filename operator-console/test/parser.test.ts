@@ -77,6 +77,18 @@ test("fail-closed on bad/missing/unknown", () => {
   expect(() => ok("/frobnicate AAPL")).toThrow(ParseError); // unknown verb
 });
 
+test("F53: /thesis and /theses are read-only verbs", () => {
+  const d = ok("/thesis AAPL");
+  expect(d.verb).toBe("thesis");
+  expect(d.readOnly).toBe(true);
+  expect(d.confirmRequired).toBe(false);
+  expect(d.args.raw).toBe("thesis AAPL");
+  const d2 = ok("/theses");
+  expect(d2.verb).toBe("theses");
+  expect(d2.readOnly).toBe(true);
+  expect(d2.confirmRequired).toBe(false);
+});
+
 test("/cancel passes the target through (daemon resolves id-prefix vs symbol)", () => {
   expect(ok("/cancel a1187da8").args).toEqual({ target: "a1187da8" }); // 8-char id prefix
   expect(ok("/cancel " + "a".repeat(32)).args).toEqual({ target: "a".repeat(32) }); // full id
