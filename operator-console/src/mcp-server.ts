@@ -63,7 +63,11 @@ server.registerTool(
       "decisions) · /log (agent log tail).\n" +
       "CODEBASE verb: /codebase — project directory tree with package descriptions. " +
       "Use this FIRST when asked about autostock's code or implementation; all source paths " +
-      "are relative to $AUTOSTOCK_ROOT (run `echo $AUTOSTOCK_ROOT` to resolve).",
+      "are relative to $AUTOSTOCK_ROOT (run `echo $AUTOSTOCK_ROOT` to resolve).\n" +
+      "LEGEND verb: /ui-legend [element] — what a TUI element means (timeline markers, " +
+      "topbar $cost, date nav, sidebar account/positions/round-trip/fills, RUNNING/MKT status). " +
+      "Use this when asked what something ON THE SCREEN is. Omit element for the full list, or " +
+      "pass an id (e.g. /ui-legend topbar.today_cost) for one.",
     inputSchema: { command: z.string().describe("a read command, e.g. /status or /turns") },
   },
   async ({ command }) => ({ content: [{ type: "text", text: handleSteerRead(command, fd) }] }),

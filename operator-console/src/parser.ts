@@ -26,6 +26,8 @@ export const READ_VERBS = new Set([
   "turns", "decisions",
   // F29: project directory tree for supervisor codebase orientation
   "codebase",
+  // F28: static UI legend — explain TUI elements (timeline/sidebar/status) in normal mode
+  "ui-legend",
 ]);
 
 const VERB_ALIASES: Record<string, SteeringVerb> = {

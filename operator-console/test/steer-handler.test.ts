@@ -80,6 +80,31 @@ test("handleSteerRead: /status still returns snapshot (not monitor)", () => {
   expect(handleSteerRead("/status", fd)).toContain("snapshot");
 });
 
+// ---- F28 UI legend -------------------------------------------------------- #
+test("handleSteerRead: /ui-legend returns the full legend, never writes", () => {
+  const out = handleSteerRead("/ui-legend", fd);
+  const parsed = JSON.parse(out);
+  expect(Array.isArray(parsed.legend)).toBe(true);
+  expect(parsed.legend.length).toBeGreaterThan(0);
+  expect(parsed.legend.some((e: { id: string }) => e.id === "topbar.today_cost")).toBe(true);
+  expect(verbs()).toEqual([]);
+});
+
+test("handleSteerRead: /ui-legend <element> returns just that entry with its meaning", () => {
+  const out = handleSteerRead("/ui-legend topbar.today_cost", fd);
+  const parsed = JSON.parse(out);
+  expect(parsed.legend).toHaveLength(1);
+  expect(parsed.legend[0].id).toBe("topbar.today_cost");
+  expect(parsed.legend[0].meaning).toContain("비용");
+});
+
+test("handleSteerRead: /ui-legend with unknown element returns a not-found error", () => {
+  const out = handleSteerRead("/ui-legend does.not.exist", fd);
+  const parsed = JSON.parse(out);
+  expect(parsed.legend).toEqual([]);
+  expect(parsed.error).toContain("not found");
+});
+
 // ---- F9 structured order path -------------------------------------------- #
 function records(): Array<{ verb: string; args: Record<string, unknown>; token: string }> {
   try {

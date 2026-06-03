@@ -44,6 +44,16 @@ test("read-only verbs are flagged, no confirm", () => {
   expect(d.confirmRequired).toBe(false);
 });
 
+test("F28: /ui-legend is a read verb; element kept in raw (no parser split)", () => {
+  const d = ok("/ui-legend topbar.today_cost");
+  expect(d.verb).toBe("ui-legend");
+  expect(d.readOnly).toBe(true);
+  expect(d.confirmRequired).toBe(false);
+  // READ_VERBS pass the whole line as args.raw; the handler extracts the element.
+  expect(d.args.raw).toBe("ui-legend topbar.today_cost");
+  expect(ok("/ui-legend").verb).toBe("ui-legend"); // bare form ok
+});
+
 test("note applies without confirm; directive/answer confirm", () => {
   expect(ok("/note watch CPI")).toMatchObject({ verb: "note", confirmRequired: false });
   expect(ok("/directive be defensive")).toMatchObject({ verb: "directive", confirmRequired: true });

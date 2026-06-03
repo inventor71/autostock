@@ -1,0 +1,110 @@
+{
+  "_note": "F28 UI legend — normal-mode 에이전트가 steer_read /ui-legend 로 자기 TUI 요소의 의미를 설명하는 정적 사전. ⚠️ TUI 화면 요소(타임라인/사이드바/상태줄/topbar)를 추가·변경·제거하면 이 파일도 함께 갱신하세요. 규약: operator-console/cli/packages/tui-trading/AGENTS.md. 현재값은 담지 않습니다(사용자가 화면에서 봄) — 의미만.",
+  "entries": [
+    {
+      "id": "topbar.date_label",
+      "location": "타임라인 topbar 왼쪽",
+      "meaning": "현재 보고 있는 거래 세션의 날짜 (미 동부시간 기준). 뒤에 '(Today)'가 붙어 있으면 오늘의 라이브 세션을 보는 중이고, 없으면 과거 날짜를 들춰보는 중입니다."
+    },
+    {
+      "id": "topbar.date_nav",
+      "location": "타임라인 topbar, 날짜 양옆",
+      "meaning": "날짜 이동 버튼. '[ < ]'는 이전 거래일, '[ > ]'는 다음 거래일로 타임라인을 이동합니다. 과거 날짜를 보는 중이면 '[ Today ]' 버튼이 나타나 오늘로 바로 돌아갑니다."
+    },
+    {
+      "id": "topbar.market_phase",
+      "location": "타임라인 topbar, 날짜 네비 오른쪽 '● ...' 배지",
+      "meaning": "지금 이 순간의 장 구간 배지. '● PRE-MARKET'(프리장), '● REGULAR'(정규장), '● AFTER-HRS'(애프터장)로 현재 시각이 어느 구간인지 보여줍니다. 오늘 라이브 세션일 때만 표시됩니다."
+    },
+    {
+      "id": "topbar.today_cost",
+      "location": "타임라인 topbar 오른쪽, '· $X.XX'",
+      "meaning": "오늘 에이전트가 쓴 LLM 턴 비용의 합계(USD)입니다. 화면의 그 '$' 값(예: $6.01)이 오늘 하루 동안 누적된 모델 호출 비용입니다. (monitor.json의 turns.today_cost_usd)"
+    },
+    {
+      "id": "timeline.tick_labels",
+      "location": "타임라인 가운데 눈금 줄",
+      "meaning": "시간축 눈금. 사용자의 로컬 시각(HH:MM)으로 거래 시간대를 표시합니다."
+    },
+    {
+      "id": "timeline.now_cursor",
+      "location": "타임라인 위 '▼' / 아래 '┃'",
+      "meaning": "현재 시각 커서. 위쪽 '▼' 화살표와 아래쪽 '┃' 막대가 '지금'을 가리킵니다. 에이전트 턴이 진행 중일 때는 녹색으로 깜빡입니다."
+    },
+    {
+      "id": "timeline.region_bands",
+      "location": "타임라인 본문 배경 띠",
+      "meaning": "장 구간 띠. 프리장(PRE)·정규장(OPEN)·애프터장(AFT)을 색과 인라인 라벨로 구분합니다. 정규장 구간이 가장 밝게 표시됩니다."
+    },
+    {
+      "id": "timeline.session_boundary",
+      "location": "타임라인 본문 '│' 세로선",
+      "meaning": "정규장 개장·마감 경계선. 밝은 '│'가 정규장이 열리고 닫히는 지점을 표시합니다."
+    },
+    {
+      "id": "timeline.marker.research",
+      "location": "타임라인 마커",
+      "meaning": "'●'(청록) — research 턴 마커. 에이전트가 리서치(시장 조사) 턴을 수행한 시점입니다. 클릭하면 그 턴의 상세를 봅니다."
+    },
+    {
+      "id": "timeline.marker.intraday",
+      "location": "타임라인 마커",
+      "meaning": "'○'(흰색) — intraday 턴 마커. 장중 정기 판단 턴이 일어난 시점입니다."
+    },
+    {
+      "id": "timeline.marker.wake",
+      "location": "타임라인 마커",
+      "meaning": "'◆'(노랑) — wake 턴 마커. 이벤트(체결/급변/watch 트리거 등)로 깨어난 비정기 판단 턴입니다."
+    },
+    {
+      "id": "timeline.marker.eod",
+      "location": "타임라인 마커",
+      "meaning": "'▲'(자홍) — EOD 턴 마커. 장 마감 리뷰(end-of-day) 턴이 일어난 시점입니다."
+    },
+    {
+      "id": "timeline.marker.reconcile",
+      "location": "타임라인 마커",
+      "meaning": "'↻'(파랑) — reconcile 턴 마커. 사람 개입이나 체결을 반영해 에이전트 상태를 맞추는 동기화 턴입니다."
+    },
+    {
+      "id": "timeline.marker.error",
+      "location": "타임라인 마커",
+      "meaning": "'✕'(빨강) — 에러 마커. 해당 턴이 오류로 끝났음을 뜻합니다. 클릭해 원인을 확인하세요."
+    },
+    {
+      "id": "timeline.marker.human",
+      "location": "타임라인 마커",
+      "meaning": "'✚' — 사람 개입 마커. 운영자가 수동으로 매매하거나 명령(steer)을 넣은 시점입니다. 색으로 방향 구분: 매수=녹색, 매도/청산=빨강, 취소=회색."
+    },
+    {
+      "id": "sidebar.account",
+      "location": "사이드바 Account 블록",
+      "meaning": "계좌 요약. equity=총자산(현금+평가액), cash=가용 현금, invested=투자된 금액, open P&L=보유 포지션의 미실현 손익, positions=보유 종목 수. (브로커 스냅샷 기준)"
+    },
+    {
+      "id": "sidebar.positions",
+      "location": "사이드바 Positions 블록",
+      "meaning": "보유 종목 목록. 각 줄은 티커, 수량(qty), 평균 단가, 현재가, 손익을 보여줍니다."
+    },
+    {
+      "id": "sidebar.round_trip",
+      "location": "사이드바 Round-trip 블록",
+      "meaning": "오늘 청산이 끝난 왕복매매(round-trip) 요약입니다. 진입→청산이 모두 끝난 거래만 집계되어 승/패와 손익을 보여줍니다(체결 단위 카운트가 아님)."
+    },
+    {
+      "id": "sidebar.recent_fills",
+      "location": "사이드바 Recent fills 블록",
+      "meaning": "최근 체결 내역. 최근에 실제로 체결된 매매를 날짜+시각과 함께 보여줍니다(여러 날에 걸치면 날짜 접두가 붙습니다)."
+    },
+    {
+      "id": "status.run_state",
+      "location": "상태 표시 (RUNNING/PAUSED/HALTED)",
+      "meaning": "에이전트 실행 상태. RUNNING=정상 가동, PAUSED=일시정지(판단·매매 보류), HALTED=신규 진입 중단. 운영자의 steer 명령(/pause·/halt 등)으로 바뀝니다."
+    },
+    {
+      "id": "status.market",
+      "location": "상태 표시 (MKT)",
+      "meaning": "장 개폐 상태. 정규장이 열려 있는지(OPEN) 닫혀 있는지(CLOSED)/프리·애프터 구간인지 표시합니다."
+    }
+  ]
+}
