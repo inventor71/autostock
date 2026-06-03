@@ -57,6 +57,8 @@
 | F42 | F37 리네임 누락 핫픽스 — main.py + scripts의 `alpaca_secret_key` 잔여 참조 제거 (데몬 startup 크래시) | merged | feat/F42 → main b0b1275 | — (제거됨) | — (monorepo) | 72aba01 | 2026-06-03 |
 | F43 | 데몬 코드 버전 스큐 자가치유 — autostock 런처가 구버전 데몬(snapshot SHA≠작업트리 HEAD) 감지해 자동 재시작 | active | feat/F43 | .claude/worktrees/F43 | — (monorepo) | 777cf40 | 2026-06-03 |
 | F44 | 진행 중 turn 라벨(TUI) + 동일 type turn이 in-flight면 큐잉 대신 "already in progress" 반환 | active | feat/F44 | .claude/worktrees/F44 | — (monorepo) | 777cf40 | 2026-06-03 |
+| F45 | 타임라인 12h 윈도우 자동 전환(현재시각 포함) + [<]/[>] 12h 네비 (현행 정규장-중심 ±1일 → 로컬 12h 절반) | active | feat/F45 | .claude/worktrees/F45 | — (monorepo) | 777cf40 | 2026-06-03 |
+| F46 | 에이전트 `account` 툴 작동불가 — 스폰된 에이전트의 `python3`에 alpaca-py 없음 (PATH 구멍) | active | feat/F46 | .claude/worktrees/F46 | — (monorepo) | 777cf40 | 2026-06-03 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
