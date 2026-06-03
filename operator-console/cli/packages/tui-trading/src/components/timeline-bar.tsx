@@ -1,8 +1,8 @@
 import { createSignal, onCleanup, createMemo, Show, For } from "solid-js"
-import type { MonitorData, CurrentTurn } from "../types"
+import type { MonitorData, CurrentTurn, MonitorTurn, MonitorDecision, InterventionMarker } from "../types"
 import { DEFAULT_MARKET_RULE } from "../types"
 import { computeLayout, phaseAt, labelCells } from "../utils/timeline-layout"
-import { readSessionData, shiftDate } from "../hooks/use-session-data"
+import { readSessionData, readHistoricalSession, shiftDate } from "../hooks/use-session-data"
 import {
   markerGlyph, markerColor, interventionGlyph, interventionColor, fmtCost,
   phaseLabel, phaseShort, phaseColor,
@@ -12,8 +12,8 @@ export interface TimelineBarProps {
   width: number
   monitor: () => MonitorData | null
   currentTurn: () => CurrentTurn | null
-  onMarkerClick: (turnId: string, x: number, y: number) => void
-  onInterventionClick?: (ts: string, x: number, y: number) => void
+  onMarkerClick: (turn: MonitorTurn, decisions: MonitorDecision[], x: number, y: number) => void
+  onInterventionClick?: (iv: InterventionMarker, x: number, y: number) => void
 }
 
 // F25: ET date (America/New_York) for "today" — the default session.
@@ -31,7 +31,18 @@ export function TimelineBar(props: TimelineBarProps) {
   // Selected session date; null means "follow the live session" (Today).
   const [pinnedDate, setPinnedDate] = createSignal<string | null>(null)
 
-  const liveDate = () => props.monitor()?.session_et_date ?? todayEtDate()
+  // Memoized so they emit ONLY when their value changes (===), not on every poll.
+  // The historical session/layout depend on these instead of the churning monitor
+  // object, so parking on a past date doesn't re-read files + recreate marker boxes
+  // each ~1.5s (the flicker).
+  const liveDate = createMemo(() => props.monitor()?.session_et_date ?? todayEtDate())
+  const wsRoot = createMemo(() => props.monitor()?.workspace_root ?? null)
+  const rule = createMemo(() => props.monitor()?.market ?? DEFAULT_MARKET_RULE)
+  // Dedupe width: the terminal `dimensions` signal can re-emit the same width, which would
+  // otherwise re-run the layout memo (and rebuild markers) for no reason. A memo only fires
+  // on an actual value change.
+  const barWidth = createMemo(() => props.width)
+
   const selectedDate = () => pinnedDate() ?? liveDate()
   const isToday = () => pinnedDate() === null || pinnedDate() === liveDate()
 
@@ -39,15 +50,20 @@ export function TimelineBar(props: TimelineBarProps) {
   const goNext = () => setPinnedDate(shiftDate(selectedDate(), +1))
   const goToday = () => setPinnedDate(null)
 
-  const rule = () => props.monitor()?.market ?? DEFAULT_MARKET_RULE
-
-  const session = createMemo(() => readSessionData(props.monitor(), selectedDate()))
+  const session = createMemo(() => {
+    const date = selectedDate()
+    // Live date follows the monitor payload; a historical date is keyed only by
+    // (workspace_root, date) — no dependency on the churning monitor object.
+    return date === liveDate()
+      ? readSessionData(props.monitor(), date)
+      : readHistoricalSession(wsRoot(), date)
+  })
 
   const layout = createMemo(() =>
     computeLayout({
       turns: session().turns,
       interventions: session().interventions,
-      barWidth: props.width,
+      barWidth: barWidth(),
       etDate: selectedDate(),
       rule: rule(),
     }),
@@ -83,6 +99,7 @@ export function TimelineBar(props: TimelineBarProps) {
         <MarkerRow
           layout={layout()}
           width={props.width}
+          decisions={session().decisions}
           currentTurn={isToday() ? props.currentTurn() : null}
           blinkOn={blinkOn()}
           onMarkerClick={props.onMarkerClick}
@@ -169,123 +186,105 @@ const REGION_BG: Record<string, string> = {
   after: "#3d2740",    // dim purple (after-hours)
 }
 
-// A region band: dashes only — the bottom "timeline background" layer. The region's
-// inline label (PRE/OPEN/AFT) is no longer baked into the band; F34 renders it as a
-// TOPMOST transparent overlay (see the label layer in MarkerRow + `labelCells`), so
-// markers/cursor can never occlude the label text. The band still carries each
-// region's bg/fg color so the session is identifiable even without the label.
-function bandText(_kind: string, w: number): string {
-  if (w <= 0) return ""
-  return "─".repeat(w)
-}
-
 function MarkerRow(props: {
   layout: ReturnType<typeof computeLayout>
   width: number
+  decisions: MonitorDecision[]
   currentTurn: CurrentTurn | null
   blinkOn: boolean
-  onMarkerClick: (turnId: string, x: number, y: number) => void
-  onInterventionClick?: (ts: string, x: number, y: number) => void
+  onMarkerClick: (turn: MonitorTurn, decisions: MonitorDecision[], x: number, y: number) => void
+  onInterventionClick?: (iv: InterventionMarker, x: number, y: number) => void
 }) {
-  const reg = () => props.layout.regions.find((r) => r.kind === "regular")
+  const decisionsFor = (turnId: string) => props.decisions.filter((d) => d.turn_id === turnId)
+
+  // Compose the ENTIRE row into one styled-text line (precedence band < boundary < marker
+  // < intervention < now-cursor < label) and render it as a SINGLE <text> of merged spans —
+  // the same single-text-node path as TickRow and the band, which the live terminal renderer
+  // repaints reliably. The previous per-marker `position:absolute` boxes moved/recreated on
+  // every date change, and the live renderer's per-cell damage tracking dropped them, so
+  // markers flickered in/out even though the composed buffer was always correct.
+  const spans = createMemo(() => {
+    const W = props.width
+    const lay = props.layout
+    const ch: string[] = new Array(W).fill(" ")
+    const fg: string[] = new Array(W).fill("gray")
+    const bg: (string | undefined)[] = new Array(W).fill(undefined)
+    const put = (x: number, c: string, f: string, b?: string) => {
+      if (x < 0 || x >= W) return
+      ch[x] = c; fg[x] = f; if (b !== undefined) bg[x] = b
+    }
+    // Region bands (carry each region's bg so the session is identifiable).
+    for (const r of lay.regions) {
+      if (r.x1 <= r.x0) continue
+      for (let x = Math.max(r.x0, 0); x < Math.min(r.x1, W); x++) put(x, "─", phaseColor(r.kind), REGION_BG[r.kind])
+    }
+    // Market open/close boundaries.
+    const reg = lay.regions.find((r) => r.kind === "regular")
+    if (reg) {
+      put(reg.x0, "│", "#7faaff", REGION_BG.regular)
+      put(reg.x1, "│", "#7faaff", REGION_BG.after)
+    }
+    // Turn markers (keep the underlying band bg). Off-window → edge arrow.
+    for (const mp of lay.markers) {
+      const g = mp.offscreen === -1 ? "‹" : mp.offscreen === 1 ? "›" : markerGlyph(mp.turn.type, mp.turn.health)
+      put(mp.x, g, markerColor(mp.turn.type, mp.turn.health))
+    }
+    // Human interventions paint above markers.
+    for (const ip of lay.interventions) {
+      const g = ip.offscreen === -1 ? "‹" : ip.offscreen === 1 ? "›" : interventionGlyph(ip.intervention.verb)
+      put(ip.x, g, interventionColor(ip.intervention.verb))
+    }
+    // Now cursor (live session only; blinks green during an in-flight turn).
+    if (lay.nowX >= 0 && lay.nowX < W) put(lay.nowX, "┃", props.currentTurn && props.blinkOn ? "green" : "yellow")
+    // F34: PRE/OPEN/AFT labels are the TOPMOST layer (override glyph+fg, keep band bg).
+    for (const lc of labelCells(lay.regions, W, phaseShort)) put(lc.x, lc.ch, phaseColor(lc.kind))
+
+    // Merge consecutive same-style cells into runs (fewer spans).
+    const runs: { text: string; fg: string; bg?: string }[] = []
+    for (let x = 0; x < W; x++) {
+      const last = runs[runs.length - 1]
+      if (last && last.fg === fg[x] && last.bg === bg[x]) last.text += ch[x]
+      else runs.push({ text: ch[x]!, fg: fg[x]!, bg: bg[x] })
+    }
+    return runs
+  })
+
+  // One hit-test for the whole row: map the clicked column to the marker/intervention there
+  // (interventions win on a tie, matching the paint order). Replaces the per-box handlers + the
+  // F34 label click-forwarding. ASSUMPTION: this row starts at screen column 0, so the mouse
+  // event's absolute x equals the timeline column. That holds today (the bar is full-width with
+  // no left gutter), but if a left margin/sidebar/border is ever added around this row, subtract
+  // the row's screen origin here — otherwise every click maps to the wrong column.
+  // Off-window markers are clamped to x=0/width-1; if several share an edge cell only the
+  // topmost (last-painted) opens, consistent with the paint.
+  type Hit = { kind: "iv"; iv: InterventionMarker } | { kind: "turn"; turn: MonitorTurn }
+  const entityAt = (x: number): Hit | null => {
+    for (let i = props.layout.interventions.length - 1; i >= 0; i--) {
+      const ip = props.layout.interventions[i]!
+      if (ip.x === x) return { kind: "iv", iv: ip.intervention }
+    }
+    for (let i = props.layout.markers.length - 1; i >= 0; i--) {
+      const mp = props.layout.markers[i]!
+      if (mp.x === x) return { kind: "turn", turn: mp.turn }
+    }
+    return null
+  }
 
   return (
-    <box width={props.width}>
-      {/* Height anchor (full-width spaces under everything). */}
-      <text fg="gray">{" ".repeat(props.width)}</text>
-      {/* Region-colored line: the dashes carry each region's bg so the market
-          session is visible (a separate full-width line on top would overwrite
-          the backgrounds). Rendered after the anchor so it shows on top of it. */}
-      <For each={props.layout.regions}>
-        {(r) => (
-          <Show when={r.x1 > r.x0}>
-            <box position="absolute" left={r.x0} width={Math.max(r.x1 - r.x0, 1)}>
-              {/* Band tinted with the phase color (readable even if the terminal
-                  doesn't render bg). Dashes only — the PRE/OPEN/AFT label is drawn
-                  by the topmost overlay layer below (F34). */}
-              <text bg={REGION_BG[r.kind]} fg={phaseColor(r.kind)}>
-                {bandText(r.kind, Math.max(r.x1 - r.x0, 1))}
-              </text>
-            </box>
-          </Show>
-        )}
-      </For>
-      {/* Market open/close boundaries — bright, on top of the regions. */}
-      <Show when={reg() && reg()!.x0 >= 0 && reg()!.x0 < props.width}>
-        <box position="absolute" left={reg()!.x0} width={1}>
-          <text fg="#7faaff" bg={REGION_BG.regular}><b>│</b></text>
-        </box>
-      </Show>
-      <Show when={reg() && reg()!.x1 >= 0 && reg()!.x1 < props.width}>
-        <box position="absolute" left={reg()!.x1} width={1}>
-          <text fg="#7faaff" bg={REGION_BG.after}><b>│</b></text>
-        </box>
-      </Show>
-      {/* Turn markers */}
-      <For each={props.layout.markers}>
-        {(mp) => (
-          <Show when={mp.x >= 0 && mp.x < props.width}>
-            <box position="absolute" left={mp.x} width={1}
-              onMouseUp={(evt: any) => { props.onMarkerClick(mp.turn.id, evt.x ?? mp.x, 3); evt.stopPropagation?.() }}>
-              <text fg={markerColor(mp.turn.type, mp.turn.health)}>
-                {mp.offscreen === -1 ? "‹" : mp.offscreen === 1 ? "›" : markerGlyph(mp.turn.type, mp.turn.health)}
-              </text>
-            </box>
-          </Show>
-        )}
-      </For>
-      {/* Human intervention markers */}
-      <For each={props.layout.interventions}>
-        {(ip) => (
-          <Show when={ip.x >= 0 && ip.x < props.width}>
-            <box position="absolute" left={ip.x} width={1}
-              onMouseUp={(evt: any) => { props.onInterventionClick?.(ip.intervention.ts, evt.x ?? ip.x, 3); evt.stopPropagation?.() }}>
-              <text fg={interventionColor(ip.intervention.verb)}>
-                {ip.offscreen === -1 ? "‹" : ip.offscreen === 1 ? "›" : interventionGlyph(ip.intervention.verb)}
-              </text>
-            </box>
-          </Show>
-        )}
-      </For>
-      {/* Now indicator: a bright vertical bar under the TickRow's ▼, forming a
-          clear "now" cursor. Blinks green while a turn is in progress. */}
-      <Show when={props.layout.nowX >= 0 && props.layout.nowX < props.width}>
-        <box position="absolute" left={props.layout.nowX} width={1}>
-          <text fg={props.currentTurn && props.blinkOn ? "green" : "yellow"}><b>┃</b></text>
-        </box>
-      </Show>
-      {/* F34: region labels (PRE/OPEN/AFT) as the TOPMOST layer. Each glyph is its
-          own 1-cell box with a TRANSPARENT background (no `bg` set), so the band's
-          color shows through and nothing — neither a marker nor the now cursor — can
-          occlude the label text. Painted last ⇒ on top. The `│` boundaries, markers
-          and cursor keep their existing order/position underneath (we only lift the
-          text). A click on a label cell is forwarded to whatever marker/intervention
-          sits under that exact column (topmost = last-painted wins, matching the
-          direct handlers), so a marker hidden behind a letter stays clickable.
-          The column is known at render time, so this never relies on the (screen-
-          global) event x for matching — only as the popup anchor, as the direct
-          handlers do. Live-reads props.layout so it stays correct after a date shift. */}
-      <For each={labelCells(props.layout.regions, props.width, phaseShort)}>
-        {(lc) => {
-          const lastAt = <T extends { x: number }>(arr: T[]): T | undefined => {
-            for (let i = arr.length - 1; i >= 0; i--) if (arr[i]!.x === lc.x) return arr[i]
-            return undefined
-          }
-          return (
-            <box position="absolute" left={lc.x} width={1}
-              onMouseUp={(evt: any) => {
-                // Interventions paint after markers (on top), so prefer them on a tie.
-                const iv = lastAt(props.layout.interventions)
-                if (iv) { props.onInterventionClick?.(iv.intervention.ts, evt.x ?? lc.x, 3); evt.stopPropagation?.(); return }
-                const mp = lastAt(props.layout.markers)
-                if (mp) { props.onMarkerClick(mp.turn.id, evt.x ?? lc.x, 3); evt.stopPropagation?.() }
-                // No marker under this label column → no-op (let it fall through).
-              }}>
-              <text fg={phaseColor(lc.kind)}>{lc.ch}</text>
-            </box>
-          )
-        }}
-      </For>
+    <box
+      width={props.width}
+      onMouseUp={(evt: any) => {
+        const x = evt.x ?? -1
+        const hit = entityAt(x)
+        if (hit?.kind === "iv") { props.onInterventionClick?.(hit.iv, x, 3); evt.stopPropagation?.() }
+        else if (hit?.kind === "turn") { props.onMarkerClick(hit.turn, decisionsFor(hit.turn.id), x, 3); evt.stopPropagation?.() }
+      }}
+    >
+      <text>
+        <For each={spans()}>
+          {(s) => <span style={s.bg !== undefined ? { fg: s.fg, bg: s.bg } : { fg: s.fg }}>{s.text}</span>}
+        </For>
+      </text>
     </box>
   )
 }
