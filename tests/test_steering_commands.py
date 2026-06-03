@@ -220,6 +220,22 @@ def test_research_queued_when_turn_in_flight(tmp_path):
     assert ev["outcome"] == "queued" and "after the in-flight turn" in ev["detail"]
 
 
+def test_research_already_running_not_requeued(tmp_path):
+    # F44: same-type turn already in flight => report "already_running", do not queue.
+    h, _, _, channel, _ = _setup(tmp_path, turn_trigger_fn=lambda kind, corr: "already_running")
+    h.handle(_cmd("research"))
+    ev = _last_event(channel).payload
+    assert ev["outcome"] == "already_running" and "already in progress" in ev["detail"]
+
+
+def test_research_already_queued_not_requeued(tmp_path):
+    # F44: same-type turn already waiting => report "already_queued", do not re-queue.
+    h, _, _, channel, _ = _setup(tmp_path, turn_trigger_fn=lambda kind, corr: "already_queued")
+    h.handle(_cmd("research"))
+    ev = _last_event(channel).payload
+    assert ev["outcome"] == "already_queued" and "already queued" in ev["detail"]
+
+
 def test_research_errors_on_unexpected_status(tmp_path):
     h, _, _, channel, _ = _setup(tmp_path, turn_trigger_fn=lambda kind, corr: "unknown_turn")
     h.handle(_cmd("research"))

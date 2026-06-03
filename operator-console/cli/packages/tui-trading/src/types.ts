@@ -1,6 +1,9 @@
 export interface MonitorData {
   ts: string
   current_turn: CurrentTurn | null
+  // F44: count of manual turns waiting for the lock (excludes the in-flight one) —
+  // drives the progress label's "+N queued".
+  queued?: number
   workspace_root: string | null
   // F25: market-aware timeline metadata.
   market?: MarketRule

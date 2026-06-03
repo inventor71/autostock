@@ -163,6 +163,11 @@ class SteeringRuntime:
         lock instead of skipping. Returns "started" (ran now) or "queued" (runs after
         the in-flight turn). Only "research" is supported for now (F38 D1).
 
+        F44: if a turn of the same ``kind`` is already running (the in-flight turn,
+        auto or manual) or already queued, it is NOT re-queued — returns
+        "already_running" / "already_queued" so the operator is told it is already in
+        progress instead of stacking a duplicate.
+
         On completion an outcome event correlated to ``corr_id`` (the triggering
         command) is published so the operator gets a result report without polling:
         ``completed`` with the decision counts, or ``failed`` with the error. The
@@ -189,8 +194,13 @@ class SteeringRuntime:
             # channel writes happen on the bus worker (single-writer invariant).
             self.bus.submit(lambda: self.channel.emit_outcome(corr_id, outcome, detail))
 
+        # F44 dedup: the in-flight turn's type (set for every turn via _on_turn_start)
+        # is the "running" key — covers the auto premarket research turn too, so a
+        # manual /research fired while research is already running is rejected, not queued.
+        running_key = (self._current_turn or {}).get("type")
         return self.coordinator.start_priority_async(
-            run_fn, kind=f"manual_{kind}", on_done=_on_done)
+            run_fn, kind=f"manual_{kind}", on_done=_on_done,
+            dedup_key=kind, running_key=running_key)
 
     def _recent_context(self) -> str:
         directives = "; ".join(d.text for d in self.state.active_directives()) or "none"
@@ -563,9 +573,13 @@ class SteeringRuntime:
         shows the in-flight turn. Files only — no broker access."""
         try:
             root = self.executor.journal.root
+            # F44: count of manual turns waiting for the lock (excludes the in-flight
+            # one) — backs the TUI progress label's "+N queued".
+            running_key = (self._current_turn or {}).get("type")
             payload = {
                 "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
                 "current_turn": self._current_turn,
+                "queued": len(self.coordinator.queued_kinds(running_key)),
                 "workspace_root": str(root),
                 # F25: market-aware timeline metadata.
                 "market": self._market_rule,

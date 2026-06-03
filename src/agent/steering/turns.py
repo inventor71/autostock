@@ -42,6 +42,10 @@ class TurnCoordinator:
         self._waiters_lock = threading.Lock()
         self._reconcile_waiting = 0
         self._manual_waiting = 0  # F38: a manual /research is queued (top priority)
+        # F44: manual turn dedup. One key per turn type that is queued-or-running, so a
+        # same-type manual trigger is rejected instead of stacking a duplicate in the
+        # queue. Guarded by _waiters_lock.
+        self._pending_keys: set[str] = set()
 
     @property
     def reconcile_waiting(self) -> int:
@@ -52,6 +56,17 @@ class TurnCoordinator:
     def manual_waiting(self) -> int:
         with self._waiters_lock:
             return self._manual_waiting
+
+    def queued_kinds(self, running_key: str | None = None) -> list[str]:
+        """F44: manual turn kinds **waiting** for the lock (queued, not yet running).
+        ``running_key`` (the in-flight turn's type) is excluded so a manual turn that
+        already holds the lock is not double-counted as queued. Backs the ``+N queued``
+        count in the TUI progress label."""
+        with self._waiters_lock:
+            ks = set(self._pending_keys)
+        if running_key is not None:
+            ks.discard(running_key)
+        return sorted(ks)
 
     def try_scheduled_turn(self, run_fn: Callable[[], Any]) -> tuple[str, Any]:
         """Run a scheduled turn IFF no turn is in-flight and nothing higher-priority
@@ -74,7 +89,9 @@ class TurnCoordinator:
 
     def start_priority_async(self, run_fn: Callable[[], Any], *, kind: str = "manual",
                              on_done: Callable[[Any, BaseException | None], None] | None = None,
-                             timeout: float = 1800.0) -> str:
+                             timeout: float = 1800.0,
+                             dedup_key: str | None = None,
+                             running_key: str | None = None) -> str:
         """Start a **top-priority, never-dropped** turn on a background thread,
         returning immediately. The human's explicit ``/research`` (F38) must run, not
         be silently bumped by an automatic scheduled/wake/reconcile turn — so unlike
@@ -93,10 +110,25 @@ class TurnCoordinator:
         non-blocking ``bus.submit`` of the completion event); its exceptions are
         swallowed.
 
-        Returns ``"started"`` (the lock was free — runs now) or ``"queued"`` (a turn
-        is in-flight — runs next). Never ``"busy"``/``"skipped"``; the turn is not
-        dropped. Completion is observed via turns.jsonl + the ``on_done`` event."""
+        F44 dedup: when ``dedup_key`` is given, a turn of that key that is already
+        **running** (``running_key == dedup_key`` — the in-flight turn's type, which
+        covers auto/scheduled turns too) or already **queued** (key in
+        ``_pending_keys``) is **not enqueued**. The check + register is atomic under
+        ``_waiters_lock``. ``on_done`` is NOT called for a deduped trigger (nothing ran).
+
+        Returns ``"started"`` (the lock was free — runs now), ``"queued"`` (a turn is
+        in-flight — runs next), ``"already_running"`` (same-type turn in flight), or
+        ``"already_queued"`` (same-type turn already waiting). Completion of a started/
+        queued turn is observed via turns.jsonl + the ``on_done`` event."""
         with self._waiters_lock:
+            if dedup_key is not None:
+                if running_key is not None and running_key == dedup_key:
+                    logger.info("manual turn ({}) rejected: same-type turn in progress", kind)
+                    return "already_running"
+                if dedup_key in self._pending_keys:
+                    logger.info("manual turn ({}) rejected: same-type turn already queued", kind)
+                    return "already_queued"
+                self._pending_keys.add(dedup_key)
             self._manual_waiting += 1
         free = not self._turn_lock.locked()  # best-effort hint for the ack only
 
@@ -131,6 +163,8 @@ class TurnCoordinator:
             finally:
                 with self._waiters_lock:
                     self._manual_waiting -= 1
+                    if dedup_key is not None:
+                        self._pending_keys.discard(dedup_key)
 
         threading.Thread(target=_run, name=f"manual-turn-{kind}", daemon=True).start()
         logger.info("manual turn ({}) {} (top priority)", kind,
