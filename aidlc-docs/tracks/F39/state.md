@@ -8,7 +8,7 @@
 - **Track ID**: F39
 - **Title**: Normal 모드에서 운영자 콘솔 에이전트가 코드/소스 내부 질문에 답하지 않도록 차단 — supervisor 모드 아닐 때 코드 읽기 시도·추측 금지, 운영 질문은 steering 데이터로 응답
 - **Type**: feature (behavior hardening)
-- **Status**: merge-awaiting (commit 6ba79d1 on feat/F39, base 72aba01; ↑1 over main — `/ai-dlc-merge` 큐 등록)
+- **Status**: merged → main f6569ea (2026-06-03)  <!-- /ai-dlc-merge: rebased onto c49e4fd, verify green (operator-console 144/0 · verify-lockdown 2-profile PASS · registry 16/0), --no-ff merged -->
 - **Branch**: feat/F39 (6ba79d1)
 - **Worktree**: .claude/worktrees/F39
 - **Submodule branch**: — (monorepo, post-F35: `operator-console/` is a normal in-repo dir)
