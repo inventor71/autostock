@@ -14,16 +14,18 @@ class BaseDataProvider(ABC):
     @abstractmethod
     def get_bars(
         self,
-        symbol: str,
+        symbol: str | list[str],
         timeframe: TimeFrame = TimeFrame.DAY_1,
         start: datetime | None = None,
         end: datetime | None = None,
         limit: int = 100,
-    ) -> pd.DataFrame:
-        """Fetch OHLCV bars for a symbol.
+    ) -> pd.DataFrame | dict[str, pd.DataFrame]:
+        """Fetch OHLCV bars for one or more symbols.
 
-        Returns DataFrame with columns: open, high, low, close, volume
-        Index should be DatetimeIndex.
+        Returns:
+            - ``pd.DataFrame`` when ``symbol`` is a single str (columns: open, high, low, close, volume;
+              DatetimeIndex).
+            - ``dict[str, pd.DataFrame]`` when ``symbol`` is a list of str.
         """
         pass
 
