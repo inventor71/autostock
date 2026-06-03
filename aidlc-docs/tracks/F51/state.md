@@ -7,7 +7,7 @@
 - **Track ID**: F51
 - **Title**: 장초반 시그널 기록 및 분석 (Early-Session Signal Detection & Analysis)
 - **Type**: feature
-- **Status**: merge-awaiting
+- **Status**: merged → main faec7b7 (2026-06-04)
 - **Branch**: feat/F51
 - **Worktree**: .claude/worktrees/F51
 - **Submodule branch**: — (monorepo)

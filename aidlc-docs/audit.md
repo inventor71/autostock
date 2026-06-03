@@ -1,5 +1,6 @@
 # AI-DLC Audit Log
 
+- 2026-06-04 — **F51 merged** (faec7b7): early-session signal detection — 1-min bar circular buffer, ±5%/10min trigger, pre/post window dump, multi-symbol get_bars provider extension (1287 lines, 13 files + 28 new tests + 300 PBT examples, 686 regression green, 0 new deps)
 - 2026-06-04 — **F53 merged** (621b227): MCP steer_read /thesis /theses — expose agent position thesis files from workspace/positions/ (141 lines, 8 files TS only, 0 daemon changes, 686+46 tests green)
 - 2026-06-04 — **F52 merged** (4e64781): execution audit trail + selective cursor advancement — persist all outcomes to execution_outcomes.jsonl, cursor stops at no_order/error for retry, emit exec_outcome steering events (317 lines, 7 files, 680 tests green)
 - 2026-06-03 — **F46 merged** (fb06517): agent account tool down — prepend venv bin to agent PATH (51 lines, 2 files, 54 tests green)
