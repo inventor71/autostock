@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "fs"
 import { join } from "path"
-import type { MonitorData, MonitorTurn, MonitorDecision, InterventionMarker } from "../types"
+import type { MonitorData, MonitorTurn, MonitorDecision, InterventionMarker, AgentReport } from "../types"
 
 // F25 FR-2: resolve a session's turns + interventions for a given ET date.
 // The current/upcoming session comes straight from monitor.json (live). For any
@@ -165,6 +165,59 @@ export function readHistoricalSession(root: string | null, etDate: string): Sess
     }))
 
   return { turns, interventions, decisions }
+}
+
+// F41: redact obvious secrets from agent evaluation text before display, mirroring
+// `_mask_secrets` in src/agent/steering/runtime.py (the value after a token/key/secret
+// key, and any long opaque hex/base64 run). The evaluations are the agent's own
+// reasoning — same trust class as the decision `reason` shown elsewhere — but masking
+// here keeps the exposure posture explicit (NFR-4).
+const SECRET_KV = /\b(token|secret|api[_-]?key|password|authorization)\b(\s*[=:]\s*)\S+/gi
+const SECRET_BLOB = /\b[A-Za-z0-9_-]{24,}\b/g
+
+export function maskSecrets(text: string): string {
+  if (!text) return ""
+  return text.replace(SECRET_KV, (_m, k, sep) => `${k}${sep}***`).replace(SECRET_BLOB, "***")
+}
+
+/**
+ * F41: read a turn's persisted multi-agent evaluation report
+ * (workspace/agent_reports/<turn_id>.json), or null if the turn was single-session,
+ * the file is absent (older turns), or unreadable. Works for both the live and any
+ * historical session — it only needs (workspace_root, turn_id), the same direct-file
+ * approach as readHistoricalSession. Agent/synthesis text is masked for display.
+ */
+export function readAgentReport(root: string | null, turnId: string | null | undefined): AgentReport | null {
+  const id = (turnId ?? "").trim()
+  if (!root || !id) return null
+  const path = join(root, "agent_reports", `${id}.json`)
+  if (!existsSync(path)) return null
+  let raw: any
+  try {
+    raw = JSON.parse(readFileSync(path, "utf-8"))
+  } catch {
+    return null
+  }
+  const agents = Array.isArray(raw?.agents)
+    ? raw.agents.map((a: any, i: number) => ({
+        index: Number(a?.index ?? i),
+        label: String(a?.label ?? `Agent ${i + 1}`),
+        role: String(a?.role ?? ""),
+        status: a?.status === "error" || a?.status === "timeout" ? a.status : "ok",
+        text: maskSecrets(String(a?.text ?? "")),
+        error: a?.error != null ? String(a.error) : null,
+      }))
+    : []
+  return {
+    turn_id: String(raw?.turn_id ?? id),
+    et_date: String(raw?.et_date ?? ""),
+    ts: String(raw?.ts ?? ""),
+    turn_type: String(raw?.turn_type ?? "research"),
+    mode: String(raw?.mode ?? ""),
+    n_agents: Number(raw?.n_agents ?? agents.length),
+    agents,
+    synthesis: { text: maskSecrets(String(raw?.synthesis?.text ?? "")) },
+  }
 }
 
 /** Step an ISO date string (YYYY-MM-DD) by ±1 day. */
