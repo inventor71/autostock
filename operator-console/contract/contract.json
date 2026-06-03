@@ -33,7 +33,8 @@
     "pending",
     "agent_question",
     "lifecycle",
-    "reconcile"
+    "reconcile",
+    "exec_outcome"
   ],
   "command_fields": [
     "id",

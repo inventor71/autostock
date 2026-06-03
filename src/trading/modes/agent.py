@@ -156,9 +156,39 @@ class AgentTradingMode:
         run_fn()
         return True
 
-    def _exec_pending_and_exits(self) -> None:
-        self.executor.execute_pending()
+    def _exec_pending_and_exits(self):
+        outcomes = self.executor.execute_pending()
         self.executor.run_risk_exits()
+        return outcomes
+
+    def _emit_exec_outcomes(self, outcomes, context: str = "") -> None:
+        """Surface non-executed outcomes to the steering channel so the operator
+        and agent are aware of failures that would otherwise be silent."""
+        if self.steering is None or not outcomes:
+            return
+        for o in outcomes:
+            if o.status in ("no_order", "error"):
+                logger.warning(
+                    "{}: {} {} -> {} ({})",
+                    context, o.decision.symbol, o.decision.action,
+                    o.status, o.detail,
+                )
+                try:
+                    from src.agent.steering.records import SteeringEvent
+                    self.steering.channel.append_event(
+                        SteeringEvent(
+                            kind="exec_outcome",
+                            payload={
+                                "symbol": o.decision.symbol,
+                                "action": o.decision.action,
+                                "status": o.status,
+                                "detail": o.detail,
+                                "ts": o.decision.ts.isoformat(),
+                            },
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to emit exec outcome event: {e}")
 
     # ------------------------------------------------------------------ #
     # Cycles
@@ -179,7 +209,8 @@ class AgentTradingMode:
         if self._paused():
             self._funnel(self.executor.run_risk_exits)  # protection still runs (BR-3.1)
             return
-        self._funnel(self._exec_pending_and_exits)
+        outcomes = self._funnel(self._exec_pending_and_exits)
+        self._emit_exec_outcomes(outcomes, context="open_execute")
 
     def _intraday(self) -> None:
         """Light intraday turn + execution — only while the session is open."""
@@ -192,7 +223,8 @@ class AgentTradingMode:
         # F3: inject the Python-assembled brief (steering on); else legacy prompt.
         brief = self._brief(include_news=True) if self.steering is not None else None
         self._scheduled_turn(lambda: self.orchestrator.run_intraday(brief))
-        self._funnel(self._exec_pending_and_exits)
+        outcomes = self._funnel(self._exec_pending_and_exits)
+        self._emit_exec_outcomes(outcomes, context="intraday")
 
     def _save_quality_report(self) -> None:
         """EOD: persist decision quality report to workspace/quality/<date>.json.
@@ -262,7 +294,8 @@ class AgentTradingMode:
                     outcomes=outcomes, surge_count=surge_count,
                 )
             )
-            self._funnel(self.executor.execute_pending)
+            outcomes = self._funnel(self.executor.execute_pending)
+            self._emit_exec_outcomes(outcomes, context="eod")
             self._save_quality_report()
 
         # Daily marks for the track record. record_trade_ledger() is a no-op on
