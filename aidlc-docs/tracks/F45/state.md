@@ -8,9 +8,9 @@
 - **Track ID**: F45
 - **Title**: 타임라인 바를 현재시각이 포함된 12h 윈도우로 자동 전환 + [<]/[>] 버튼을 12h 단위 네비로
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
-- **Branch**: feat/F45
-- **Worktree**: .claude/worktrees/F45
+- **Status**: merged → main 007aa11 (2026-06-03)
+- **Branch**: feat/F45 (merged, deleted)
+- **Worktree**: — (제거됨)
 - **Submodule branch**: — (monorepo, post-F35; operator-console/cli/packages/tui-trading touched)
 - **Base commit**: 777cf40
 - **Start Date**: 2026-06-03T12:12:37Z
