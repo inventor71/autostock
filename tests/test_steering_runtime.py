@@ -13,7 +13,7 @@ import pandas as pd
 
 from src.agent.executor import DecisionExecutor
 from src.agent.journal import Journal
-from src.agent.steering.records import SteeringCommand
+from src.agent.steering.records import SteeringCommand, SteeringEvent
 from src.agent.steering.runtime import SteeringRuntime
 from src.core.models import Order
 from src.core.types import OrderSide
@@ -25,8 +25,14 @@ from src.trading.modes.agent import AgentTradingMode
 class _StubOrchestrator:
     def __init__(self):
         self.calls = []
+        self.last_new_decisions = []
+        self.last_kept = []
 
-    def run_morning_research(self): self.calls.append("research")
+    def run_morning_research(self):
+        self.calls.append("research")
+        # mimic a turn that produced decisions (read by the F38 completion event)
+        self.last_new_decisions = [object(), object()]
+        self.last_kept = [object()]
     def run_intraday(self, quotes=None): self.calls.append("intraday")
     def run_eod_review(self, outcomes=None): self.calls.append("eod")
     def run_reconcile(self, context=""): self.calls.append("reconcile"); return "ok"
@@ -66,6 +72,50 @@ def _wait(cond, timeout=3.0):
             return True
         time.sleep(0.01)
     return False
+
+
+def _events(rt):
+    p = rt.channel.events_file
+    if not p.exists():
+        return []
+    return [SteeringEvent.model_validate_json(ln) for ln in p.read_text().splitlines() if ln.strip()]
+
+
+def test_research_triggers_then_reports_completion(tmp_path):
+    # F38: /research starts a background turn (skip-if-busy), and when it finishes a
+    # completion event correlated to the triggering command is published — so the
+    # operator gets a result report without polling.
+    rt, _, orch = _runtime(tmp_path)
+    rt.start()
+    try:
+        cmd = _drop(rt, verb="research")
+        rt.poll_commands()
+        assert _wait(lambda: any(e.payload.get("outcome") == "completed" for e in _events(rt)))
+        evs = _events(rt)
+        outcomes = [e.payload.get("outcome") for e in evs]
+        assert "triggered" in outcomes and "completed" in outcomes
+        comp = next(e for e in evs if e.payload.get("outcome") == "completed")
+        assert comp.corr_id == cmd.id                  # correlated to the trigger
+        assert "2 decision" in comp.payload["detail"]  # decision count reported
+        assert "1 in-universe" in comp.payload["detail"]
+        assert orch.calls.count("research") == 1       # the turn actually ran once
+    finally:
+        rt.stop()
+
+
+def test_research_reports_failure_when_turn_raises(tmp_path):
+    rt, _, orch = _runtime(tmp_path)
+    orch.run_morning_research = lambda: (_ for _ in ()).throw(RuntimeError("llm down"))
+    rt.start()
+    try:
+        cmd = _drop(rt, verb="research")
+        rt.poll_commands()
+        assert _wait(lambda: any(e.payload.get("outcome") == "failed" for e in _events(rt)))
+        comp = next(e for e in _events(rt) if e.payload.get("outcome") == "failed")
+        assert comp.corr_id == cmd.id
+        assert "llm down" in comp.payload["detail"]
+    finally:
+        rt.stop()
 
 
 def test_dropped_command_flows_poll_bus_handler(tmp_path):

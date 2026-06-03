@@ -31,6 +31,8 @@ SteeringVerb = Literal[
     "pause", "resume", "halt_entries", "allow_entries", "kill",
     "approve", "reject", "unlock", "cancel",
     "note", "directive", "directive_clear", "answer",
+    # F38: on-demand turn trigger (human starts a research turn between schedules)
+    "research",
     "place_order", "cancel_order", "cancel_all", "replace_order",
     "close_position", "close_all",
 ]

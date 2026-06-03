@@ -42,6 +42,7 @@ server.registerTool(
       "place an order yourself. Command grammar:\n" +
       "TRADES: /buy SYM N$|Nsh · /sell SYM N%|Nsh|N$ · /flatten SYM · /flatten all · /stop SYM PRICE\n" +
       "LIFECYCLE: /pause · /resume · /halt-entries · /allow-entries · /kill\n" +
+      "TURN: /research → start a research turn now (between schedules; skipped if a turn is already running, deferred if paused)\n" +
       "AGENT APPROVALS (items in snapshot.pending): /approve ID · /reject ID\n" +
       "CANCEL — two distinct meanings, pick by argument:\n" +
       "  • /cancel SYM  → cancel that symbol's resting protective orders\n" +

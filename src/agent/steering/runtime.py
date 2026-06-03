@@ -69,6 +69,7 @@ class SteeringRuntime:
         self.handler = CommandHandler(
             self.channel, self.state, executor,
             reconcile_worker=self.reconcile_worker, reconcile_run_fn=self._reconcile_run_fn,
+            turn_trigger_fn=self._trigger_turn,
         )
         self._pushed_questions: set[str] = set()
         # F3: in-proc snapshot cache (critic#4) so the BriefAssembler/WakeDetector
@@ -128,6 +129,44 @@ class SteeringRuntime:
     # ---- reconcile -------------------------------------------------------- #
     def _reconcile_run_fn(self):
         return self.orchestrator.run_reconcile(self._recent_context())
+
+    # ---- manual turn trigger (F38) ---------------------------------------- #
+    def _trigger_turn(self, kind: str, corr_id: str) -> str:
+        """Start a named turn on demand (human steering verb). Off-thread via the
+        coordinator so the CommandBus worker is not blocked for the turn's duration.
+        Top priority + never dropped (F38): a deliberate human command must not be
+        bumped by an automatic scheduled/wake/reconcile turn, so it queues for the
+        lock instead of skipping. Returns "started" (ran now) or "queued" (runs after
+        the in-flight turn). Only "research" is supported for now (F38 D1).
+
+        On completion an outcome event correlated to ``corr_id`` (the triggering
+        command) is published so the operator gets a result report without polling:
+        ``completed`` with the decision counts, or ``failed`` with the error. The
+        emit is enqueued on the CommandBus worker (channel writes belong there), not
+        done on the turn thread."""
+        import time
+
+        run_fns = {"research": self.orchestrator.run_morning_research}
+        run_fn = run_fns.get(kind)
+        if run_fn is None:
+            return "unknown_turn"
+        started = time.monotonic()
+
+        def _on_done(_result, error) -> None:
+            elapsed = time.monotonic() - started
+            if error is not None:
+                outcome, detail = "failed", f"{kind} turn failed: {error} ({elapsed:.0f}s)"
+            else:
+                n = len(self.orchestrator.last_new_decisions)
+                kept = len(self.orchestrator.last_kept)
+                detail = (f"{kind} turn complete: {n} decision(s), {kept} in-universe "
+                          f"({elapsed:.0f}s)")
+                outcome = "completed"
+            # channel writes happen on the bus worker (single-writer invariant).
+            self.bus.submit(lambda: self.channel.emit_outcome(corr_id, outcome, detail))
+
+        return self.coordinator.start_priority_async(
+            run_fn, kind=f"manual_{kind}", on_done=_on_done)
 
     def _recent_context(self) -> str:
         directives = "; ".join(d.text for d in self.state.active_directives()) or "none"

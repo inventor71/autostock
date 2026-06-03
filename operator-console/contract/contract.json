@@ -18,6 +18,7 @@
     "directive",
     "directive_clear",
     "answer",
+    "research",
     "place_order",
     "cancel_order",
     "cancel_all",

@@ -10,6 +10,14 @@ test("lifecycle verbs", () => {
   expect(ok("/allow-entries").verb).toBe("allow_entries");
 });
 
+test("F38 /research — on-demand turn trigger (no args, confirm-required)", () => {
+  const d = ok("/research");
+  expect(d.verb).toBe("research");
+  expect(d.args).toEqual({});
+  expect(d.confirmRequired).toBe(true);
+  expect(d.readOnly).toBe(false);
+});
+
 test("sell with % / sh / $ and symbol uppercased", () => {
   const d = ok("/sell aapl 50%");
   expect(d.verb).toBe("sell");
