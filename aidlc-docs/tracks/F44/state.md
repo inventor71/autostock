@@ -8,9 +8,9 @@
 - **Track ID**: F44
 - **Title**: 진행 중 turn 라벨(TUI) + 동일 type turn이 in-flight면 큐잉 대신 "already in progress" 반환
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test green (pytest 647 / tui-trading 52 / typecheck 19) -->
-- **Branch**: feat/F44
-- **Worktree**: .claude/worktrees/F44
+- **Status**: merged → main dc73fcb (2026-06-03)
+- **Branch**: feat/F44 (merged, deleted)
+- **Worktree**: — (제거됨)
 - **Submodule branch**: — (monorepo, post-F35; operator-console/cli touched for the label)
 - **Base commit**: bc25f93
 - **Start Date**: 2026-06-03T12:05:32Z

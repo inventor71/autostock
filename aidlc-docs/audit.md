@@ -1,6 +1,7 @@
 # AI-DLC Audit Log
 
 - 2026-06-03 — **F46 merged** (fb06517): agent account tool down — prepend venv bin to agent PATH (51 lines, 2 files, 54 tests green)
+- 2026-06-03 — **F44 merged** (dc73fcb): in-flight turn progress label + same-type turn dedup (584 lines, 14 files, 39+8 tests green)
 - 2026-06-03 — **F45 merged** (007aa11): timeline 12h window auto-align + nav buttons (608 lines, 10 files, 43 tests green)
 - 2026-06-03 — **F43 merged** (b0ed183): daemon code-version skew self-heal (396 lines, 8 files, 9+6 tests green)
 
