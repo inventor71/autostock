@@ -1,0 +1,12 @@
+{
+  "name": "@tui-trading/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@opentui/core": "catalog:",
+    "@opentui/solid": "catalog:",
+    "@opentui/keymap": "catalog:",
+    "solid-js": "catalog:"
+  }
+}
