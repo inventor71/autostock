@@ -25,7 +25,7 @@ def create_data_provider(settings):
 
 def create_broker(settings):
     """Create broker based on config."""
-    provider = settings.broker.get("provider", settings.broker.get("name", "alpaca"))
+    provider = settings.broker.provider
     if provider == "broker_api":
         from src.execution.brokers.broker_api_broker import BrokerApiBroker
         return BrokerApiBroker(
