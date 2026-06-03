@@ -101,6 +101,8 @@ export function parseCommand(input: string): CommandDraft {
       return mk("stop", { symbol, price }, `STOP ${symbol} -> ${price}`);
     }
     case "pause": case "resume": case "halt_entries": case "allow_entries": case "kill":
+    // F38: /research — on-demand turn trigger (no args; confirm like other lifecycle verbs)
+    case "research":
       return mk(head as SteeringVerb, {}, head.replace("_", "-"));
     case "approve": {
       const id = intArg(rest[0], "approve <id>");

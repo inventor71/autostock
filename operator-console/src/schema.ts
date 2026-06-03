@@ -9,6 +9,8 @@ export type SteeringVerb =
   | "pause" | "resume" | "halt_entries" | "allow_entries" | "kill"
   | "approve" | "reject" | "unlock" | "cancel"
   | "note" | "directive" | "directive_clear" | "answer"
+  // F38: on-demand turn trigger (human starts a research turn between schedules)
+  | "research"
   // F9 structured Alpaca-shaped order/management verbs (emitted by the new
   // structured MCP tools, NOT the deterministic parser).
   | "place_order" | "cancel_order" | "cancel_all" | "replace_order"
@@ -17,7 +19,7 @@ export type SteeringVerb =
 // verbs that mutate the book/lifecycle → require human confirm before write (BR-B1)
 export const TRADE_VERBS = new Set<SteeringVerb>(["buy", "sell", "flatten", "flatten_all", "stop"]);
 export const LIFECYCLE_VERBS = new Set<SteeringVerb>([
-  "pause", "resume", "halt_entries", "allow_entries", "kill",
+  "pause", "resume", "halt_entries", "allow_entries", "kill", "research",
 ]);
 export const DESTRUCTIVE_VERBS = new Set<SteeringVerb>(["flatten_all", "kill"]); // require CONFIRM keyword
 
@@ -52,6 +54,7 @@ export const ALL_VERBS = [
   "pause", "resume", "halt_entries", "allow_entries", "kill",
   "approve", "reject", "unlock", "cancel",
   "note", "directive", "directive_clear", "answer",
+  "research",
   "place_order", "cancel_order", "cancel_all", "replace_order",
   "close_position", "close_all",
 ] as const satisfies readonly SteeringVerb[];

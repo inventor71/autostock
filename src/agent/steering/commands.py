@@ -34,6 +34,8 @@ _KIND = {
     # F9 structured verbs
     "place_order": "trade", "cancel_order": "lifecycle", "cancel_all": "lifecycle",
     "replace_order": "trade", "close_position": "trade", "close_all": "trade",
+    # F38 manual turn trigger
+    "research": "lifecycle",
 }
 
 
@@ -69,7 +71,8 @@ class CommandHandler:
     def __init__(self, channel: SteeringChannel, state: SteeringState,
                  executor: DecisionExecutor, *,
                  reconcile_worker: ReconcileWorker | None = None,
-                 reconcile_run_fn: Callable[[], object] | None = None):
+                 reconcile_run_fn: Callable[[], object] | None = None,
+                 turn_trigger_fn: Callable[[str, str], str] | None = None):
         self.channel = channel
         self.state = state
         self.executor = executor
@@ -79,6 +82,10 @@ class CommandHandler:
         self.journal = executor.journal
         self.reconcile_worker = reconcile_worker
         self.reconcile_run_fn = reconcile_run_fn
+        # F38: start a named turn (e.g. "research") off-thread, correlated to the
+        # triggering command id so the async completion event joins the trigger.
+        # Returns "started"/"busy"/"reconcile_waiting". None ⇒ unwired (steering off).
+        self.turn_trigger_fn = turn_trigger_fn
         self._log_file = self.journal.root / "human_directives.jsonl"
 
     # ---- dispatch --------------------------------------------------------- #
@@ -435,6 +442,37 @@ class CommandHandler:
             self.channel.queue_offhours(cmd)
             self._emit(cmd, "deferred", "KILL: paused now; flatten queued for next open")
         self._reconcile()
+
+    # ---- turn trigger verb (F38) ----------------------------------------- #
+    def _v_research(self, cmd: SteeringCommand) -> None:
+        """Manually start a morning-research turn between scheduled runs.
+
+        ``paused`` blocks it (deferred); ``market_open`` is intentionally NOT checked
+        -- research runs pre-market. Non-blocking: the turn runs on a background
+        thread (FR-4), so this returns at once and the CommandBus worker stays free.
+
+        Top priority + never dropped (F38 follow-up): a deliberate human command must
+        not be silently bumped by an automatic wake/reconcile/scheduled turn, so it
+        queues for the turn lock instead of skipping — "started" if free, "queued" if
+        a turn is in-flight (it runs next). When it finishes, a ``completed``/
+        ``failed`` event correlated to this command id is emitted (wired by the
+        runtime trigger), so the operator gets a result report without polling."""
+        if self.state.run_state().paused:
+            self._emit(cmd, "deferred", "paused — research not run (resume first)")
+            return
+        if self.turn_trigger_fn is None:
+            self._emit(cmd, "error", "manual turn trigger not wired")
+            return
+        status = self.turn_trigger_fn("research", cmd.id)
+        if status == "started":
+            self._emit(cmd, "triggered",
+                       "research turn started (runs in background; completion will report)")
+        elif status == "queued":
+            self._emit(cmd, "queued",
+                       "research queued — runs right after the in-flight turn "
+                       "(completion will report)")
+        else:  # unknown_turn or any unexpected status
+            self._emit(cmd, "error", f"research not started ({status})")
 
     # ---- approval / lock verbs ------------------------------------------- #
     def _v_approve(self, cmd: SteeringCommand) -> None:

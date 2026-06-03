@@ -18,27 +18,49 @@ reconcile, instead of one fixed run_fn.
 from __future__ import annotations
 
 import threading
+import time
 from typing import Any, Callable
 
 from loguru import logger
 
 
 class TurnCoordinator:
+    """Serializes all LLM-session turns with three priority tiers (highest first):
+
+    1. **manual** (``start_priority_async``) — a human's explicit ``/research`` (F38).
+       Top priority and **never dropped**: it blocks (bounded) for the lock on a
+       background thread and runs as soon as the current turn frees. Scheduled AND
+       reconcile/wake turns yield to a queued manual turn (a deliberate human command
+       must not be bumped by an automatic turn).
+    2. **reconcile / wake** (``reconcile_turn``) — out-of-band human-reconcile and
+       event-driven wake turns. Priority over scheduled; yields to a queued manual.
+    3. **scheduled** (``try_scheduled_turn``) — morning/intraday/eod; skip-if-busy.
+    """
+
     def __init__(self) -> None:
         self._turn_lock = threading.Lock()
         self._waiters_lock = threading.Lock()
         self._reconcile_waiting = 0
+        self._manual_waiting = 0  # F38: a manual /research is queued (top priority)
 
     @property
     def reconcile_waiting(self) -> int:
         with self._waiters_lock:
             return self._reconcile_waiting
 
-    def try_scheduled_turn(self, run_fn: Callable[[], Any]) -> tuple[str, Any]:
-        """Run a scheduled turn IFF no turn is in-flight and no reconcile is
-        waiting; otherwise skip (never queue). Returns ('ran', value) or
-        ('skipped', reason)."""
+    @property
+    def manual_waiting(self) -> int:
         with self._waiters_lock:
+            return self._manual_waiting
+
+    def try_scheduled_turn(self, run_fn: Callable[[], Any]) -> tuple[str, Any]:
+        """Run a scheduled turn IFF no turn is in-flight and nothing higher-priority
+        is waiting (manual or reconcile); otherwise skip (never queue). Returns
+        ('ran', value) or ('skipped', reason)."""
+        with self._waiters_lock:
+            if self._manual_waiting > 0:
+                logger.info("scheduled turn skipped: manual turn has priority")
+                return ("skipped", "manual_waiting")
             if self._reconcile_waiting > 0:
                 logger.info("scheduled turn skipped: reconcile has priority")
                 return ("skipped", "reconcile_waiting")
@@ -50,6 +72,71 @@ class TurnCoordinator:
         finally:
             self._turn_lock.release()
 
+    def start_priority_async(self, run_fn: Callable[[], Any], *, kind: str = "manual",
+                             on_done: Callable[[Any, BaseException | None], None] | None = None,
+                             timeout: float = 1800.0) -> str:
+        """Start a **top-priority, never-dropped** turn on a background thread,
+        returning immediately. The human's explicit ``/research`` (F38) must run, not
+        be silently bumped by an automatic scheduled/wake/reconcile turn — so unlike
+        ``try_scheduled_turn`` this does NOT skip on contention: it registers as a
+        manual waiter (scheduled + reconcile turns then yield to it) and **blocks for
+        the lock** on a daemon thread, running as soon as the current turn (if any)
+        finishes. The caller (the single CommandBus worker) is never blocked — the
+        wait happens on the spawned thread. The shared ``turn_lock`` still serializes
+        sessions (NFR-1: never two concurrent ``claude --resume`` turns).
+
+        ``on_done(result, error)`` -- if given -- is called when the turn finishes
+        (``error`` is the exception, or ``None`` on success, or a ``TimeoutError`` if
+        the lock could not be acquired within ``timeout``), still **holding the turn
+        lock** so post-turn state (e.g. the orchestrator's last_new_decisions) is
+        stable when the completion is reported. It must not block (F38 wires it to a
+        non-blocking ``bus.submit`` of the completion event); its exceptions are
+        swallowed.
+
+        Returns ``"started"`` (the lock was free — runs now) or ``"queued"`` (a turn
+        is in-flight — runs next). Never ``"busy"``/``"skipped"``; the turn is not
+        dropped. Completion is observed via turns.jsonl + the ``on_done`` event."""
+        with self._waiters_lock:
+            self._manual_waiting += 1
+        free = not self._turn_lock.locked()  # best-effort hint for the ack only
+
+        def _run() -> None:
+            result: Any = None
+            error: BaseException | None = None
+            try:
+                if not self._turn_lock.acquire(timeout=timeout):
+                    error = TimeoutError(f"turn lock busy > {timeout:g}s")
+                    logger.warning("manual turn ({}) timed out acquiring turn_lock ({}s)",
+                                   kind, timeout)
+                    if on_done is not None:
+                        try:
+                            on_done(None, error)
+                        except Exception as e:
+                            logger.error("manual turn ({}) on_done failed: {}", kind, e)
+                    return
+                try:
+                    try:
+                        result = run_fn()
+                    except Exception as e:  # best-effort: never kill the daemon (BR-6.3)
+                        error = e
+                        logger.error("manual turn ({}) failed (best-effort): {}", kind, e)
+                    finally:
+                        try:
+                            if on_done is not None:
+                                on_done(result, error)  # under the lock: state stable
+                        except Exception as e:
+                            logger.error("manual turn ({}) on_done failed: {}", kind, e)
+                finally:
+                    self._turn_lock.release()
+            finally:
+                with self._waiters_lock:
+                    self._manual_waiting -= 1
+
+        threading.Thread(target=_run, name=f"manual-turn-{kind}", daemon=True).start()
+        logger.info("manual turn ({}) {} (top priority)", kind,
+                    "started" if free else "queued behind the in-flight turn")
+        return "started" if free else "queued"
+
     def reconcile_turn(self, run_fn: Callable[[], Any], *, timeout: float = 600.0
                        ) -> tuple[str, Any]:
         """Acquire the turn lock with priority over scheduled turns, then run
@@ -60,11 +147,22 @@ class TurnCoordinator:
         not just the acquire, so a scheduled turn that arrives while a reconcile
         is *running* still yields with reason 'reconcile_waiting' rather than the
         weaker 'busy' -- preserving reconcile priority for a second reconcile
-        queued behind it (critic #5)."""
+        queued behind it (critic #5).
+
+        F38: a queued **manual** turn (``/research``) outranks reconcile/wake, so
+        this first waits (bounded by ``timeout``) for any queued manual turn to take
+        the lock before contending for it. The reconcile is not dropped — it runs
+        right after the manual turn."""
+        deadline = time.monotonic() + timeout
         with self._waiters_lock:
             self._reconcile_waiting += 1
         try:
-            if not self._turn_lock.acquire(timeout=timeout):
+            # F38: let a queued manual /research go first (top priority), bounded so
+            # a stuck manual turn can't starve reconcile past its timeout.
+            while self.manual_waiting > 0 and time.monotonic() < deadline:
+                time.sleep(0.05)
+            remaining = max(0.0, deadline - time.monotonic())
+            if not self._turn_lock.acquire(timeout=remaining):
                 logger.warning("reconcile turn timed out acquiring turn_lock ({}s)", timeout)
                 return ("timeout", None)
             try:

@@ -39,7 +39,7 @@ class _RecordingWorker:
         self.kinds.append(kind)
 
 
-def _setup(tmp_path, price=100.0):
+def _setup(tmp_path, price=100.0, turn_trigger_fn=None):
     broker = SimulatedBroker(initial_capital=100_000.0)
     broker.set_current_price("AAPL", price)
     rm = RiskManager(use_bracket_orders=True)
@@ -53,7 +53,8 @@ def _setup(tmp_path, price=100.0):
     channel = SteeringChannel(tmp_path / "steering", TOKEN)
     worker = _RecordingWorker()
     handler = CommandHandler(channel, state, ex, reconcile_worker=worker,
-                             reconcile_run_fn=lambda: None)
+                             reconcile_run_fn=lambda: None,
+                             turn_trigger_fn=turn_trigger_fn)
     return handler, broker, state, channel, worker
 
 
@@ -188,6 +189,59 @@ def test_unknown_verb_errors_without_raising(tmp_path):
     object.__setattr__(cmd, "verb", "bogus")
     h.handle(cmd)
     assert _last_event(channel).payload["outcome"] == "error"
+
+
+# --- F38: /research manual turn trigger ------------------------------------- #
+def test_research_triggers_turn_when_free(tmp_path):
+    calls = []
+    h, _, _, channel, _ = _setup(
+        tmp_path, turn_trigger_fn=lambda kind, corr: (calls.append((kind, corr)), "started")[1])
+    cmd = _cmd("research")
+    h.handle(cmd)
+    assert calls == [("research", cmd.id)]  # correlated to the triggering command
+    assert _last_event(channel).payload["outcome"] == "triggered"
+
+
+def test_research_deferred_when_paused(tmp_path):
+    calls = []
+    h, _, state, channel, _ = _setup(
+        tmp_path, turn_trigger_fn=lambda kind, corr: (calls.append(kind), "started")[1])
+    state.set_paused(True)
+    h.handle(_cmd("research"))
+    assert calls == []  # guard fires BEFORE the trigger fn (no turn started)
+    assert _last_event(channel).payload["outcome"] == "deferred"
+
+
+def test_research_queued_when_turn_in_flight(tmp_path):
+    # top priority + never dropped: a turn in-flight => "queued" (runs next), not skipped
+    h, _, _, channel, _ = _setup(tmp_path, turn_trigger_fn=lambda kind, corr: "queued")
+    h.handle(_cmd("research"))
+    ev = _last_event(channel).payload
+    assert ev["outcome"] == "queued" and "after the in-flight turn" in ev["detail"]
+
+
+def test_research_errors_on_unexpected_status(tmp_path):
+    h, _, _, channel, _ = _setup(tmp_path, turn_trigger_fn=lambda kind, corr: "unknown_turn")
+    h.handle(_cmd("research"))
+    ev = _last_event(channel).payload
+    assert ev["outcome"] == "error" and "unknown_turn" in ev["detail"]
+
+
+def test_research_errors_when_trigger_unwired(tmp_path):
+    h, _, _, channel, _ = _setup(tmp_path)  # turn_trigger_fn=None (steering off path)
+    h.handle(_cmd("research"))
+    assert _last_event(channel).payload["outcome"] == "error"
+
+
+def test_research_handler_does_not_block_on_slow_turn(tmp_path):
+    # FR-4: the bus worker must return immediately; the trigger fn returns the
+    # guard decision synchronously (the real turn runs off-thread inside it).
+    import time
+    h, _, _, channel, _ = _setup(tmp_path, turn_trigger_fn=lambda kind, corr: "started")
+    started = time.monotonic()
+    h.handle(_cmd("research"))
+    assert time.monotonic() - started < 0.5
+    assert _last_event(channel).payload["outcome"] == "triggered"
 
 
 def test_cancel_queued_offhours_trade_by_full_id(tmp_path):
