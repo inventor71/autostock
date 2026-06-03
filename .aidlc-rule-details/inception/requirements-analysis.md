@@ -90,6 +90,14 @@ Analyze whatever the user has provided:
 
 **When in doubt, ask questions** - incomplete requirements lead to poor implementations.
 
+> **UI/UX work — concretize, don't guess.** For any requirement that involves a user-facing
+> surface (console interaction, command syntax, confirmation prompts, output formatting,
+> interaction flows, error/help text), **do not default to a "reasonable guess."** Proactively
+> drive the design through explicit clarifying questions with concrete options (A/B/C/X format)
+> specific enough for the user to choose from. UI/UX is preference-driven; guessing wastes
+> effort and misses what the user actually wants. The natural home for these questions is the
+> question file created in Step 6, and the Functional Design stage where the UI is defined.
+
 ### Step 5.1: Extension Opt-In Prompts
 
 **MANDATORY**: Scan all loaded `*.opt-in.md` files (loaded at workflow start from `extensions/` subdirectories) for an `## Opt-In Prompt` section. For each extension that declares one, include that question in the clarifying questions file created in Step 6. Present each opt-in question in the same language as the user's conversation.

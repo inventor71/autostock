@@ -64,7 +64,7 @@ All subsequent rule detail file references (e.g., `common/process-overview.md`, 
 - Multiple choice format (A, B, C, D, E options)
 - [Answer]: tag usage
 - Answer validation and ambiguity resolution
-- **Language: write all question files in Korean (한국어)** — this is the project default unless the user explicitly requests another language
+- **Language: write all question files in Korean (한국어)** — this is the project default unless the user explicitly requests another language. Planning and design documents (requirements, functional/NFR design, execution plans) should also default to Korean.
 
 ## MANDATORY: Custom Welcome Message
 **CRITICAL**: When starting ANY software development request, you MUST display the welcome message.

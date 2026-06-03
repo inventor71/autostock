@@ -122,9 +122,16 @@ same class as the daemon claude-CLI PATH bug), and (b) assuming the install need
 > A tiny fix/follow-up may skip the full AI-DLC stages, but never the per-track `state.md` stub.
 
 ## Track lifecycle
-1. **Create.** Pick next `Fn`. `mkdir aidlc-docs/tracks/<id>`, copy `_TEMPLATE/{state.md,audit.md}`.
-   Add a registry row (`active`). Create the worktree **before** any code generation. (Even a lean
-   hotfix track creates `tracks/<id>/state.md` here — see the note above.)
+1. **Create.** Pick next `Fn` from the **union of live sources** — `git worktree list`,
+   `git branch --list 'feat/*'`, `ls aidlc-docs/tracks/`, and the registry table — NOT from a
+   cached session-start registry snapshot (other sessions claim IDs concurrently). If
+   `scripts/worktree-setup.sh <id>` says "worktree exists — reusing", **STOP**: the id is taken;
+   abort and re-number. Guard: `git worktree list | grep -q <id>` and
+   `[ -d aidlc-docs/tracks/<id> ]` before claiming. `mkdir aidlc-docs/tracks/<id>`, copy
+   `_TEMPLATE/{state.md,audit.md}` (only when the directory is absent — `cp -r` into an existing
+   dir silently nests a stray `_TEMPLATE/` inside it). Add a registry row (`active`). Create the
+   worktree **before** any code generation. (Even a lean hotfix track creates
+   `tracks/<id>/state.md` here — see the note above.)
 2. **Work.** All progress, audit, and phase docs go under `tracks/<id>/` only (state/audit +
    `inception/`+`construction/` artifacts). Never touch another track's files or the root files
    (except a registry row update if the title/base changes).
@@ -134,6 +141,13 @@ same class as the daemon claude-CLI PATH bug), and (b) assuming the install need
    It flips the registry row to `merged`, appends a **one-line** summary to the global root
    `audit.md`, and removes the worktree (`git worktree remove …`) + branch. (Manual single-track
    merge remains possible, but run the orchestrator from one place to keep merges serialized.)
+
+   > **Refactor/review tracks — pre-merge re-sweep.** A refactor or review track's branch-point
+   > snapshot goes stale while it's open: other tracks merge concurrently and new code lands on
+   > `main` that may carry the SAME issue the track targets. Before merging, re-diff `main` since
+   > the track's base commit against the track's own heuristics (e.g. speed patterns, security
+   > rules, code-quality checks) and either fold qualifying new hits into the track or log them
+   > as a recorded followup. A track's `state.md` should note this as an explicit pre-merge step.
 
 ## What is still global / shared
 - The **Track Registry** (root `aidlc-state.md`).
