@@ -1332,6 +1332,7 @@ export function Session() {
           <TurnOverlay
             turn={overlay.state().turn!}
             decisions={overlay.state().decisions}
+            workspaceRoot={workspaceRoot()}
             anchorX={overlay.state().anchorX}
             anchorY={overlay.state().anchorY}
             termWidth={dimensions().width}

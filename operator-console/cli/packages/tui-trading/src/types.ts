@@ -63,6 +63,28 @@ export interface MonitorTurn {
   health: "ok" | "error"
 }
 
+// F41: one round/sub-agent evaluation of a multi-agent research turn, persisted
+// by the daemon to workspace/agent_reports/<turn_id>.json (read on demand).
+export interface AgentEval {
+  index: number
+  label: string                       // "Round 1 · Initial" | "Agent 2 · Discovery scan"
+  role: string
+  status: "ok" | "error" | "timeout"
+  text: string                        // full evaluation, not truncated
+  error?: string | null
+}
+
+export interface AgentReport {
+  turn_id: string
+  et_date: string
+  ts: string
+  turn_type: string
+  mode: "sequential" | "parallel" | string
+  n_agents: number
+  agents: AgentEval[]
+  synthesis: { text: string }
+}
+
 export interface MonitorDecision {
   turn_id: string | null
   ts: string
