@@ -72,6 +72,30 @@ export function fmtLocalHhmm(iso: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
 }
 
+/** Local MM-DD for an epoch (operator's system timezone). */
+function localMmdd(ms: number): string {
+  const d = new Date(ms)
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+/** Local HH:MM for an epoch (operator's system timezone). */
+function localHhmmEpoch(ms: number): string {
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+}
+
+/**
+ * F45: format a view-window epoch range as a compact local datetime label.
+ * e.g. "06-04 20:00 → 06-05 08:00" (date repeated when the window crosses midnight).
+ */
+export function fmtWindowRange(start: number, end: number): string {
+  const sd = localMmdd(start)
+  const ed = localMmdd(end)
+  const sh = localHhmmEpoch(start)
+  const eh = localHhmmEpoch(end)
+  return sd === ed ? `${sd} ${sh} → ${eh}` : `${sd} ${sh} → ${ed} ${eh}`
+}
+
 export function fmtCost(usd: number): string {
   return `$${usd.toFixed(2)}`
 }

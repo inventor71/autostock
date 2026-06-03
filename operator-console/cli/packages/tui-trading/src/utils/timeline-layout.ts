@@ -5,6 +5,14 @@ import { DEFAULT_MARKET_RULE } from "../types"
 // (the session crosses local midnight in KST, so minutes-of-day is unusable).
 // ET wall times are converted to instants using the IANA tz (DST-correct via Intl),
 // then rendered in the operator's LOCAL timezone for labels.
+//
+// F45: 24h is tiled into two 12h windows anchored at the session-bounds
+// winStart. The "market window" = [winStart, winStart+12h) (regular-session-
+// centered; historical F25 behavior). Its complement 12h = the "off-market
+// window". `liveWindowStart` picks the tile that contains `now`, and nav
+// moves ±12h at a time. `computeLayout` accepts an optional `window` so the
+// component can override the x-projection range while keeping session-derived
+// region boundaries unchanged.
 
 /** Offset (ms) of an IANA timezone at a given UTC instant: localWall - utc. */
 export function tzOffsetMs(utcMs: number, tz: string): number {
@@ -50,7 +58,8 @@ export interface SessionBounds {
   winEnd: number
 }
 
-const TWELVE_H = 12 * 60 * 60 * 1000
+/** F45: 12h window size — the unit of timeline navigation. */
+export const WINDOW_MS = 12 * 60 * 60 * 1000
 
 /** Compute the session boundary instants + the 12h window for an ET date. */
 export function sessionBounds(etDate: string, rule: MarketRule): SessionBounds {
@@ -62,9 +71,32 @@ export function sessionBounds(etDate: string, rule: MarketRule): SessionBounds {
   const mid = (regularOpen + regularClose) / 2
   return {
     preOpen, regularOpen, regularClose, afterClose,
-    winStart: mid - TWELVE_H / 2,
-    winEnd: mid + TWELVE_H / 2,
+    winStart: mid - WINDOW_MS / 2,
+    winEnd: mid + WINDOW_MS / 2,
   }
+}
+
+/**
+ * F45: calendar date (YYYY-MM-DD) in an IANA timezone for a given epoch.
+ * Use "en-CA" locale which produces ISO-ish YYYY-MM-DD — the same format
+ * used throughout the timeline (etDate, session_et_date).
+ */
+export function etDateOf(ms: number, tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date(ms))
+}
+
+/**
+ * F45: the start of the 12h window tile that contains `now`, anchored on the
+ * session-bounds `winStart` grid. Guarantees `start <= now < start + WINDOW_MS`.
+ * When `now` falls exactly on a tile boundary it chooses the later tile
+ * (the `<=` is on the right side of the inequality).
+ */
+export function liveWindowStart(now: number, etDate: string, rule: MarketRule): number {
+  const bounds = sessionBounds(etDate, rule)
+  const k = Math.floor((now - bounds.winStart) / WINDOW_MS)
+  return bounds.winStart + k * WINDOW_MS
 }
 
 export type MarketPhase = "pre" | "regular" | "after" | "closed"
@@ -140,7 +172,9 @@ export interface TimelineLayout {
   interventions: InterventionPosition[]
   ticks: TickPosition[]
   regions: RegionSpan[]
-  nowX: number            // -1 when now is outside the window
+  /** F45: the instant range the layout was computed for (handy for label rendering). */
+  viewRange: { start: number; end: number }
+  nowX: number            // -1 when now is outside the view window
 }
 
 /** Local "HH:MM" for an epoch (operator's system timezone). */
@@ -162,24 +196,36 @@ export function computeLayout(opts: {
   etDate: string
   rule?: MarketRule
   now?: number
+  /**
+   * F45: optional view window override. When omitted the layout uses
+   * `[bounds.winStart, bounds.winEnd]` — the historical F25 market-centered
+   * 12h window — so existing callers and tests stay green.
+   */
+  window?: { start: number; end: number }
 }): TimelineLayout {
   const rule = opts.rule ?? DEFAULT_MARKET_RULE
   const now = opts.now ?? Date.now()
   const bounds = sessionBounds(opts.etDate, rule)
-  const span = bounds.winEnd - bounds.winStart || 1
+
+  // F45: the view window drives x-projection, ticks, and nowX.
+  // Regions are still derived from the session-boundary instants (they clamp
+  // to the view edges, so an off-market window may show 0-width regions).
+  const viewStart = opts.window?.start ?? bounds.winStart
+  const viewEnd = opts.window?.end ?? bounds.winEnd
+  const span = viewEnd - viewStart || 1
   const usable = Math.max(opts.barWidth - 2, 1) // 1-col padding each side
 
   const xOf = (ms: number): number =>
-    Math.round(1 + ((ms - bounds.winStart) / span) * usable)
+    Math.round(1 + ((ms - viewStart) / span) * usable)
 
   const clampX = (ms: number): number => Math.min(Math.max(xOf(ms), 0), opts.barWidth - 1)
 
-  // Markers outside the 12h window are clamped to the nearest edge (with an
-  // offscreen flag) instead of being dropped, so extended-hours activity — esp.
-  // human interventions — stays discoverable (the window is regular-centered).
+  // Markers are placed relative to the *view* window. Those outside the view
+  // clamp to the nearest edge with an offscreen flag so extended-hours activity
+  // stays discoverable.
   const placed = (ms: number): { x: number; offscreen: -1 | 0 | 1 } => {
-    if (ms < bounds.winStart) return { x: 0, offscreen: -1 }
-    if (ms > bounds.winEnd) return { x: opts.barWidth - 1, offscreen: 1 }
+    if (ms < viewStart) return { x: 0, offscreen: -1 }
+    if (ms > viewEnd) return { x: opts.barWidth - 1, offscreen: 1 }
     return { x: xOf(ms), offscreen: 0 }
   }
 
@@ -199,22 +245,24 @@ export function computeLayout(opts: {
     interventions.push({ intervention: iv, x: p.x, offscreen: p.offscreen })
   }
 
-  // Hourly ticks across the window, labeled in local time.
+  // Hourly ticks across the view window, labeled in local time.
   const ticks: TickPosition[] = []
   const HOUR = 60 * 60 * 1000
-  const first = Math.ceil(bounds.winStart / HOUR) * HOUR
-  for (let ms = first; ms <= bounds.winEnd; ms += HOUR) {
+  const first = Math.ceil(viewStart / HOUR) * HOUR
+  for (let ms = first; ms <= viewEnd; ms += HOUR) {
     ticks.push({ label: localHhmm(ms), x: xOf(ms) })
   }
 
-  // Three market regions clamped to the window.
+  // Three market regions, derived from the *session* boundary instants but
+  // clamped to the *view* window. On the off-market window these may be empty
+  // (x1 <= x0), which the renderer already handles with <Show when={r.x1>r.x0}>.
   const regions: RegionSpan[] = [
-    { kind: "pre", x0: clampX(bounds.winStart), x1: clampX(bounds.regularOpen) },
-    { kind: "regular", x0: clampX(bounds.regularOpen), x1: clampX(bounds.regularClose) },
-    { kind: "after", x0: clampX(bounds.regularClose), x1: clampX(bounds.winEnd) },
+    { kind: "pre",      x0: clampX(bounds.preOpen),      x1: clampX(bounds.regularOpen) },
+    { kind: "regular",  x0: clampX(bounds.regularOpen),  x1: clampX(bounds.regularClose) },
+    { kind: "after",    x0: clampX(bounds.regularClose),  x1: clampX(bounds.afterClose) },
   ]
 
-  const nowX = now >= bounds.winStart && now <= bounds.winEnd ? xOf(now) : -1
+  const nowX = now >= viewStart && now <= viewEnd ? xOf(now) : -1
 
-  return { bounds, markers, interventions, ticks, regions, nowX }
+  return { bounds, markers, interventions, ticks, regions, viewRange: { start: viewStart, end: viewEnd }, nowX }
 }

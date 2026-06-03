@@ -1,11 +1,12 @@
 import { createSignal, onCleanup, createMemo, Show, For } from "solid-js"
 import type { MonitorData, CurrentTurn, MonitorTurn, MonitorDecision, InterventionMarker } from "../types"
 import { DEFAULT_MARKET_RULE } from "../types"
-import { computeLayout, phaseAt, labelCells } from "../utils/timeline-layout"
-import { readSessionData, readHistoricalSession, shiftDate } from "../hooks/use-session-data"
+import { computeLayout, phaseAt, labelCells, etDateOf, WINDOW_MS, liveWindowStart } from "../utils/timeline-layout"
+import type { SessionData } from "../hooks/use-session-data"
+import { readSessionData, readHistoricalSession } from "../hooks/use-session-data"
 import {
   markerGlyph, markerColor, interventionGlyph, interventionColor, fmtCost,
-  phaseLabel, phaseShort, phaseColor,
+  phaseLabel, phaseShort, phaseColor, fmtWindowRange,
 } from "../utils/format"
 
 export interface TimelineBarProps {
@@ -28,35 +29,50 @@ export function TimelineBar(props: TimelineBarProps) {
   const blinkTimer = setInterval(() => setBlinkOn((v) => !v), 500)
   onCleanup(() => clearInterval(blinkTimer))
 
-  // Selected session date; null means "follow the live session" (Today).
-  const [pinnedDate, setPinnedDate] = createSignal<string | null>(null)
+  // F45: pinned view-window start (epoch ms). null = auto-follow now (live).
+  const [pinnedStart, setPinnedStart] = createSignal<number | null>(null)
 
-  // Memoized so they emit ONLY when their value changes (===), not on every poll.
-  // The historical session/layout depend on these instead of the churning monitor
-  // object, so parking on a past date doesn't re-read files + recreate marker boxes
-  // each ~1.5s (the flicker).
   const liveDate = createMemo(() => props.monitor()?.session_et_date ?? todayEtDate())
   const wsRoot = createMemo(() => props.monitor()?.workspace_root ?? null)
   const rule = createMemo(() => props.monitor()?.market ?? DEFAULT_MARKET_RULE)
-  // Dedupe width: the terminal `dimensions` signal can re-emit the same width, which would
-  // otherwise re-run the layout memo (and rebuild markers) for no reason. A memo only fires
-  // on an actual value change.
   const barWidth = createMemo(() => props.width)
 
-  const selectedDate = () => pinnedDate() ?? liveDate()
-  const isToday = () => pinnedDate() === null || pinnedDate() === liveDate()
+  // F45: the live window start that contains `now`, anchored on sessionBounds.winStart.
+  const liveStart = createMemo(() => liveWindowStart(Date.now(), liveDate(), rule()))
 
-  const goPrev = () => setPinnedDate(shiftDate(selectedDate(), -1))
-  const goNext = () => setPinnedDate(shiftDate(selectedDate(), +1))
-  const goToday = () => setPinnedDate(null)
+  const viewStart = () => pinnedStart() ?? liveStart()
+  const viewEnd = () => viewStart() + WINDOW_MS
+  const isLive = () => pinnedStart() === null
 
-  const session = createMemo(() => {
-    const date = selectedDate()
-    // Live date follows the monitor payload; a historical date is keyed only by
-    // (workspace_root, date) — no dependency on the churning monitor object.
-    return date === liveDate()
-      ? readSessionData(props.monitor(), date)
-      : readHistoricalSession(wsRoot(), date)
+  const goPrev = () => setPinnedStart(viewStart() - WINDOW_MS)
+  const goNext = () => setPinnedStart(viewStart() + WINDOW_MS)
+  const goToday = () => setPinnedStart(null)
+
+  // F45: the ET date at the view-window midpoint — used for sessionBounds (region drawing).
+  const primaryEtDate = () => etDateOf((viewStart() + viewEnd()) / 2, rule().tz)
+
+  // F45: load session data from all ET dates the view window covers.
+  // In live mode the monitor covers the live date; historical dates read from files.
+  const session = createMemo((): SessionData => {
+    const vs = viewStart()
+    const ve = viewEnd()
+    const tz = rule().tz
+    const dates = new Set<string>()
+    dates.add(etDateOf(vs, tz))
+    // Fence-post: when the window edge falls exactly at midnight ET, the tail
+    // instant belongs to a different calendar date. Sample 1ms before the edge.
+    dates.add(etDateOf(ve - 1, tz))
+
+    const all: SessionData = { turns: [], interventions: [], decisions: [] }
+    for (const date of dates) {
+      const sd = date === liveDate()
+        ? readSessionData(props.monitor(), date)
+        : readHistoricalSession(wsRoot(), date)
+      all.turns.push(...sd.turns)
+      all.interventions.push(...sd.interventions)
+      all.decisions.push(...sd.decisions)
+    }
+    return all
   })
 
   const layout = createMemo(() =>
@@ -64,26 +80,30 @@ export function TimelineBar(props: TimelineBarProps) {
       turns: session().turns,
       interventions: session().interventions,
       barWidth: barWidth(),
-      etDate: selectedDate(),
+      etDate: primaryEtDate(),
       rule: rule(),
+      window: { start: viewStart(), end: viewEnd() },
     }),
   )
 
   const disconnected = () => props.monitor() === null
 
-  // Current market phase (only meaningful on the live "Today" session).
-  const phase = () => (isToday() ? phaseAt(layout().bounds, Date.now()) : null)
+  // Current market phase — only meaningful on the live window.
+  const phase = () => (isLive() ? phaseAt(layout().bounds, Date.now()) : null)
+
+  // F45: now-label text for the NavRow (e.g. "06-04 20:00 → 06-05 08:00").
+  const windowLabel = () => fmtWindowRange(viewStart(), viewEnd())
 
   return (
     <box width={props.width} height={3} flexDirection="column">
       <Show when={!disconnected()} fallback={<text fg="gray">{"  Monitor disconnected"}</text>}>
-        {/* Row 0: date nav + current market-phase badge + cost */}
+        {/* Row 0: window-range label + nav + phase badge + cost */}
         <NavRow
-          date={selectedDate()}
-          isToday={isToday()}
+          label={windowLabel()}
+          isLive={isLive()}
           phase={phase()}
           width={props.width}
-          todayCost={isToday() ? (props.monitor()?.turns?.today_cost_usd ?? 0) : 0}
+          todayCost={isLive() ? (props.monitor()?.turns?.today_cost_usd ?? 0) : 0}
           onPrev={goPrev}
           onNext={goNext}
           onToday={goToday}
@@ -92,7 +112,7 @@ export function TimelineBar(props: TimelineBarProps) {
         <TickRow
           layout={layout()}
           width={props.width}
-          currentTurn={isToday() ? props.currentTurn() : null}
+          currentTurn={isLive() ? props.currentTurn() : null}
           blinkOn={blinkOn()}
         />
         {/* Row 2: market regions + markers */}
@@ -100,7 +120,7 @@ export function TimelineBar(props: TimelineBarProps) {
           layout={layout()}
           width={props.width}
           decisions={session().decisions}
-          currentTurn={isToday() ? props.currentTurn() : null}
+          currentTurn={isLive() ? props.currentTurn() : null}
           blinkOn={blinkOn()}
           onMarkerClick={props.onMarkerClick}
           onInterventionClick={props.onInterventionClick}
@@ -111,8 +131,8 @@ export function TimelineBar(props: TimelineBarProps) {
 }
 
 function NavRow(props: {
-  date: string
-  isToday: boolean
+  label: string
+  isLive: boolean
   phase: string | null
   width: number
   todayCost: number
@@ -120,28 +140,26 @@ function NavRow(props: {
   onNext: () => void
   onToday: () => void
 }) {
-  const label = () => (props.isToday ? `${props.date} (Today)` : props.date)
-  // Padded, bracketed hit targets — a 1-char arrow flush at column 0 is nearly
-  // impossible to click (the `<` was unclickable; `>` had room after the label).
+  const displayLabel = () => props.isLive ? `${props.label} (Live)` : props.label
   return (
     <box width={props.width} flexDirection="row" gap={1} paddingLeft={1}>
       <box onMouseUp={(e: any) => { props.onPrev(); e.stopPropagation?.() }}>
         <text fg="cyan">{"[ < ]"}</text>
       </box>
-      <text fg="white">{label()}</text>
+      <text fg="white">{displayLabel()}</text>
       <box onMouseUp={(e: any) => { props.onNext(); e.stopPropagation?.() }}>
         <text fg="cyan">{"[ > ]"}</text>
       </box>
-      <Show when={!props.isToday}>
+      <Show when={!props.isLive}>
         <box onMouseUp={(e: any) => { props.onToday(); e.stopPropagation?.() }}>
-          <text fg="yellow">{"[ Today ]"}</text>
+          <text fg="yellow">{"[ Live ]"}</text>
         </box>
       </Show>
       {/* Current market-phase badge — answers "pre-market or regular right now?" */}
       <Show when={props.phase}>
         <text fg={phaseColor(props.phase!)}>{`● ${phaseLabel(props.phase!)}`}</text>
       </Show>
-      <Show when={props.isToday}>
+      <Show when={props.isLive}>
         <text fg="gray">{`· ${fmtCost(props.todayCost)}`}</text>
       </Show>
     </box>
@@ -220,7 +238,7 @@ function MarkerRow(props: {
     }
     // Market open/close boundaries.
     const reg = lay.regions.find((r) => r.kind === "regular")
-    if (reg) {
+    if (reg && reg.x1 > reg.x0) {
       put(reg.x0, "│", "#7faaff", REGION_BG.regular)
       put(reg.x1, "│", "#7faaff", REGION_BG.after)
     }
