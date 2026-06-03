@@ -70,21 +70,34 @@ class DecisionExecutor:
     # ------------------------------------------------------------------ #
     # Cursor (idempotency)
     # ------------------------------------------------------------------ #
-    def _load_cursor(self) -> int:
+    def _load_cursor(self) -> tuple[int, set[int]]:
+        """Return (cursor, terminal_indices). Terminal indices are permanently
+        resolved (executed or legitimately skipped) and never re-processed.
+        Backward-compat: old state files without ``terminal_indices`` default to
+        an empty set so the first run with new code re-processes all pending
+        indices — safe, since the old code already unconditionally advanced past
+        them."""
         if self._state_file.exists():
             try:
-                return int(json.loads(self._state_file.read_text()).get("cursor", 0))
+                data = json.loads(self._state_file.read_text())
+                cursor = int(data.get("cursor", 0))
+                terminal_indices = set(data.get("terminal_indices", []))
+                return cursor, terminal_indices
             except Exception:
-                return 0
-        return 0
+                return 0, set()
+        return 0, set()
 
-    def _save_cursor(self, n: int) -> None:
+    def _save_cursor(self, cursor: int, terminal_indices: set[int]) -> None:
         # Atomic (temp + os.replace): with the F4 single CommandWorker now the
         # sole writer, a torn cursor file can never be observed (BR-7.1' / critic #2).
         self._state_file.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(
             self._state_file,
-            json.dumps({"cursor": n, "updated_at": datetime.now().isoformat()}),
+            json.dumps({
+                "cursor": cursor,
+                "terminal_indices": sorted(terminal_indices),
+                "updated_at": datetime.now().isoformat(),
+            }),
         )
 
     # ------------------------------------------------------------------ #
@@ -108,6 +121,27 @@ class DecisionExecutor:
         except Exception as exc:
             logger.warning(f"execution_log append failed (non-fatal): {exc}")
 
+    def _log_outcome(self, outcome: ExecutionOutcome, *, decision_index: int = -1) -> None:
+        """Persist EVERY outcome (all statuses) to ``execution_outcomes.jsonl``
+        so failures leave a durable audit trail — unlike the old behaviour where
+        only ``"executed"`` was recorded (in ``execution_log.jsonl``)."""
+        log_file = self.journal.root / "execution_outcomes.jsonl"
+        try:
+            entry = json.dumps({
+                "decision_index": decision_index,
+                "symbol": outcome.decision.symbol,
+                "action": outcome.decision.action,
+                "status": outcome.status,
+                "detail": outcome.detail,
+                "order_id": outcome.order_id,
+                "ts": outcome.decision.ts.isoformat(),
+            })
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            with log_file.open("a", encoding="utf-8") as fh:
+                fh.write(entry + "\n")
+        except Exception as exc:
+            logger.warning(f"execution_outcomes append failed (non-fatal): {exc}")
+
     # ------------------------------------------------------------------ #
     # Execute pending decisions
     # ------------------------------------------------------------------ #
@@ -119,7 +153,7 @@ class DecisionExecutor:
             return []
 
         decisions = self.journal.read_decisions()
-        cursor = self._load_cursor()
+        cursor, terminal_indices = self._load_cursor()
         pending = decisions[cursor:]
         if not pending:
             return []
@@ -134,16 +168,40 @@ class DecisionExecutor:
             latest_by_symbol[d.symbol] = (cursor + i, d)
         batch: list[tuple[int, Decision]] = list(latest_by_symbol.values())
 
+        # Filter out already-terminal indices (idempotency: never re-execute a
+        # decision that was already resolved on a previous cycle).
+        active_batch = [(idx, d) for idx, d in batch if idx not in terminal_indices]
+
         self._update_market_halt()
 
+        # Statuses that permanently resolve a decision — the cursor may safely
+        # advance past them. "no_order" and "error" are retryable: the cursor
+        # stops before them so they are re-processed next cycle.
+        _TERMINAL = frozenset({
+            "executed", "skipped_hold", "skipped_out_of_universe", "skipped_expired",
+        })
+
         outcomes: list[ExecutionOutcome] = []
-        for idx, d in batch:
+        for idx, d in active_batch:
             try:
-                outcomes.append(self.execute_decision(d, decision_index=idx))
+                outcome = self.execute_decision(d, decision_index=idx)
             except Exception as e:
                 logger.error(f"Execution error for {d.symbol} {d.action}: {e}")
-                outcomes.append(ExecutionOutcome(d, "error", str(e)))
-        self._save_cursor(len(decisions))
+                outcome = ExecutionOutcome(d, "error", str(e))
+            outcomes.append(outcome)
+            # Persist EVERY outcome — durable audit trail for failures.
+            self._log_outcome(outcome, decision_index=idx)
+            if outcome.status in _TERMINAL:
+                terminal_indices.add(idx)
+
+        # Advance cursor past a contiguous prefix of terminal indices.
+        new_cursor = len(decisions)
+        for i in range(cursor, len(decisions)):
+            if i not in terminal_indices:
+                new_cursor = i
+                break
+
+        self._save_cursor(new_cursor, terminal_indices)
         return outcomes
 
     def execute_decision(self, d: Decision, *, decision_index: int = -1) -> ExecutionOutcome:

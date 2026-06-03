@@ -185,8 +185,162 @@ class TestDecisionExecutor:
         opens = broker.get_open_orders("AAPL")
         assert any(o.stop_price == 90.0 for o in opens)  # stays at 90 (tighten-only)
 
+    # ------------------------------------------------------------------ #
+    # F52: selective cursor advancement + persistent outcome logging
+    # ------------------------------------------------------------------ #
+    def test_cursor_stops_at_error_and_retries(self, tmp_path):
+        """Error outcome -> cursor stays before it; retry succeeds next cycle."""
+        ex, broker, journal = _make(tmp_path, price=100.0)
+        broker.set_current_price("AAPL", 100.0)
+        broker.set_current_price("MSFT", 100.0)
 
-class TestRiskExitsBackup:
+        journal.append_decision(Decision(symbol="AAPL", action="BUY", stop=95.0, target=120.0))  # index 0
+        journal.append_decision(Decision(symbol="MSFT", action="BUY", stop=95.0, target=120.0))  # index 1
+
+        # Break MSFT's price fetch -> error
+        _orig = ex.data_provider.get_latest_price
+        def _fail_msft(symbol):
+            if symbol == "MSFT":
+                raise RuntimeError("price unavailable")
+            return _orig(symbol)
+        ex.data_provider.get_latest_price = _fail_msft
+
+        outcomes = ex.execute_pending()
+        assert any(o.decision.symbol == "AAPL" and o.status == "executed" for o in outcomes)
+        assert any(o.decision.symbol == "MSFT" and o.status == "error" for o in outcomes)
+
+        cursor, terminal = ex._load_cursor()
+        assert cursor == 1, f"expected cursor=1 (stops at MSFT), got {cursor}"
+        assert 0 in terminal
+        assert 1 not in terminal
+
+        # Fix MSFT price -> should execute on next cycle
+        ex.data_provider.get_latest_price = lambda s: 100.0
+        outcomes2 = ex.execute_pending()
+        assert any(o.decision.symbol == "MSFT" and o.status == "executed" for o in outcomes2)
+        cursor2, terminal2 = ex._load_cursor()
+        assert cursor2 == 2
+        assert 1 in terminal2
+
+    def test_cursor_stops_at_no_order(self, tmp_path):
+        """RiskManager returns None -> cursor stays; retries when condition clears."""
+        ex, broker, journal = _make(tmp_path, price=100.0, spy_change=-0.05)  # breaker tripped
+        broker.set_current_price("AAPL", 100.0)
+
+        journal.append_decision(Decision(symbol="AAPL", action="BUY", stop=95.0, target=120.0))
+        outcomes = ex.execute_pending()
+        assert outcomes[0].status == "no_order"
+
+        cursor, terminal = ex._load_cursor()
+        assert cursor == 0, "cursor must not advance past retryable no_order"
+        assert 0 not in terminal
+
+        # Clear breaker AND fix the SPY feed so _update_market_halt() doesn't
+        # re-trip it on the next execute_pending call.
+        ex.risk_manager.update_market_halt(0.01)
+        ex.data_provider.spy_change = 0.01
+        outcomes2 = ex.execute_pending()
+        assert any(o.status == "executed" for o in outcomes2)
+        assert broker.get_position("AAPL") is not None
+
+    def test_cursor_advances_past_legitimate_skips(self, tmp_path):
+        """skipped_hold, skipped_out_of_universe, skipped_expired are terminal."""
+        ex, broker, journal = _make(tmp_path)
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD"))                        # 0: skipped_hold
+        journal.append_decision(Decision(symbol="ZZZZ", action="BUY", stop=1.0, target=2.0))   # 1: out-of-universe
+        journal.append_decision(Decision(                                                       # 2: expired
+            symbol="MSFT", action="BUY", stop=95.0, target=120.0,
+            valid_until=datetime(2020, 1, 1),
+        ))
+
+        outcomes = ex.execute_pending()
+        assert all(o.status.startswith("skipped_") for o in outcomes)
+
+        cursor, terminal = ex._load_cursor()
+        assert cursor == 3, f"expected cursor=3, got {cursor}"
+        assert terminal == {0, 1, 2}
+
+    def test_outcome_logging_persists_all_statuses(self, tmp_path):
+        """execution_outcomes.jsonl records ALL outcomes with correct fields."""
+        import json
+        ex, broker, journal = _make(tmp_path, price=100.0)
+        broker.set_current_price("AAPL", 100.0)
+        broker.set_current_price("MSFT", 100.0)
+
+        journal.append_decision(Decision(symbol="AAPL", action="BUY", stop=95.0, target=120.0))
+        journal.append_decision(Decision(symbol="MSFT", action="HOLD"))
+
+        ex.execute_pending()
+
+        log_file = journal.root / "execution_outcomes.jsonl"
+        assert log_file.exists()
+        lines = log_file.read_text().strip().split("\n")
+        assert len(lines) == 2
+        entries = [json.loads(l) for l in lines]
+        assert {e["symbol"] for e in entries} == {"AAPL", "MSFT"}
+        assert {e["status"] for e in entries} == {"executed", "skipped_hold"}
+        for e in entries:
+            for key in ("decision_index", "symbol", "action", "status", "detail", "order_id", "ts"):
+                assert key in e, f"missing key {key} in outcome entry"
+
+    def test_mixed_batch_partial_advance(self, tmp_path):
+        """AAPL executed + MSFT error -> cursor stops at MSFT; GOOGL not yet attempted."""
+        # Use a broader universe so all symbols are in-scope.
+        ex, broker, journal = _make(tmp_path, price=100.0)
+        ex.universe = {"AAPL", "MSFT", "GOOGL"}
+        broker.set_current_price("AAPL", 100.0)
+        broker.set_current_price("MSFT", 100.0)
+        broker.set_current_price("GOOGL", 100.0)
+
+        journal.append_decision(Decision(symbol="AAPL", action="BUY", stop=95.0, target=120.0))   # 0
+        journal.append_decision(Decision(symbol="MSFT", action="BUY", stop=95.0, target=120.0))   # 1
+        journal.append_decision(Decision(symbol="GOOGL", action="BUY", stop=95.0, target=120.0))  # 2
+
+        # Break MSFT price fetch
+        _orig = ex.data_provider.get_latest_price
+        def _fail_msft(symbol):
+            if symbol == "MSFT":
+                raise RuntimeError("no data")
+            return _orig(symbol)
+        ex.data_provider.get_latest_price = _fail_msft
+
+        outcomes = ex.execute_pending()
+        assert any(o.decision.symbol == "AAPL" and o.status == "executed" for o in outcomes)
+        assert any(o.decision.symbol == "MSFT" and o.status == "error" for o in outcomes)
+
+        cursor, terminal = ex._load_cursor()
+        assert cursor == 1, f"cursor should stop at MSFT (index 1), got {cursor}"
+        assert 0 in terminal       # AAPL resolved
+        assert 1 not in terminal   # MSFT not resolved
+        assert 2 in terminal       # GOOGL executed (after MSFT in batch; terminal but cursor stops at MSFT gap)
+
+        # Second cycle: fix MSFT -> MSFT executes
+        ex.data_provider.get_latest_price = lambda s: 100.0
+        outcomes2 = ex.execute_pending()
+        assert any(o.decision.symbol == "MSFT" and o.status == "executed" for o in outcomes2)
+        cursor2, terminal2 = ex._load_cursor()
+        assert cursor2 == 3
+        assert terminal2 == {0, 1, 2}
+
+    def test_backward_compat_old_cursor_format(self, tmp_path):
+        """Old state file without terminal_indices -> cursor loads, first run
+        re-processes from cursor (safe because old code already advanced past
+        everything unconditionally)."""
+        import json
+        ex, broker, journal = _make(tmp_path, price=100.0)
+        broker.set_current_price("AAPL", 100.0)
+
+        # Write old-format state
+        ex._state_file.parent.mkdir(parents=True, exist_ok=True)
+        ex._state_file.write_text(json.dumps({"cursor": 0, "updated_at": "2026-01-01T00:00:00"}))
+
+        journal.append_decision(Decision(symbol="AAPL", action="BUY", stop=95.0, target=120.0))
+        outcomes = ex.execute_pending()
+        assert outcomes[0].status == "executed"
+
+        cursor, terminal = ex._load_cursor()
+        assert cursor == 1
+        assert terminal == {0}
     def test_skips_position_with_resting_protection(self, tmp_path):
         broker = SimulatedBroker(initial_capital=100000.0)
         broker.set_current_price("AAPL", 100.0)

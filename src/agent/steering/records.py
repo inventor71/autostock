@@ -76,7 +76,8 @@ class PlaceOrderArgs(BaseModel):
     force: bool = False
 
 EventKind = Literal[
-    "outcome", "fill", "decision", "pending", "agent_question", "lifecycle", "reconcile"
+    "outcome", "fill", "decision", "pending", "agent_question", "lifecycle", "reconcile",
+    "exec_outcome",
 ]
 InterventionKind = Literal["trade", "lifecycle", "note", "directive", "approval", "lock"]
 
