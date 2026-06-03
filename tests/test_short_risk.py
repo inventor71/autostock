@@ -91,6 +91,29 @@ class TestShortBracketGeometry:
                 order_class=OrderClass.BRACKET, stop_loss_price=110, take_profit_price=120,
             )
 
+    def test_market_short_bracket_misoriented_stop_rejected(self):
+        """critic #4: a MARKET short bracket (limit_price=None) must still reject
+        a stop that sits below the take-profit (mis-oriented)."""
+        with pytest.raises(ValueError, match="stop_loss"):
+            Order(
+                symbol="X", side=OrderSide.SELL_SHORT, qty=10,  # no limit_price
+                order_class=OrderClass.BRACKET, stop_loss_price=80, take_profit_price=120,
+            )
+
+    def test_market_short_bracket_correct_legs_ok(self):
+        o = Order(
+            symbol="X", side=OrderSide.SELL_SHORT, qty=10,  # market
+            order_class=OrderClass.BRACKET, stop_loss_price=110, take_profit_price=85,
+        )
+        assert o.stop_loss_price > o.take_profit_price
+
+    def test_market_long_bracket_misoriented_stop_rejected(self):
+        with pytest.raises(ValueError, match="stop_loss"):
+            Order(
+                symbol="X", side=OrderSide.BUY, qty=10,  # market, no limit
+                order_class=OrderClass.BRACKET, stop_loss_price=120, take_profit_price=80,
+            )
+
 
 # --------------------------------------------------------------------------- #
 # Mandatory stop (BR-1)
@@ -289,6 +312,76 @@ class TestAutoFlip:
         )
         assert out.status == "no_order"
         assert broker.get_position("AAPL").side == PositionSide.LONG
+
+    def test_flip_aborts_when_close_not_flat(self):
+        """critic #1: if the close doesn't leave the position flat (async/partial),
+        the flip must abort and NOT open the opposite side."""
+        broker = SimulatedBroker(initial_capital=100_000)
+        broker.set_current_price("AAPL", 100)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=100))
+        long_pos = broker.get_position("AAPL")
+
+        # Simulate a broker whose close_position reports a fill but leaves the
+        # position un-flat (the exact AlpacaBroker qty-fallback hazard).
+        def _fake_close(symbol):
+            from src.core.models import FilledOrder
+            from datetime import datetime
+            return FilledOrder(
+                order_id="pending-1", symbol=symbol, side=OrderSide.SELL,
+                qty=100, filled_price=0.0, filled_at=datetime.now(),
+            )
+        broker.close_position = _fake_close  # type: ignore[method-assign]
+
+        ex = self._executor(broker)
+        out = ex.execute_decision(
+            Decision(symbol="AAPL", action="SELL_SHORT", stop=108, target=85)
+        )
+        assert out.status == "error"
+        # Still long — no short was opened on top of the unclosed long.
+        assert broker.get_position("AAPL").side == PositionSide.LONG
+
+
+class TestSqueezeGuardWired:
+    """critic #3: prev_close must be populated so the guard actually fires."""
+
+    class _DP:
+        def __init__(self, price, prev):
+            import pandas as pd
+            self._price, self._bars = price, pd.DataFrame({"close": [prev, price]})
+
+        def get_latest_price(self, s):
+            return self._price
+
+        def get_bars(self, s, limit=2):
+            return self._bars
+
+    def test_short_into_surging_stock_rejected_end_to_end(self):
+        broker = SimulatedBroker(initial_capital=100_000)
+        broker.set_current_price("AAPL", 100)
+        rm = RiskManager(use_bracket_orders=True, individual_stock_halt_pct=0.10)
+        dp = self._DP(price=100, prev=88)  # +13.6% on the day
+        ex = DecisionExecutor(
+            broker, rm, dp, journal=Journal(root=tempfile.mkdtemp()), universe=["AAPL"]
+        )
+        out = ex.execute_decision(
+            Decision(symbol="AAPL", action="SELL_SHORT", stop=108, target=85)
+        )
+        assert out.status == "no_order"
+        assert broker.get_position("AAPL") is None
+
+    def test_short_into_calm_stock_allowed(self):
+        broker = SimulatedBroker(initial_capital=100_000)
+        broker.set_current_price("AAPL", 100)
+        rm = RiskManager(use_bracket_orders=True, individual_stock_halt_pct=0.10)
+        dp = self._DP(price=100, prev=99)  # +1% on the day
+        ex = DecisionExecutor(
+            broker, rm, dp, journal=Journal(root=tempfile.mkdtemp()), universe=["AAPL"]
+        )
+        out = ex.execute_decision(
+            Decision(symbol="AAPL", action="SELL_SHORT", stop=108, target=85)
+        )
+        assert out.status == "executed"
+        assert broker.get_position("AAPL").side == PositionSide.SHORT
 
 
 # --------------------------------------------------------------------------- #

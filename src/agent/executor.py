@@ -286,25 +286,38 @@ class DecisionExecutor:
             self._cancel_and_wait(d.symbol, opens)
 
         closed = self.broker.close_position(d.symbol)
-        if closed is None or closed.qty <= 0:
+        # Do NOT trust close_position's reported qty for the all-or-nothing gate:
+        # AlpacaBroker.close_position falls back to the *requested* qty when the
+        # async close hasn't filled within the poll window (alpaca_broker.py), so
+        # a non-terminal close would look "executed". The authoritative check is
+        # the position itself — it must be flat before we open the opposite side.
+        # Otherwise we'd be long+short the same name with protection already
+        # cancelled and the new bracket sized off a stale snapshot.
+        if self.broker.get_position(d.symbol) is not None:
             logger.error(
-                f"Auto-flip aborted for {d.symbol}: close of {existing.side.value} "
-                f"position did not fill"
+                f"Auto-flip aborted for {d.symbol}: {existing.side.value} position "
+                f"not flat after close (partial/pending fill) — NOT opening opposite side"
             )
             return ExecutionOutcome(
                 d, "error",
-                f"auto-flip: failed to close existing {existing.side.value} position",
+                f"auto-flip: existing {existing.side.value} position did not close flat",
             )
+        closed_qty = closed.qty if closed is not None else 0.0
         logger.info(
             f"Auto-flip {d.symbol}: closed {existing.side.value} "
-            f"{closed.qty} @ {closed.filled_price:.2f}, opening opposite side"
+            f"{closed_qty} @ {closed.filled_price if closed else 0:.2f}, opening opposite side"
         )
-        self._log_execution(d, closed)
-        return ExecutionOutcome(
+        outcome = ExecutionOutcome(
             d, "executed",
-            f"auto-flip close {existing.side.value} {closed.qty} {d.symbol}",
-            order_id=closed.order_id,
+            f"auto-flip close {existing.side.value} {closed_qty} {d.symbol}",
+            order_id=closed.order_id if closed else None,
         )
+        # Durable audit for the close leg (both logs), so the flip is fully traced
+        # and not silently folded into the new entry's outcome (critic #6).
+        if closed is not None:
+            self._log_execution(d, closed)
+        self._log_outcome(outcome)
+        return outcome
 
     def _to_signal(self, d: Decision) -> TradeSignal:
         confidence = d.confidence if d.confidence is not None else 0.5
@@ -318,6 +331,13 @@ class DecisionExecutor:
             atr = self._atr(d.symbol)
             if atr is not None:
                 metadata["atr"] = atr  # lets RiskManager fall back to an ATR stop
+            # SELL_SHORT carries prev_close so RiskManager's individual-stock
+            # squeeze guard (reject a short into a name already up >=N% today) has
+            # the data it needs — without it the guard is dead (critic #3).
+            if d.action == "SELL_SHORT":
+                prev_close = self._prev_close(d.symbol)
+                if prev_close is not None:
+                    metadata["prev_close"] = prev_close
             sig = Signal.BUY if d.action == "BUY" else Signal.SELL_SHORT
             return TradeSignal(symbol=d.symbol, signal=sig, confidence=confidence, metadata=metadata)
         # Exits (SELL / BUY_TO_COVER) carry the partial fraction.
@@ -332,6 +352,17 @@ class DecisionExecutor:
             return market.indicators(symbol, self.data_provider).get("atr_abs")
         except Exception:
             return None
+
+    def _prev_close(self, symbol: str) -> float | None:
+        """Yesterday's close, for the short squeeze-guard day-change. Best-effort:
+        any failure → None (guard simply doesn't fire, never blocks on data)."""
+        try:
+            bars = self.data_provider.get_bars(symbol, limit=2)
+            if bars is not None and len(bars) >= 2:
+                return float(bars["close"].iloc[-2])
+        except Exception:
+            pass
+        return None
 
     def _adjust_stop(self, d: Decision) -> ExecutionOutcome:
         if self.broker.get_position(d.symbol) is None:

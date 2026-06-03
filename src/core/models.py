@@ -66,12 +66,12 @@ class Order(BaseModel):
                     f"take_profit_price and stop_loss_price"
                 )
             # F54: protective-leg geometry depends on the position direction the
-            # order opens/protects. The reference price is the entry limit when
-            # set, else this is validated downstream against the live price.
-            # A short bracket inverts a long's: stop ABOVE, target BELOW entry.
+            # order opens/protects. A short bracket inverts a long's: stop ABOVE,
+            # target BELOW entry.
+            is_short = self.side in (OrderSide.SELL_SHORT, OrderSide.BUY_TO_COVER)
             ref = self.limit_price
             if ref is not None:
-                if self.side in (OrderSide.SELL_SHORT, OrderSide.BUY_TO_COVER):
+                if is_short:
                     if self.stop_loss_price <= ref:
                         raise ValueError(
                             f"short {self.order_class.value}: stop_loss "
@@ -93,6 +93,24 @@ class Order(BaseModel):
                             f"long {self.order_class.value}: take_profit "
                             f"{self.take_profit_price} must be > entry {ref}"
                         )
+            else:
+                # No entry reference (MARKET bracket): can't anchor to an entry,
+                # but the legs must still be mutually consistent — a short's stop
+                # sits ABOVE its take-profit, a long's BELOW. Catches a mis-oriented
+                # stop (the "unbounded-loss guard" on the wrong side) before it
+                # reaches the broker (critic #4, fail-closed).
+                if is_short and self.stop_loss_price <= self.take_profit_price:
+                    raise ValueError(
+                        f"short {self.order_class.value}: stop_loss "
+                        f"{self.stop_loss_price} must be > take_profit "
+                        f"{self.take_profit_price}"
+                    )
+                if not is_short and self.stop_loss_price >= self.take_profit_price:
+                    raise ValueError(
+                        f"long {self.order_class.value}: stop_loss "
+                        f"{self.stop_loss_price} must be < take_profit "
+                        f"{self.take_profit_price}"
+                    )
         if self.order_type == OrderType.TRAILING_STOP:
             has_price = self.trail_price is not None
             has_pct = self.trail_percent is not None
