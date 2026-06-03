@@ -85,7 +85,11 @@ export interface PositionInfo {
 
 export interface OverlayState {
   type: "turn" | "symbol" | "intervention" | null
-  turnId: string | null
+  // Turn overlay renders from the selected-date session object the timeline already
+  // resolved (carry the full turn + its decisions), symmetric with `intervention` —
+  // so a historical turn no longer depends on the live monitor payload.
+  turn: MonitorTurn | null
+  decisions: MonitorDecision[]
   symbol: string | null
   intervention: InterventionMarker | null
   anchorX: number

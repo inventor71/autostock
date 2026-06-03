@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "fs"
 import { join } from "path"
-import type { MonitorData, MonitorTurn, InterventionMarker } from "../types"
+import type { MonitorData, MonitorTurn, MonitorDecision, InterventionMarker } from "../types"
 
 // F25 FR-2: resolve a session's turns + interventions for a given ET date.
 // The current/upcoming session comes straight from monitor.json (live). For any
@@ -10,6 +10,33 @@ import type { MonitorData, MonitorTurn, InterventionMarker } from "../types"
 export interface SessionData {
   turns: MonitorTurn[]
   interventions: InterventionMarker[]
+  decisions: MonitorDecision[]
+}
+
+/**
+ * turn_id whose started_at is the most recent at or before a decision's ts.
+ * Mirrors `_correlate_turn` in src/agent/steering/runtime.py (decisions.jsonl has no
+ * turn_id for older records, so the daemon assigns one the same way). `turnIdx` is the
+ * date's turns as [started_at|ts, id] in file (chronological append) order; reversed-first
+ * match = the latest turn that had started. Compares by instant when both timestamps parse,
+ * else falls back to the lexical compare the Python uses.
+ */
+export function correlateTurnId(ts: string, turnIdx: Array<[string, string]>): string | null {
+  if (!ts || turnIdx.length === 0) return null
+  const dms = Date.parse(ts)
+  for (let i = turnIdx.length - 1; i >= 0; i--) {
+    const [started, tid] = turnIdx[i]!
+    if (!started) continue
+    const sms = Date.parse(started)
+    const leq = !Number.isNaN(sms) && !Number.isNaN(dms) ? sms <= dms : started <= ts
+    if (leq) return tid
+  }
+  return null
+}
+
+function normalizeAction(v: unknown): MonitorDecision["action"] {
+  const a = String(v ?? "").toUpperCase()
+  return a === "BUY" || a === "SELL" || a === "HOLD" || a === "ADJUST_STOP" ? a : "HOLD"
 }
 
 const TRADE_VERBS = new Set([
@@ -61,32 +88,68 @@ export function readSessionData(
   monitor: MonitorData | null,
   etDate: string,
 ): SessionData {
-  if (!monitor) return { turns: [], interventions: [] }
+  if (!monitor) return { turns: [], interventions: [], decisions: [] }
 
-  // Live session: use the already-filtered monitor payload.
+  // Live session: use the already-filtered monitor payload (decisions already carry turn_id).
   if (etDate === monitor.session_et_date) {
     return {
       turns: monitor.turns?.recent ?? [],
       interventions: monitor.interventions ?? [],
+      decisions: monitor.decisions ?? [],
     }
   }
 
-  // Historical: read files directly and filter by ET date.
-  const root = monitor.workspace_root
-  if (!root) return { turns: [], interventions: [] }
+  // Historical: read the date's journal files. Keyed only by (workspace_root, etDate),
+  // so the timeline can depend on those alone and NOT re-read on every live-monitor poll.
+  return readHistoricalSession(monitor.workspace_root ?? null, etDate)
+}
 
-  const turns: MonitorTurn[] = readJsonl(join(root, "turns.jsonl"))
+/**
+ * Read one ET date's session straight from the journal files (turns / decisions /
+ * human_directives), filtered by ET date. A pure function of (root, etDate) — no live
+ * monitor — so callers can memoize on those keys and avoid re-reading (and re-rendering
+ * every marker) on each ~1.5s monitor poll.
+ */
+export function readHistoricalSession(root: string | null, etDate: string): SessionData {
+  if (!root) return { turns: [], interventions: [], decisions: [] }
+
+  const rawTurns = readJsonl(join(root, "turns.jsonl"))
+    .filter((r) => recordEtDate(r) === etDate)
+
+  const turns: MonitorTurn[] = rawTurns.map((r) => ({
+    id: r.turn_id ?? r.id ?? "",
+    type: r.turn_type ?? r.type ?? "intraday",
+    ts: r.ts ?? "",
+    et_date: r.et_date,
+    cost_usd: Number(r.cost_usd ?? 0),
+    num_decisions: Number(r.num_decisions ?? 0),
+    duration_ms: r.duration_ms ?? null,
+    summary: r.summary ?? "",
+    health: r.health === "error" ? "error" : "ok",
+  }))
+
+  // Turn index for decision→turn correlation (decisions.jsonl carries no turn_id/et_date).
+  const turnIdx: Array<[string, string]> = rawTurns.map((r) => [
+    String(r.started_at ?? r.ts ?? ""),
+    String(r.turn_id ?? r.id ?? ""),
+  ])
+
+  // decisions.jsonl rows have no et_date and (for daemon-written rows) a NAIVE ts. recordEtDate
+  // and correlateTurnId interpret a naive ts in the host's local tz → ET — the same convention as
+  // the Python writer (`compute_et_date` in src/agent/turn_log.py), so this stays consistent as
+  // long as the console runs on the same clock as the daemon (it does: same host/container). A
+  // remote console in a different tz would mis-bucket naive-ts decisions — a project-wide caveat,
+  // not specific to this path.
+  const decisions: MonitorDecision[] = readJsonl(join(root, "decisions.jsonl"))
     .filter((r) => recordEtDate(r) === etDate)
     .map((r) => ({
-      id: r.turn_id ?? r.id ?? "",
-      type: r.turn_type ?? r.type ?? "intraday",
+      turn_id: r.turn_id ?? correlateTurnId(String(r.ts ?? ""), turnIdx),
       ts: r.ts ?? "",
-      et_date: r.et_date,
-      cost_usd: Number(r.cost_usd ?? 0),
-      num_decisions: Number(r.num_decisions ?? 0),
-      duration_ms: r.duration_ms ?? null,
-      summary: r.summary ?? "",
-      health: r.health === "error" ? "error" : "ok",
+      symbol: String(r.symbol ?? "?"),
+      action: normalizeAction(r.action),
+      confidence: r.confidence != null ? Number(r.confidence) : null,
+      reason: String(r.reason ?? ""),
+      source: r.source === "human" ? "human" : "agent",
     }))
 
   const interventions: InterventionMarker[] = readJsonl(join(root, "human_directives.jsonl"))
@@ -101,7 +164,7 @@ export function readSessionData(
       detail: r.detail ?? "",
     }))
 
-  return { turns, interventions }
+  return { turns, interventions, decisions }
 }
 
 /** Step an ISO date string (YYYY-MM-DD) by ±1 day. */

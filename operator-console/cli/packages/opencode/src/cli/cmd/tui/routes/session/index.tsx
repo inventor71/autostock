@@ -1148,11 +1148,8 @@ export function Session() {
             width={dimensions().width}
             monitor={monitor}
             currentTurn={currentTurn}
-            onMarkerClick={(id, x, y) => overlay.openTurn(id, x, y)}
-            onInterventionClick={(ts, x, y) => {
-              const iv = (monitor()?.interventions ?? []).find((i) => i.ts === ts)
-              if (iv) overlay.openIntervention(iv, x, y)
-            }}
+            onMarkerClick={(turn, decisions, x, y) => overlay.openTurn(turn, decisions, x, y)}
+            onInterventionClick={(iv, x, y) => overlay.openIntervention(iv, x, y)}
           />
         </Show>
         <box flexDirection="row" flexGrow={1} minHeight={0}>
@@ -1331,12 +1328,12 @@ export function Session() {
         </box>
         </box>
         {/* F22: overlay container */}
-        <Show when={overlay.state().type === "turn" && monitor()}>
+        <Show when={overlay.state().type === "turn" && overlay.state().turn}>
           <TurnOverlay
-            turnId={overlay.state().turnId!}
+            turn={overlay.state().turn!}
+            decisions={overlay.state().decisions}
             anchorX={overlay.state().anchorX}
             anchorY={overlay.state().anchorY}
-            monitor={monitor()!}
             termWidth={dimensions().width}
             termHeight={dimensions().height}
             onClose={() => overlay.close()}

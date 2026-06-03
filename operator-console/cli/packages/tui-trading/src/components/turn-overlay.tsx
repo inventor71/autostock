@@ -1,13 +1,13 @@
 import { Show, For } from "solid-js"
-import type { MonitorData, MonitorDecision, MonitorTurn } from "../types"
+import type { MonitorDecision, MonitorTurn } from "../types"
 import { OverlayPanel } from "./overlay-panel"
 import { actionColor, fmtCost, fmtDuration } from "../utils/format"
 
 export interface TurnOverlayProps {
-  turnId: string
+  turn: MonitorTurn
+  decisions: MonitorDecision[]
   anchorX: number
   anchorY: number
-  monitor: MonitorData
   termWidth: number
   termHeight: number
   onClose: () => void
@@ -15,11 +15,9 @@ export interface TurnOverlayProps {
 }
 
 export function TurnOverlay(props: TurnOverlayProps) {
-  const turn = (): MonitorTurn | undefined =>
-    props.monitor.turns.recent.find((t) => t.id === props.turnId)
-
-  const decisions = (): MonitorDecision[] =>
-    props.monitor.decisions.filter((d) => d.turn_id === props.turnId)
+  // Source is the selected-date session (live or historical), passed in by the timeline.
+  const turn = (): MonitorTurn | undefined => props.turn
+  const decisions = (): MonitorDecision[] => props.decisions
 
   return (
     <OverlayPanel
@@ -31,7 +29,7 @@ export function TurnOverlay(props: TurnOverlayProps) {
       termHeight={props.termHeight}
       onClose={props.onClose}
     >
-      <Show when={turn()} fallback={<text fg="gray">Turn {props.turnId} not found</text>}>
+      <Show when={turn()} fallback={<text fg="gray">Turn not found</text>}>
         {(t) => (
           <box flexDirection="column">
             {/* Header */}
