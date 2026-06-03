@@ -42,6 +42,13 @@ class SubAgentReport:
     error: str | None = None
 
 
+def _task_title(task: SubAgentTask) -> str:
+    """A short label for a sub-agent, from the first phrase of its task (F41)."""
+    head = (task.description or "").strip().split(":")[0].split(".")[0]
+    words = head.split()
+    return " ".join(words[:4]) if words else f"task {task.agent_index}"
+
+
 def filter_in_universe(
     decisions: list[Decision], universe: list[str]
 ) -> tuple[list[Decision], list[Decision]]:
@@ -187,6 +194,11 @@ class AgentTradingLoop:
         return self.journal.read_lessons_jsonl()
 
     def _run_sequential_research(self) -> AgentTurnResult:
+        from datetime import datetime as _dt
+
+        from src.agent import agent_reports
+        from src.agent.turn_log import build_turn_summary, generate_turn_id, record_turn
+
         n = self._multi_agent_n
         n_rounds = n - 1
         held = self.held_symbols()
@@ -194,10 +206,23 @@ class AgentTradingLoop:
         timeout = self.research_timeout
         per_round = timeout / (n_rounds + 1) if timeout else None
 
-        before = len(self.journal.read_decisions())
+        turns_path = self.journal.root / "turns.jsonl"
+        turn_id = generate_turn_id(turns_path, "research")
+        started_at = _dt.now().isoformat(timespec="seconds")
+        self.last_turn_id = turn_id
+        if self._on_turn_start:
+            self._on_turn_start(turn_id, "research")
 
+        # F41: capture each round's evaluation so the operator can drill into the
+        # cross-validation from the timeline overlay. ``agents`` holds the
+        # non-synthesis rounds (initial + debates); the final synthesis is kept
+        # separately in ``synthesis_text``.
+        before = len(self.journal.read_decisions())
+        agents: list[dict] = []
+        result = None
+        error = False
         try:
-            self.session.run_turn(
+            r0 = self.session.run_turn(
                 prompts.multi_research_initial_prompt(
                     self.universe, held, self._research_signals, lessons, n_rounds,
                     max_lessons=self._reflection_max_lessons,
@@ -205,13 +230,23 @@ class AgentTradingLoop:
                 model=self.research_model,
                 timeout=per_round,
             )
+            agents.append(agent_reports.make_eval(
+                index=0, label="Round 1 · Initial",
+                role="Initial full-universe cross-validation pass",
+                text=getattr(r0, "result", ""),
+            ))
 
             for i in range(1, n_rounds):
-                self.session.run_turn(
+                ri = self.session.run_turn(
                     prompts.debate_prompt(i, n_rounds),
                     model=self.research_model,
                     timeout=per_round,
                 )
+                agents.append(agent_reports.make_eval(
+                    index=i, label=f"Round {i + 1} · Debate",
+                    role=f"Debate round {i} — challenge and verify prior leans",
+                    text=getattr(ri, "result", ""),
+                ))
 
             result = self.session.run_turn(
                 prompts.synthesis_prompt(n_rounds),
@@ -219,30 +254,46 @@ class AgentTradingLoop:
                 timeout=per_round,
             )
         except Exception:
+            error = True
             self.session.reset_session()
             raise
-
-        self.last_new_decisions = self.journal.read_decisions()[before:]
-        self.last_kept, self.last_rejected = filter_in_universe(
-            self.last_new_decisions, self.universe
-        )
-        for d in self.last_rejected:
-            logger.warning(f"Out-of-universe: {d.symbol} {d.action}")
-        logger.info(
-            "Multi-agent sequential ({} rounds): {} decisions, {} kept",
-            n_rounds + 1, len(self.last_new_decisions), len(self.last_kept),
-        )
-        if not self.last_new_decisions:
-            logger.warning(
-                "Multi-agent sequential synthesis produced 0 decisions — "
-                "the agent may have failed to write decisions.jsonl"
+        finally:
+            self.last_new_decisions = self.journal.read_decisions()[before:]
+            for d in self.last_new_decisions:
+                d.turn_id = turn_id
+            self.last_kept, self.last_rejected = filter_in_universe(
+                self.last_new_decisions, self.universe
             )
-        from src.agent.turn_log import record_turn
-        record_turn(
-            self.journal.root / "turns.jsonl", turn_type="research",
-            model=self.research_model or getattr(self.session, "model", "unknown"),
-            num_decisions=len(self.last_new_decisions), raw=result.raw,
-        )
+            for d in self.last_rejected:
+                logger.warning(f"Out-of-universe: {d.symbol} {d.action}")
+            logger.info(
+                "Multi-agent sequential ({} rounds): {} decisions, {} kept",
+                n_rounds + 1, len(self.last_new_decisions), len(self.last_kept),
+            )
+            if not self.last_new_decisions and not error:
+                logger.warning(
+                    "Multi-agent sequential synthesis produced 0 decisions — "
+                    "the agent may have failed to write decisions.jsonl"
+                )
+            synthesis_text = getattr(result, "result", "") if result is not None else ""
+            record_turn(
+                turns_path, turn_type="research",
+                model=self.research_model or getattr(self.session, "model", "unknown"),
+                num_decisions=len(self.last_new_decisions),
+                raw=result.raw if result is not None else None,
+                turn_id=turn_id,
+                summary=build_turn_summary(
+                    "research", self.last_new_decisions, llm_text=synthesis_text,
+                ),
+                error=error, started_at=started_at,
+            )
+            agent_reports.write_agent_report(self.journal.root, agent_reports.build_report(
+                turn_id=turn_id,
+                ts=_dt.now().astimezone().isoformat(timespec="seconds"),
+                mode="sequential", agents=agents, synthesis_text=synthesis_text,
+            ))
+            if self._on_turn_end:
+                self._on_turn_end()
         return result
 
     def _create_isolated_workspace(self) -> Path:
@@ -337,38 +388,84 @@ class AgentTradingLoop:
                 "research", model=self.research_model, timeout=max(total_timeout * 0.3, 60.0),
             )
 
+        from datetime import datetime as _dt
+
+        from src.agent import agent_reports
+        from src.agent.turn_log import build_turn_summary, generate_turn_id, record_turn
+
+        turns_path = self.journal.root / "turns.jsonl"
+        turn_id = generate_turn_id(turns_path, "research")
+        started_at = _dt.now().isoformat(timespec="seconds")
+        self.last_turn_id = turn_id
+        if self._on_turn_start:
+            self._on_turn_start(turn_id, "research")
+
         lessons = self._get_lessons()
         lesson_ctx = prompts._build_lesson_context(
             lessons, max_n=self._reflection_max_lessons,
         ) if lessons else ""
-        result = self.session.run_turn(
-            prompts.parallel_synthesis_prompt(report_texts)
-            + (f"\n{lesson_ctx}" if lesson_ctx else ""),
-            model=self.research_model,
-            timeout=max(total_timeout * 0.3, 60.0),
-        )
-
-        self.last_new_decisions = self.journal.read_decisions()[before:]
-        self.last_kept, self.last_rejected = filter_in_universe(
-            self.last_new_decisions, self.universe
-        )
-        for d in self.last_rejected:
-            logger.warning(f"Out-of-universe: {d.symbol} {d.action}")
-        logger.info(
-            "Multi-agent parallel ({} sub-agents, {} reports): {} decisions, {} kept",
-            len(tasks), len(report_texts), len(self.last_new_decisions), len(self.last_kept),
-        )
-        if not self.last_new_decisions:
-            logger.warning(
-                "Multi-agent parallel synthesis produced 0 decisions — "
-                "the synthesis agent may have failed to write decisions.jsonl"
+        result = None
+        error = False
+        try:
+            result = self.session.run_turn(
+                prompts.parallel_synthesis_prompt(report_texts)
+                + (f"\n{lesson_ctx}" if lesson_ctx else ""),
+                model=self.research_model,
+                timeout=max(total_timeout * 0.3, 60.0),
             )
-        from src.agent.turn_log import record_turn
-        record_turn(
-            self.journal.root / "turns.jsonl", turn_type="research",
-            model=self.research_model or getattr(self.session, "model", "unknown"),
-            num_decisions=len(self.last_new_decisions), raw=result.raw,
-        )
+        except Exception:
+            error = True
+            raise
+        finally:
+            self.last_new_decisions = self.journal.read_decisions()[before:]
+            for d in self.last_new_decisions:
+                d.turn_id = turn_id
+            self.last_kept, self.last_rejected = filter_in_universe(
+                self.last_new_decisions, self.universe
+            )
+            for d in self.last_rejected:
+                logger.warning(f"Out-of-universe: {d.symbol} {d.action}")
+            logger.info(
+                "Multi-agent parallel ({} sub-agents, {} reports): {} decisions, {} kept",
+                len(tasks), len(report_texts), len(self.last_new_decisions), len(self.last_kept),
+            )
+            if not self.last_new_decisions and not error:
+                logger.warning(
+                    "Multi-agent parallel synthesis produced 0 decisions — "
+                    "the synthesis agent may have failed to write decisions.jsonl"
+                )
+            synthesis_text = getattr(result, "result", "") if result is not None else ""
+            record_turn(
+                turns_path, turn_type="research",
+                model=self.research_model or getattr(self.session, "model", "unknown"),
+                num_decisions=len(self.last_new_decisions),
+                raw=result.raw if result is not None else None,
+                turn_id=turn_id,
+                summary=build_turn_summary(
+                    "research", self.last_new_decisions, llm_text=synthesis_text,
+                ),
+                error=error, started_at=started_at,
+            )
+            # F41: one AgentEval per spawned sub-agent (sorted by index for stable
+            # display); completed→ok, otherwise→error with the failure reason.
+            agents = [
+                agent_reports.make_eval(
+                    index=r.agent_index,
+                    label=f"Agent {r.agent_index + 1} · {_task_title(r.task)}",
+                    role=r.task.description,
+                    text=r.result_text,
+                    status="ok" if r.completed else "error",
+                    error=r.error,
+                )
+                for r in sorted(reports, key=lambda r: r.agent_index)
+            ]
+            agent_reports.write_agent_report(self.journal.root, agent_reports.build_report(
+                turn_id=turn_id,
+                ts=_dt.now().astimezone().isoformat(timespec="seconds"),
+                mode="parallel", agents=agents, synthesis_text=synthesis_text,
+            ))
+            if self._on_turn_end:
+                self._on_turn_end()
         return result
 
     def run_intraday(self, brief: str | None = None) -> AgentTurnResult:
