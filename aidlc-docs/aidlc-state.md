@@ -27,7 +27,7 @@
 | F13 | Sidebar fills date + blank line between sections | merged | feat/F13 | — | merged→fork main aa984da | a7a9ea1 | 2026-05-31 |
 | F14 | Daemon wedge self-heal + WakeDetector market-data fetch rigidity | merged | feat/F14 | — | — | d899f83 | 2026-05-31 |
 | F15 | docker-verify `attach` mode (full daemon+TUI runtime, TEST account) | merged | feat/F15 | — | — | 98090fa | 2026-05-31 |
-| F16 | Broker API adapter — trade the sandbox account farm | active | feat/F16 (TBD) | .claude/worktrees/F16 (TBD) | — | cc125e5 | 2026-05-31 |
+| F16 | Broker API adapter — trade the sandbox account farm | merged | feat/F16 → main cd863a0 | — | — (monorepo, post-F35) | cc125e5→rebased 2253029→cd863a0 | 2026-06-03 |
 | F17 | docker-verify cleanup — sudo-free teardown (ownership handback) | merged | feat/F17 | — | — | f912999 | 2026-05-31 |
 | F18 | docker-verify attach console-MCP env wiring (AUTOSTOCK_ROOT + shared token) | merged | feat/F18 | — | — | 6902612→8f5468c | 2026-05-31 |
 | F19 | F9 follow-up: 6 structured-tool opencode permission keys in fork config | merged | feat/F19 | — | merged→fork main bc82b71 | 2f13a7a→a1851e0 | 2026-05-31 |
@@ -42,11 +42,13 @@
 | F29 | Supervisor-mode codebase orientation — steer_read{command:/codebase} 프로젝트 트리 | merged | feat/F29 | .claude/worktrees/F29 | — (parent repo only; gitlink updated to match main) | bb2da2d→55581d6→merge | 2026-06-02 |
 | R2 | Speed/throughput review — behavior-preserving (×3 engine, ×5.6 optimizer, parallel fetch) | merged | feat/R2 | — | — | 46c48a9→dfb8200 | 2026-06-01 |
 | F28 | Normal-mode UI self-explanation — steer_read{command:/ui-legend} 정적 TUI 사전(21엔트리, 의미만) | merged | feat/F28 | .claude/worktrees/F28 | feat/F28 → fork main b26a930 | a4b1732→d1f72e6→02d6a41 | 2026-06-03 |
-| F30 | KIS OpenAPI 브로커 확장 — 한국주식 페이퍼트레이딩 (KIS 단독 PoC) | active | feat/F30 (TBD) | .claude/worktrees/F30 (TBD) | — | b4fa955 | 2026-06-02 |
+| F30 | KIS OpenAPI 브로커 확장 — 한국주식 페이퍼트레이딩 (KIS 단독 PoC) | active | feat/F30 | .claude/worktrees/F30 | — (monorepo, post-F35) | 2253029 | 2026-06-03 |
 | F31 | TUI Sidebar Orders 색상 깜박임 버그 수정 | merged | feat/F31 | — | feat/F31 (opencode) | 1746d6a→TBD | 2026-06-02 |
 | F32 | Timeline Markers 사라짐 버그 수정 | merged | feat/F32 | — | — | a3e67ee | 2026-06-02 |
 | F33 | 멀티브로커 동시 운영 — Alpaca(US) + KIS(KR) (F30 후속) | active (paused) | feat/F33 (TBD) | .claude/worktrees/F33 (TBD) | — | TBD | 2026-06-02 |
 | F34 | 타임라인 라벨(OPEN/PRE/AFT) z-order 수정 — 라벨을 마커 위로, 가려진 마커도 클릭 유지 | merged | feat/F34 | .claude/worktrees/F34 | feat/F34 → fork main 43423df | 378a98b→a366545 / 66c6edc→43423df | 2026-06-02 |
+| F35 | CLI 서브모듈을 autostock 단일 repo로 통합 (de-submodule / monorepo) | merged | feat/F35 → main 2253029 | — | — (서브모듈 제거 완료) | 0f26b48→1ac4879 | 2026-06-03 |
+| F36 | 타임라인 과거날짜 마커 클릭 시 'Turn not found' — 오버레이가 라이브 monitor만 조회(과거 세션 미조회) + 마커 깜박임 | merged | feat/F36 → main cb8c9ad | — | N/A (monorepo, F35 이후) | 2253029→e15dd5c→cb8c9ad | 2026-06-03 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Historical F1–F8 rows were
