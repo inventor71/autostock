@@ -155,7 +155,7 @@ export function TurnOverlay(props: TurnOverlayProps) {
                   <text fg="gray">{"─".repeat(Math.min(width() - 4, 90))}</text>
                   <scrollbox flexGrow={1} minHeight={0}>
                     <For each={(e.text || "(no text)").split("\n")}>
-                      {(line) => <text fg="white">{line}</text>}
+                      {(line) => <text fg="white" wrapMode="word">{line}</text>}
                     </For>
                   </scrollbox>
                 </box>
