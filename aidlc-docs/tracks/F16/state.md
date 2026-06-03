@@ -8,12 +8,15 @@
 - **Track ID**: F16
 - **Title**: Broker API adapter — let the bot trade the Broker-API sandbox accounts
 - **Type**: feature
-- **Branch**: feat/F16 (TBD — created at Code Gen Part 2)
-- **Worktree**: .claude/worktrees/F16 (TBD)
-- **Submodule branch**: — (no operator-console/cli change expected)
-- **Base commit**: cc125e5
+- **Branch**: feat/F16 (created at Code Gen Part 2)
+- **Worktree**: .claude/worktrees/F16 (recreated 2026-06-03, rebased onto monorepo main)
+- **Submodule branch**: — (none; F35 monorepo merge removed the submodule entirely)
+- **Base commit**: cc125e5 → **rebased onto 2253029** (monorepo `main`, post-F35) on 2026-06-03.
+  F16 commits (post-rebase): c657a81 (feat) + 963acfe (get_open_orders fix). Clean rebase, no
+  conflicts (F23's config/main.py edits were disjoint). Re-verified on monorepo base: 34 unit +
+  **611 regression green**.
 - **Start Date**: 2026-05-31T04:42:28Z
-- **Status**: active
+- **Status**: merged (feat/F16 → main, merge commit `cd863a0`, 2026-06-03)
 
 ## Extension Configuration
 - **Security Baseline**: Enabled (blocking). Applicable: SECURITY-03 (no creds/account_id in
@@ -43,7 +46,7 @@ Integration surface: `BaseBroker` (port), `AlpacaBroker` (reference impl,
 - [x] Workflow Planning — execution-plan.md; **APPROVED 2026-05-31**
 - [x] Application Design — SKIP (one new class behind existing port; fold into Functional Design)
 - [x] Units Generation — SKIP (single cohesive unit `broker-api-adapter`)
-- [~] Construction (per-unit Code Generation) — unit `broker-api-adapter`
+- [x] Construction (per-unit Code Generation) — unit `broker-api-adapter`
   - [x] Functional Design — functional-design.md; Funding=separated(`--fund`), Selection=
         settings.yaml `broker.provider`+env. **/critic: 7 findings (2 HIGH), all valid, folded in**
         (typed TradeActivity mapper #1; mixed broker/trading order-request imports #2→V-impl-1
@@ -67,22 +70,26 @@ Integration surface: `BaseBroker` (port), `AlpacaBroker` (reference impl,
         - `tests/test_broker_api_broker.py`: 34 tests (mocked + PBT), all green
         - Full regression: **448/448 green** (no AlpacaBroker-path breakage)
         - **Fix during impl**: `FundingDirection` → `TransferDirection` (correct enum name)
-  - [~] **Live-verify (Step 11)**:
+  - [x] **Live-verify (Step 11)** — COMPLETE. Full results in `evaluation-checklist.md`
+        (Trading-API-replaceability matrix): **25/25 items pass**, conclusion = BrokerApiBroker
+        fully replaces the Trading API path (AlpacaBroker).
     - [x] **V3** — `--fund $1` on account `8eec141b`: transfer created (INCOMING, IMMEDIATE,
           SENT_TO_CLEARING). Original funding transfers all COMPLETE. Mechanism verified.
-    - [x] **V1** — Broker API Market Data (sandbox): `get_latest_prices` verified (AAPL=$311.48,
-          MSFT=$448.17, TSLA=$435.08). Basic-auth via StockHistoricalDataClient(use_basic_auth=True,
-          url_override) works. Bug fix: store api_key/secret_key as instance attrs (BrokerClient
-          doesn't expose them publicly). Fail-safe: empty symbols→{}, bad symbol→{}.
-    - [x] **V-impl-1 partial** — Order lifecycle verified off-hours: LIMIT BUY accepted→
-          status=accepted→canceled; get_open_orders leg-flattening; get_order_status;
-          fail-closed on bad symbol. **Bracket/OCO fill round-trip pending market open**
-          (ET 00:52 Mon Jun 1 → opens 09:30 ET).
+    - [x] **V1** — Broker API Market Data (sandbox): `get_latest_prices` verified (basic-auth via
+          StockHistoricalDataClient use_basic_auth+url_override). Fail-safe: empty/bad symbol→{}.
+    - [x] **V-impl-1 COMPLETE** (market open, Jun 1–2): MARKET BUY/SELL fills, **BRACKET (OCO)
+          round-trip** — TP limit + SL stop both confirmed, get_open_orders surfaces both legs,
+          positions buy→position→sell→None, close_position, 8 fills / 3 round-trips ledger
+          (realized +$0.29). Order lifecycle (accept/cancel/status) verified.
     - [x] **Error handling**: bad account_id→APIError, empty api_key→BrokerError, bad symbol→
           BrokerError, account_id masked in logs (SECURITY-03).
-    - [x] **Market clock**: is_market_open=False (correct for 00:52 ET), retry+fail-closed.
-    - [x] **Regression**: 448/448 green after credential fix (commit b2be961).
-  - [x] **Bug fix**: `get_latest_prices` was broken — `self._c.api_key` doesn't exist on
-        BrokerClient. Fixed by storing `_api_key`/`_secret_key` in `__init__` and referencing
-        those in the lazy StockHistoricalDataClient construction.
-- [ ] Build & Test
+    - [x] **Market clock**: is_market_open retry+fail-closed.
+    - [x] **Gap analysis**: 3 gaps (replace_order, trailing stop, native cancel_all) — all
+          non-blocking (emulated or unused by the agent).
+  - [x] **Bugs found & fixed during live-verify**:
+        - **B1 (HIGH)** `get_latest_prices`: `self._c.api_key` doesn't exist on BrokerClient →
+          store `_api_key`/`_secret_key` in `__init__`. (orig b2be961 → rebased c657a81)
+        - **B2 (HIGH)** `get_open_orders`: `status=OPEN` missed HELD stop-loss legs → use
+          `status=ALL`. (orig 0c2db20 → rebased 963acfe)
+- [x] **Build & Test** — `build-and-test.md` written; green on monorepo base (34 unit + 611
+      regression); SECURITY-03/11/15 + PBT-Partial confirmed. Ready to merge.
