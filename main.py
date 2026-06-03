@@ -8,6 +8,7 @@ from loguru import logger
 
 from config.config import get_settings, load_strategies_config
 from src.monitoring.logger import setup_logging
+from src.universe.factory import resolve_universe
 
 
 def create_data_provider(settings):
@@ -132,7 +133,7 @@ def run_backtest(
     risk_config = settings.risk.model_dump()
 
     # Load market data for entire universe
-    universe = settings.trading.symbols
+    universe = resolve_universe(settings)
     logger.info(f"Loading market data for {len(universe)} symbols...")
     bars_dict = {}
     for symbol in universe:
@@ -308,7 +309,7 @@ def run_paper(settings, strategies_config: dict) -> None:
         broker=broker,
         strategies=strategies,
         risk_manager=risk_manager,
-        universe=settings.trading.symbols,
+        universe=resolve_universe(settings),
         timeframe=timeframe,
     )
 
@@ -393,7 +394,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         use_bracket_orders=True,
     )
 
-    universe = list(settings.trading.symbols)
+    universe = resolve_universe(settings)
     session = AgentSession(model=settings.agent.model, timeout=settings.agent.turn_timeout)
     research_signals = settings.research.get("signals") if settings.research else None
     reflection_cfg = settings.research.get("reflection", {}) if settings.research else {}
@@ -501,7 +502,8 @@ def main():
     mode = args.mode or settings.app.mode
     log_level = args.log_level or settings.app.log_level
     if args.symbols:
-        settings.trading.symbols = args.symbols
+        # --symbols overrides the resolved universe for every run mode.
+        settings.universe = {**(settings.universe or {}), "override": args.symbols}
 
     setup_logging(level=log_level, log_file="logs/autostock.log")
     logger.info(f"Autostock starting in {mode} mode")

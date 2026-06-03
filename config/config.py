@@ -37,7 +37,6 @@ class DataConfig(BaseModel):
 
 
 class TradingConfig(BaseModel):
-    symbols: list[str] = ["AAPL", "SPY"]
     mode: str = "batch"
     batch_interval_minutes: int = 60
 
@@ -128,6 +127,7 @@ class Settings(BaseSettings):
     intraday: dict = {}
     research: dict = {}
     signals: dict = {}  # F61 market-signal collection (parsed by SignalsConfig)
+    universe: dict = {}
 
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""

@@ -20,161 +20,19 @@ data:
   default_timeframe: 1d
 
 trading:
-  # Universe: Pool of tradeable symbols. Strategies can dynamically select
-  # which symbols to trade from this universe via select_symbols() method.
-  # Use --symbols CLI flag to override for testing with a subset.
-  symbols:
-    # Technology
-    - AAPL
-    - MSFT
-    - GOOGL
-    - GOOG
-    - AMZN
-    - NVDA
-    - META
-    - TSLA
-    - AVGO
-    - ORCL
-    - ADBE
-    - CRM
-    - AMD
-    - INTC
-    - CSCO
-    - QCOM
-    - IBM
-    - TXN
-    - NOW
-    - INTU
-    # Finance
-    - JPM
-    - V
-    - MA
-    - BAC
-    - WFC
-    - GS
-    - MS
-    - BLK
-    - SCHW
-    - AXP
-    - C
-    - USB
-    - PNC
-    - TFC
-    - COF
-    # Healthcare
-    - UNH
-    - JNJ
-    - LLY
-    - PFE
-    - ABBV
-    - MRK
-    - TMO
-    - ABT
-    - DHR
-    - BMY
-    - AMGN
-    - MDT
-    - GILD
-    - ISRG
-    - CVS
-    # Consumer
-    - WMT
-    - PG
-    - KO
-    - PEP
-    - COST
-    - MCD
-    - NKE
-    - SBUX
-    - TGT
-    - LOW
-    - HD
-    - DIS
-    - NFLX
-    - CMCSA
-    - VZ
-    # Energy
-    - XOM
-    - CVX
-    - COP
-    - SLB
-    - EOG
-    - PXD
-    - MPC
-    - PSX
-    - VLO
-    - OXY
-    # Industrial
-    - CAT
-    - DE
-    - UPS
-    - BA
-    - HON
-    - UNP
-    - RTX
-    - LMT
-    - GE
-    - MMM
-    # Materials & Real Estate
-    - LIN
-    - APD
-    - SHW
-    - FCX
-    - NEM
-    - AMT
-    - PLD
-    - CCI
-    - EQIX
-    - SPG
-    # AI Infrastructure (data-center supply chain: memory, semicap, power/cooling, networking)
-    # Memory & storage
-    - RMBS
-    - MU
-    - SNDK
-    - WDC
-    - STX
-    # Semi IP / custom silicon / foundry
-    - ARM
-    - MRVL
-    - TSM
-    # Semicap equipment
-    - AMAT
-    - LRCX
-    - KLAC
-    - ASML
-    - TER
-    # Power & analog semis
-    - MPWR
-    - ADI
-    - "ON"
-    # Optical / AI networking
-    - ANET
-    - CIEN
-    - COHR
-    - LITE
-    # AI servers / ODM
-    - DELL
-    - SMCI
-    # Data-center power / electrical / cooling
-    - VRT
-    - ETN
-    - PWR
-    - GEV
-    - NVT
-    - MOD
-    # AI power generation (utilities)
-    - VST
-    - CEG
-    # Data-center REIT
-    - DLR
-    # ETFs
-    - SPY
-    - QQQ
-    - IWM
-    - DIA
-    - VTI
   mode: batch  # batch, realtime
   batch_interval_minutes: 15
+
+# Universe: the tradeable symbol pool is resolved dynamically per market (base ∪
+# enabled themes), cached to config/universe/{market}_base.json with a snapshot
+# fallback. US base = S&P 100; KR base = KIS market-cap top-N. --symbols overrides.
+universe:
+  market: us            # active market: us (Alpaca) | kr (KIS)
+  top_n: 100            # US: keep top-N (optionally market-cap ranked)
+  enabled_themes: []    # e.g. [반도체]
+  themes:
+    us: {}              # 반도체: [NVDA, AMD, AVGO, ...]
+    kr: {}              # 반도체: ["005930", "000660", ...]
 
 risk:
   max_position_pct: 0.05  # Max 5% of portfolio per position (more diversified)

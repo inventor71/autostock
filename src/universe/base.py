@@ -57,6 +57,13 @@ class BaseUniverseProvider(ABC):
     def _cached_base(self) -> list[str]:
         if self._base_cache is not None and (time.time() - self._base_ts) < self._cache_ttl:
             return self._base_cache
+        # Persistent cache: a fresh snapshot on disk avoids re-fetching (read_html /
+        # KIS ranking) on every process start.
+        if self._snapshot_fresh():
+            snap = self._load_snapshot()
+            if snap:
+                self._base_cache, self._base_ts = snap, time.time()
+                return snap
         try:
             fetched = [self._normalize(s) for s in self._fetch_base()]
             fetched = self._dedup(fetched)
@@ -90,6 +97,13 @@ class BaseUniverseProvider(ABC):
     @staticmethod
     def _dedup(symbols: list[str]) -> list[str]:
         return list(dict.fromkeys(s for s in symbols if s))
+
+    def _snapshot_fresh(self) -> bool:
+        try:
+            return self._snapshot_path.exists() and (
+                time.time() - self._snapshot_path.stat().st_mtime) < self._cache_ttl
+        except OSError:
+            return False
 
     def _save_snapshot(self, symbols: list[str]) -> None:
         try:

@@ -32,7 +32,8 @@ def _broker():
 
 def _universe() -> list[str]:
     from config.config import get_settings
-    return list(get_settings().trading.symbols)
+    from src.universe.factory import resolve_universe
+    return resolve_universe(get_settings())
 
 
 def _signal_collector():
