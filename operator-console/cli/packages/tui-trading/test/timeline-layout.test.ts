@@ -527,4 +527,35 @@ describe("F55 overnight (데이마켓) session", () => {
     const cells = labelCells(layout.regions, 100, phaseShort)
     expect(cells.filter((c) => c.kind === "day").map((c) => c.ch).join("")).toBe("DAY")
   })
+
+  // F55 regression: when the off-market window's midpoint falls on the next ET
+  // date, the after-market band from the original date must still appear.
+  // The component computes primaryEtDate from the view midpoint (timeline-bar.tsx:54),
+  // so an off-market tile like [18:45 ET D, 06:45 ET D+1) has its midpoint at
+  // ~00:45 ET D+1 — without multi-date region collection, the after band
+  // [16:00 D, 20:00 D) visible in that window would go missing.
+  test("F55 regression: off-market window with next-day midpoint still shows after band", () => {
+    const date = "2026-06-01"
+    const b = sessionBounds(date, rule)
+    const offMarketMid = b.winEnd + WINDOW_MS / 2
+    const midEtDate = etDateOf(offMarketMid, rule.tz)
+    // The midpoint IS the next day — that's the bug trigger.
+    expect(midEtDate).not.toBe(date)
+
+    const layout = computeLayout({
+      turns: [], interventions: [], barWidth: 200, etDate: midEtDate,
+      window: { start: b.winEnd, end: b.winEnd + WINDOW_MS },
+    })
+    // After-hours from the ORIGINAL date must be visible.
+    const after = layout.regions.find((r) => r.kind === "after")!
+    expect(after.x1).toBeGreaterThan(after.x0)
+
+    // Day (overnight) band from after-close to next-day pre-open also visible.
+    const visibleDay = layout.regions.filter((r) => r.kind === "day").find((r) => r.x1 > r.x0)
+    expect(visibleDay).toBeDefined()
+
+    // Pre-market from the next date (04:00-09:30) also partially visible.
+    const pre = layout.regions.filter((r) => r.kind === "pre").find((r) => r.x1 > r.x0)!
+    expect(pre.x1).toBeGreaterThan(pre.x0)
+  })
 })

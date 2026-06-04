@@ -271,19 +271,38 @@ export function computeLayout(opts: {
     ticks.push({ label: localHhmm(ms), x: xOf(ms) })
   }
 
-  // Market-session regions, derived from the *session* boundary instants but
-  // clamped to the *view* window. On the off-market window these may be empty
-  // (x1 <= x0), which the renderer already handles with <Show when={r.x1>r.x0}>.
-  // F55: the overnight ("데이마켓") band straddles ET midnight, so both the previous and
-  // the current evening's span are emitted; whichever is outside the view clamps to 0 width
-  // and is dropped by the renderer (a single 12h window can contain at most one of them).
-  const regions: RegionSpan[] = [
-    { kind: "pre",      x0: clampX(bounds.preOpen),      x1: clampX(bounds.regularOpen) },
-    { kind: "regular",  x0: clampX(bounds.regularOpen),  x1: clampX(bounds.regularClose) },
-    { kind: "after",    x0: clampX(bounds.regularClose),  x1: clampX(bounds.afterClose) },
-    { kind: "day",      x0: clampX(bounds.overnightPrevOpen), x1: clampX(bounds.preOpen) },
-    { kind: "day",      x0: clampX(bounds.afterClose),    x1: clampX(bounds.overnightClose) },
-  ]
+  // F55: The 12h view window can straddle an ET midnight, so a single etDate's
+  // sessionBounds may miss bands visible in the window (e.g. the after-market tail
+  // from the previous ET date appears in the off-market window but the primaryEtDate
+  // computed from the view midpoint is already the next day). Collect session
+  // boundaries from every ET date the window overlaps (at most 2 for a 12h window)
+  // and union all regions, deduplicating identical spans from neighbouring dates.
+  const regionDates = new Set<string>()
+  regionDates.add(etDateOf(viewStart, rule.tz))
+  regionDates.add(etDateOf(viewEnd - 1, rule.tz))
+  const allRegions: RegionSpan[] = []
+  const seen = new Set<string>()
+  for (const etd of regionDates) {
+    const b = sessionBounds(etd, rule)
+    const candidates: RegionSpan[] = [
+      { kind: "pre",      x0: clampX(b.preOpen),      x1: clampX(b.regularOpen) },
+      { kind: "regular",  x0: clampX(b.regularOpen),  x1: clampX(b.regularClose) },
+      { kind: "after",    x0: clampX(b.regularClose),  x1: clampX(b.afterClose) },
+      { kind: "day",      x0: clampX(b.overnightPrevOpen), x1: clampX(b.preOpen) },
+      { kind: "day",      x0: clampX(b.afterClose),    x1: clampX(b.overnightClose) },
+    ]
+    for (const r of candidates) {
+      // Deduplicate by unique (kind, epoch) — neighbouring etDates produce
+      // identical day bands (etDate D's second span == etDate D+1's first span,
+      // both [afterClose(D), preOpen(D+1)]), and multi-date pre/regular/after
+      // bands that fall on the same epoch range can also collide.
+      const key = `${r.kind}:${r.x0}:${r.x1}`
+      if (!seen.has(key)) { seen.add(key); allRegions.push(r) }
+    }
+  }
+  // Keep 0-width regions in the array (renderer handles them via r.x1 <= r.x0
+  // skip) so callers that depend on the region-count / ordering stay green.
+  const regions = allRegions
 
   const nowX = now >= viewStart && now <= viewEnd ? xOf(now) : -1
 
