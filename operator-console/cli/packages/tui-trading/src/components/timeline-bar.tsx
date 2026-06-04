@@ -158,10 +158,18 @@ function NavRow(props: {
       {/* F50: status inline — was separate StatusRow above the nav bar */}
       <Show when={turn()} fallback={<text fg="#555555">{"idle"}</text>}>
         {(t) => {
-          void props.blinkOn // track blink tick so the elapsed clock re-renders live
-          const label = () => fmtTurnLabel(t(), props.queued, Date.now()) ?? ""
+          // Read blinkOn INSIDE the reactive label() scope so the elapsed clock re-renders on
+          // every 500ms blink tick. (Reading it in the Show-child body runs once — Date.now() is
+          // not reactive, so the timer would freeze.) Mirrors TickRow/MarkerRow's now-cursor blink.
+          const label = () => {
+            void props.blinkOn
+            return fmtTurnLabel(t(), props.queued, Date.now()) ?? ""
+          }
           return (
-            <box>
+            // flexDirection="row": keep "● " and the label on ONE line. Without it opentui's
+            // default column layout stacks them vertically, making NavRow 2 rows tall and
+            // overflowing the parent's height={3} (NavRow/TickRow/MarkerRow) — the bar "breaks".
+            <box flexDirection="row">
               <text fg={props.blinkOn ? "green" : "#2f6f4f"}>{"● "}</text>
               <text fg="white">{label()}</text>
             </box>
