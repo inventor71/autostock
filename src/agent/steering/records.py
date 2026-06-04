@@ -59,7 +59,10 @@ class PlaceOrderArgs(BaseModel):
     model_config = {"extra": "forbid"}
 
     symbol: str
-    side: Literal["buy", "sell"]
+    # F54: sell_short opens a short, buy_to_cover closes one. Maps 1:1 to
+    # OrderSide; the daemon's receive_human_order applies the short-specific gate
+    # (mandatory stop, inverted price-sanity).
+    side: Literal["buy", "sell", "sell_short", "buy_to_cover"]
     qty: float | None = None
     notional: float | None = None
     order_type: Literal["market", "limit", "stop", "stop_limit", "trailing_stop"] = "market"

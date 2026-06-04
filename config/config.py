@@ -53,6 +53,12 @@ class RiskConfig(BaseModel):
     atr_stop_multiple: float = 3.0  # default stop = N x ATR when no explicit level
     market_halt_threshold_pct: float = -0.03  # halt new buys if SPY day-change <= this
     default_risk_reward: float = 2.5  # derived take-profit R:R when none given
+    # F54 short-selling risk (optional; None → fall back to the long value).
+    short_market_halt_threshold_pct: float = 0.03  # halt new shorts if SPY >= this
+    individual_stock_halt_pct: float = 0.10  # reject fresh short if name up >= this today
+    short_stop_loss_pct: float | None = None
+    short_take_profit_pct: float | None = None
+    short_max_stop_distance_pct: float | None = None
 
 
 class BacktestConfig(BaseModel):

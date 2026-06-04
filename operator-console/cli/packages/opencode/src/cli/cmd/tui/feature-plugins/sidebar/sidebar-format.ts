@@ -17,6 +17,13 @@ export interface PositionLike {
   avg_entry_price?: number
   current_price?: number
   unrealized_pnl?: number
+  side?: string // F54: "long" | "short" (absent → long)
+}
+
+// F54: "S" for a short, "L" for a long. Lets the sidebar mark direction so a
+// short isn't pixel-identical to a long.
+export function sideMark(p: PositionLike): string {
+  return (p.side ?? "long").toLowerCase() === "short" ? "S" : "L"
 }
 
 // status.py _order_role: BUY → entry; STOP/STOP_LIMIT → stop(-loss); else take(-profit).
@@ -43,6 +50,12 @@ export function orderDelta(o: OrderLike): number | undefined {
 
 export function pnlPct(p: PositionLike): number | undefined {
   if (p.avg_entry_price == null || p.current_price == null || p.avg_entry_price === 0) return undefined
+  // F54: direction-aware. A short gains as price falls, so its % must invert —
+  // otherwise a winning short shows a red −% next to its (correct) green $ P&L.
+  if ((p.side ?? "long").toLowerCase() === "short") {
+    if (p.current_price === 0) return undefined
+    return (p.avg_entry_price / p.current_price - 1) * 100
+  }
   return (p.current_price / p.avg_entry_price - 1) * 100
 }
 

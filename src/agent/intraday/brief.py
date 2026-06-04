@@ -84,7 +84,11 @@ class BriefAssembler:
         if pos:
             qty = pos.get("qty")
             avg = pos.get("avg_entry_price")
-            levels.append(f"qty={qty}@{avg}")
+            # F54: label SHORT so a cheap wake turn (which may not re-pull the
+            # account tool) doesn't read a short as a long and misjudge direction.
+            side = pos.get("side", "long")
+            side_tag = "SHORT " if side == "short" else ""
+            levels.append(f"{side_tag}qty={qty}@{avg}")
         for o in opens:
             if o.get("symbol") != sym:
                 continue

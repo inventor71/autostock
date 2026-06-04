@@ -3,7 +3,7 @@ import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createSignal, For, onCleanup, Show } from "solid-js"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { orderRole, orderTrigger, orderDelta, pnlPct, fmtPct, fmtPrice, fillDatePrefix } from "./sidebar-format"
+import { orderRole, orderTrigger, orderDelta, pnlPct, sideMark, fmtPct, fmtPrice, fillDatePrefix } from "./sidebar-format"
 
 // F4 Unit B (Phase 2) — autostock steering sidebar panel. Reads the daemon's live
 // read-view (steering/snapshot.json) + the event tail (steering/events.jsonl), both
@@ -36,6 +36,7 @@ interface PositionRow {
   current_price?: number
   market_value?: number
   unrealized_pnl?: number
+  side?: string // F54: "long" | "short" (absent → long)
 }
 
 // F8: a recent broker fill (what was bought / sold).
@@ -305,6 +306,8 @@ function View(props: { api: TuiPluginApi }) {
           {([sym, p]) => {
             const pct = pnlPct(p)
             const hasPnl = p?.unrealized_pnl != null
+            // F54: mark direction so a short isn't pixel-identical to a long.
+            const mark = sideMark(p)
             const price = p?.current_price != null ? ` @${fmtPrice(p.current_price)}` : ""
             const lock = snap()?.locked_symbols?.[sym] ? " (locked)" : ""
             const pnl = hasPnl
@@ -312,7 +315,7 @@ function View(props: { api: TuiPluginApi }) {
               : ""
             return (
               <text fg={hasPnl ? pnlColor(p.unrealized_pnl) : theme().text} wrapMode="word">
-                {sym} {String(p?.qty ?? "?")}
+                {mark} {sym} {String(p?.qty ?? "?")}
                 {price}
                 {lock}
                 {pnl}

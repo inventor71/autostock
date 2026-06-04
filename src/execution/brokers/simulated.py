@@ -6,7 +6,7 @@ from datetime import datetime
 from loguru import logger
 
 from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
-from src.core.types import OrderClass, OrderSide, OrderType
+from src.core.types import OrderClass, OrderSide, OrderType, PositionSide
 from src.core.exceptions import BrokerError
 from src.execution.base import BaseBroker
 
@@ -94,6 +94,10 @@ class SimulatedBroker(BaseBroker):
             raise BrokerError(f"No price set for {order.symbol}")
         if order.side == OrderSide.BUY:
             return self._execute_buy(order.symbol, order.qty, price)
+        if order.side == OrderSide.SELL_SHORT:
+            return self._execute_sell_short(order.symbol, order.qty, price)
+        if order.side == OrderSide.BUY_TO_COVER:
+            return self._execute_buy_to_cover(order.symbol, order.qty, price)
         return self._execute_sell(order.symbol, order.qty, price)
 
     # ------------------------------------------------------------------ #
@@ -106,39 +110,53 @@ class SimulatedBroker(BaseBroker):
             "stop_loss_price": order.stop_loss_price,
         }
 
+        # F54: a short bracket's entry is SELL_SHORT, protection is BUY_TO_COVER.
+        is_short = order.side == OrderSide.SELL_SHORT
+        entry_side = OrderSide.SELL_SHORT if is_short else OrderSide.BUY
+
         if order.order_type == OrderType.LIMIT:
             # Resting entry: fills when price reaches the limit, then arms
             # protection. Evaluate against the current bar in case it fills now.
             leg = self._add_resting(
-                order.symbol, OrderSide.BUY, order.qty, "limit",
+                order.symbol, entry_side, order.qty, "limit",
                 order.limit_price, "entry", group=None, bracket=protection,
             )
             fills = (
                 self._process_resting(order.symbol, price, price)
                 if price is not None else []
             )
-            entry = next((f for f in fills if f.side == OrderSide.BUY), None)
-            return entry or self._pending(leg.leg_id, order.symbol, OrderSide.BUY)
+            entry = next((f for f in fills if f.side == entry_side), None)
+            return entry or self._pending(leg.leg_id, order.symbol, entry_side)
 
         # Market entry: fill now, arm protection, then re-check the same bar so
         # a gap that blows through the entry and the stop still stops out.
         if price is None:
             raise BrokerError(f"No price set for {order.symbol}")
-        entry = self._execute_buy(order.symbol, order.qty, price)
-        self._arm_protection(order.symbol, order.qty, order.take_profit_price, order.stop_loss_price)
+        if is_short:
+            entry = self._execute_sell_short(order.symbol, order.qty, price)
+        else:
+            entry = self._execute_buy(order.symbol, order.qty, price)
+        self._arm_protection(
+            order.symbol, order.qty, order.take_profit_price,
+            order.stop_loss_price, short=is_short,
+        )
         self._process_resting(order.symbol, price, price)
         return entry
 
     def _submit_oco(self, order: Order) -> FilledOrder:
         # Attach protective legs to an existing position (no entry leg).
-        if order.symbol not in self._positions:
+        pos = self._positions.get(order.symbol)
+        if pos is None:
             raise BrokerError(f"No position for OCO on {order.symbol}")
+        is_short = pos.side == PositionSide.SHORT
+        protective_side = OrderSide.BUY_TO_COVER if is_short else OrderSide.SELL
         group = self._arm_protection(
-            order.symbol, order.qty, order.take_profit_price, order.stop_loss_price
+            order.symbol, order.qty, order.take_profit_price,
+            order.stop_loss_price, short=is_short,
         )
         price = self._current_prices.get(order.symbol)
         fills = self._process_resting(order.symbol, price, price) if price is not None else []
-        return fills[0] if fills else self._pending(group, order.symbol, OrderSide.SELL)
+        return fills[0] if fills else self._pending(group, order.symbol, protective_side)
 
     def _arm_protection(
         self,
@@ -146,14 +164,17 @@ class SimulatedBroker(BaseBroker):
         qty: float,
         take_profit_price: float | None,
         stop_loss_price: float | None,
+        short: bool = False,
     ) -> str:
-        """Register an OCO pair of resting SELL legs; returns the group id."""
+        """Register an OCO protective pair; returns the group id. Long positions
+        protect with SELL legs, shorts with BUY_TO_COVER legs (F54)."""
         self._group_counter += 1
         group = f"oco_{self._group_counter}"
+        side = OrderSide.BUY_TO_COVER if short else OrderSide.SELL
         if take_profit_price is not None:
-            self._add_resting(symbol, OrderSide.SELL, qty, "limit", take_profit_price, "take_profit", group)
+            self._add_resting(symbol, side, qty, "limit", take_profit_price, "take_profit", group)
         if stop_loss_price is not None:
-            self._add_resting(symbol, OrderSide.SELL, qty, "stop", stop_loss_price, "stop_loss", group)
+            self._add_resting(symbol, side, qty, "stop", stop_loss_price, "stop_loss", group)
         return group
 
     def _add_resting(
@@ -215,17 +236,25 @@ class SimulatedBroker(BaseBroker):
 
     @staticmethod
     def _is_triggered(leg: _RestingLeg, high: float, low: float) -> bool:
+        # "sell-like" legs (SELL long-exit, SELL_SHORT short-entry) want the
+        # higher price; "buy-like" legs (BUY long-entry, BUY_TO_COVER short-exit)
+        # want the lower price.
+        sell_like = leg.side in (OrderSide.SELL, OrderSide.SELL_SHORT)
         if leg.kind == "limit":
-            # SELL limit (take-profit) fills on a rally; BUY limit (entry) on a dip.
-            return high >= leg.trigger_price if leg.side == OrderSide.SELL else low <= leg.trigger_price
-        # stop: SELL stop (stop-loss) fills on a drop; BUY stop on a breakout.
-        return low <= leg.trigger_price if leg.side == OrderSide.SELL else high >= leg.trigger_price
+            # A favorable limit: sell-like fills on a rally, buy-like on a dip.
+            return high >= leg.trigger_price if sell_like else low <= leg.trigger_price
+        # An adverse stop breakout: sell-like fills on a drop, buy-like on a rip.
+        return low <= leg.trigger_price if sell_like else high >= leg.trigger_price
 
     def _fill_leg(self, leg: _RestingLeg, high: float, low: float) -> FilledOrder | None:
         price = leg.trigger_price
-        if leg.side == OrderSide.BUY:
+        if leg.role == "entry":
+            # Entry leg: BUY (long) or SELL_SHORT (short). Arm protection after.
             try:
-                fill = self._execute_buy(leg.symbol, leg.qty, price)
+                if leg.side == OrderSide.SELL_SHORT:
+                    fill = self._execute_sell_short(leg.symbol, leg.qty, price)
+                else:
+                    fill = self._execute_buy(leg.symbol, leg.qty, price)
             except BrokerError:
                 self._remove_leg(leg)  # e.g. insufficient cash -> drop the entry
                 return None
@@ -235,16 +264,20 @@ class SimulatedBroker(BaseBroker):
                     leg.symbol, leg.qty,
                     leg.bracket.get("take_profit_price"),
                     leg.bracket.get("stop_loss_price"),
+                    short=(leg.side == OrderSide.SELL_SHORT),
                 )
             return fill
 
-        # Protective SELL leg.
+        # Protective leg: SELL (long exit) or BUY_TO_COVER (short exit).
         pos = self._positions.get(leg.symbol)
         if pos is None:
             self._cancel_group(leg)  # position already gone
             return None
         qty = min(leg.qty, pos.qty)
-        fill = self._execute_sell(leg.symbol, qty, price)
+        if leg.side == OrderSide.BUY_TO_COVER:
+            fill = self._execute_buy_to_cover(leg.symbol, qty, price)
+        else:
+            fill = self._execute_sell(leg.symbol, qty, price)
         self._cancel_group(leg)  # OCO: filling one leg cancels its sibling
         return fill
 
@@ -289,6 +322,49 @@ class SimulatedBroker(BaseBroker):
         if pos.qty <= 0:
             del self._positions[symbol]
         return self._record_fill(symbol, OrderSide.SELL, qty, price, commission)
+
+    def _execute_sell_short(self, symbol: str, qty: float, price: float) -> FilledOrder:
+        """Open (or add to) a short position. Proceeds are credited to cash; the
+        liability lives in the SHORT position (subtracted from equity)."""
+        if symbol in self._positions and self._positions[symbol].side == PositionSide.LONG:
+            raise BrokerError(f"Cannot short {symbol}: holding a long (close it first)")
+        proceeds = price * qty
+        commission = proceeds * self._commission_pct
+        self._cash += proceeds - commission
+        if symbol in self._positions:
+            pos = self._positions[symbol]
+            total_qty = pos.qty + qty
+            pos.avg_entry_price = (pos.avg_entry_price * pos.qty + price * qty) / total_qty
+            pos.qty = total_qty
+            pos.update_price(price)
+        else:
+            p = Position(
+                symbol=symbol,
+                qty=qty,
+                side=PositionSide.SHORT,
+                avg_entry_price=price,
+                current_price=price,
+            )
+            p.update_price(price)
+            self._positions[symbol] = p
+        return self._record_fill(symbol, OrderSide.SELL_SHORT, qty, price, commission)
+
+    def _execute_buy_to_cover(self, symbol: str, qty: float, price: float) -> FilledOrder:
+        """Close (or reduce) a short position by buying back shares."""
+        pos = self._positions.get(symbol)
+        if pos is None or pos.side != PositionSide.SHORT:
+            raise BrokerError(f"No short position to cover for {symbol}")
+        if qty > pos.qty:
+            raise BrokerError(f"Cannot cover {qty} shares, only short {pos.qty}")
+        cost = price * qty
+        commission = cost * self._commission_pct
+        self._cash -= cost + commission
+        pos.qty -= qty
+        if pos.qty <= 0:
+            del self._positions[symbol]
+        else:
+            pos.update_price(price)
+        return self._record_fill(symbol, OrderSide.BUY_TO_COVER, qty, price, commission)
 
     def _record_fill(
         self, symbol: str, side: OrderSide, qty: float, price: float, commission: float
@@ -370,7 +446,14 @@ class SimulatedBroker(BaseBroker):
         return out
 
     def get_portfolio_state(self) -> PortfolioState:
-        equity = self._cash + sum(p.market_value for p in self._positions.values())
+        # A long adds its market value to equity; a short's proceeds are already
+        # in cash, so its current market value is a LIABILITY (subtract it).
+        equity = self._cash
+        for p in self._positions.values():
+            if p.side == PositionSide.SHORT:
+                equity -= p.market_value
+            else:
+                equity += p.market_value
         return PortfolioState(
             cash=self._cash,
             equity=equity,
@@ -398,7 +481,11 @@ class SimulatedBroker(BaseBroker):
             return None
         # Closing a position invalidates any resting protection on it.
         self._resting.pop(symbol, None)
-        order = Order(symbol=symbol, side=OrderSide.SELL, qty=pos.qty)
+        # A long closes with SELL, a short with BUY_TO_COVER.
+        close_side = (
+            OrderSide.BUY_TO_COVER if pos.side == PositionSide.SHORT else OrderSide.SELL
+        )
+        order = Order(symbol=symbol, side=close_side, qty=pos.qty)
         return self.submit_order(order)
 
     def get_order_status(self, order_id: str) -> FilledOrder | None:

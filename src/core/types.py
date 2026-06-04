@@ -7,11 +7,20 @@ class Signal(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
     HOLD = "HOLD"
+    # F54: short-selling signals. SELL_SHORT opens a short, BUY_TO_COVER closes it.
+    # Kept distinct from BUY/SELL so a decision's intent is unambiguous (a SELL is
+    # always a long exit, never a short entry) and maps 1:1 to the broker side.
+    SELL_SHORT = "SELL_SHORT"
+    BUY_TO_COVER = "BUY_TO_COVER"
 
 
 class OrderSide(str, Enum):
     BUY = "buy"
     SELL = "sell"
+    # F54: Alpaca-native short sides. SELL_SHORT opens a short position;
+    # BUY_TO_COVER closes one. Values mirror Alpaca's OrderSide enum.
+    SELL_SHORT = "sell_short"
+    BUY_TO_COVER = "buy_to_cover"
 
 
 class OrderType(str, Enum):

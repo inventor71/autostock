@@ -64,8 +64,12 @@ following:
 4. Discovery: scan `python -m src.agent.tools scoreboard`, then for each
    promising candidate dig in with indicators / fundamentals / news (and web
    search) before writing a thesis. Add a BUY — always with a stop, and a target
-   where you have one — only on genuine conviction.
+   where you have one — only on genuine conviction. Equally, consider SHORT
+   candidates (overvalued / broken / negative-catalyst names): run `short_data`
+   first and add a SELL_SHORT (stop above entry, mandatory) on genuine conviction.
 5. Update watchlist.md with the names you are tracking and why.
+
+{_SHORT_GUIDANCE}
 
 Keep decisions.jsonl consistent with what your thesis files say.
 
@@ -145,15 +149,35 @@ _SIGNAL_TOOL_GUIDE = {
     "analyst_upgrades": "`python -m src.agent.tools analyst_upgrades <SYM>` — recent upgrade/downgrade actions",
     "institutional": "`python -m src.agent.tools institutional <SYM>` — top institutional holders",
     "account": "`python -m src.agent.tools account` — live equity, positions, resting orders",
+    "short_data": "`python -m src.agent.tools short_data <SYM>` — short interest, days-to-cover, squeeze_risk flag (check before any short)",
 }
+
+
+# F54: shared short-selling guidance injected into entry-decision turns. The
+# market can fall as well as rise; a balanced book may carry shorts. The agent
+# is still advisory-only — it writes SELL_SHORT/BUY_TO_COVER decisions, the
+# executor + RiskManager apply the (mandatory-stop, squeeze) guardrails.
+_SHORT_GUIDANCE = """## Short selling (when the setup favors the downside)
+Do not stay long-only in a weak tape. You may SHORT a name that is overvalued,
+technically broken, or carrying a fresh negative catalyst — just as rigorously
+as a long:
+- Before shorting, run `short_data <SYM>`. If squeeze_risk is HIGH/ELEVATED
+  (high short float / low days-to-cover), size down or skip — squeezes are how
+  shorts blow up.
+- A short MUST carry a stop ABOVE entry (a short's loss is unbounded). A
+  SELL_SHORT decision with no stop is REJECTED by the executor. Set `target`
+  BELOW entry.
+- Actions: SELL_SHORT to open a short, BUY_TO_COVER to close it. To reverse an
+  existing long into a short, just emit SELL_SHORT — the executor closes the
+  long first, then opens the short (no separate SELL needed)."""
 
 _VERDICT_SCHEMA = """## Verdict
 For each symbol you have a view on, write one block:
 - symbol: <TICKER>
-- action: BUY | SELL | HOLD | ADJUST_STOP
+- action: BUY | SELL | HOLD | ADJUST_STOP | SELL_SHORT | BUY_TO_COVER
 - confidence: 0.0-1.0
-- stop: <price or null>
-- target: <price or null>
+- stop: <price or null>   (REQUIRED for SELL_SHORT — above entry; for BUY it's below)
+- target: <price or null> (for SELL_SHORT, below entry)
 - reason: <one-line rationale>"""
 
 
@@ -210,8 +234,11 @@ Ground every call in fresh data pulled THIS turn. Do the following:
 1. Account truth: run `python -m src.agent.tools account`
 2. Regime: refresh regime.md using tools and web research.
 3. Held positions: for EACH held name, pull indicators + news, update thesis.
-4. Discovery: scan scoreboard, dig into promising candidates.
+4. Discovery: scan scoreboard, dig into promising candidates — long AND short
+   (run short_data before any short; squeeze_risk HIGH/ELEVATED → size down/skip).
 5. Update watchlist.md.
+
+{_SHORT_GUIDANCE}
 
 This is round 1 of a {n_rounds + 1}-round cross-validation process.
 Do NOT write to decisions.jsonl yet — record your analysis and preliminary

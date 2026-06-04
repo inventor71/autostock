@@ -275,6 +275,11 @@ def run_paper(settings, strategies_config: dict) -> None:
         atr_stop_multiple=settings.risk.atr_stop_multiple,
         market_halt_threshold_pct=settings.risk.market_halt_threshold_pct,
         default_risk_reward=settings.risk.default_risk_reward,
+        short_market_halt_threshold_pct=settings.risk.short_market_halt_threshold_pct,
+        individual_stock_halt_pct=settings.risk.individual_stock_halt_pct,
+        short_stop_loss_pct=settings.risk.short_stop_loss_pct,
+        short_take_profit_pct=settings.risk.short_take_profit_pct,
+        short_max_stop_distance_pct=settings.risk.short_max_stop_distance_pct,
     )
 
     # In batch mode the bar timeframe must align with how often the cycle runs:
@@ -348,6 +353,11 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         atr_stop_multiple=settings.risk.atr_stop_multiple,
         market_halt_threshold_pct=settings.risk.market_halt_threshold_pct,
         default_risk_reward=settings.risk.default_risk_reward,
+        short_market_halt_threshold_pct=settings.risk.short_market_halt_threshold_pct,
+        individual_stock_halt_pct=settings.risk.individual_stock_halt_pct,
+        short_stop_loss_pct=settings.risk.short_stop_loss_pct,
+        short_take_profit_pct=settings.risk.short_take_profit_pct,
+        short_max_stop_distance_pct=settings.risk.short_max_stop_distance_pct,
         use_bracket_orders=True,
     )
 

@@ -44,9 +44,16 @@ def outcome_lines(decisions, broker, data_provider, lookback: int = 20) -> list[
             pos = None
         held = pos is not None and getattr(pos, "qty", 0) > 0
 
+        # F54: P&L% is direction-aware. A short gains as price falls — using the
+        # long formula here would report a winning short as a loss and mislead the
+        # agent's own EOD review.
+        pos_side = getattr(getattr(pos, "side", None), "value", "long") if held else "long"
         unrealized_pct = None
         if held and price is not None and pos.avg_entry_price > 0:
-            unrealized_pct = (price / pos.avg_entry_price - 1) * 100
+            if pos_side == "short":
+                unrealized_pct = (pos.avg_entry_price / price - 1) * 100
+            else:
+                unrealized_pct = (price / pos.avg_entry_price - 1) * 100
 
         parts = [f"{d.symbol} {d.action}"]
         levels = []
@@ -61,7 +68,8 @@ def outcome_lines(decisions, broker, data_provider, lookback: int = 20) -> list[
         if price is not None:
             parts.append(f"now {price:.2f}")
         if held:
-            holding = f"held {pos.qty:.0f}@{pos.avg_entry_price:.2f}"
+            label = "SHORT " if pos_side == "short" else ""
+            holding = f"held {label}{pos.qty:.0f}@{pos.avg_entry_price:.2f}"
             if unrealized_pct is not None:
                 holding += f" {unrealized_pct:+.1f}%"
             parts.append(holding)

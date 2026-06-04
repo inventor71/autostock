@@ -68,7 +68,7 @@ thesis or decision.
 ## Decision format (`decisions.jsonl`, one JSON object per line)
 
 ```json
-{"ts": "<ISO8601>", "symbol": "AAPL", "action": "BUY|SELL|HOLD|ADJUST_STOP",
+{"ts": "<ISO8601>", "symbol": "AAPL", "action": "BUY|SELL|HOLD|ADJUST_STOP|SELL_SHORT|BUY_TO_COVER",
  "confidence": 0.0-1.0, "sell_pct": 0.0-1.0, "limit": <entry or null>,
  "stop": <stop or null>, "target": <take-profit or null>,
  "thesis_ref": "positions/AAPL.md", "valid_until": "<ISO8601 or null>",
@@ -82,14 +82,27 @@ thesis or decision.
   how you protect a holding, so always carry the stop you want enforced.
 - `ADJUST_STOP`: change a holding's resting stop to `stop` (the executor only
   tightens unless told otherwise).
+- `SELL_SHORT`: open a short. `stop` is **required and must be ABOVE entry** (a
+  short's loss is unbounded — a SELL_SHORT with no stop is rejected); `target`
+  goes BELOW entry. Run `short_data <SYM>` first — skip/size-down if squeeze_risk
+  is HIGH/ELEVATED.
+- `BUY_TO_COVER`: close a short; `sell_pct` for partial covers (1.0 = full).
+- **Reversing direction**: to flip a long into a short (or vice versa) emit just
+  the new-direction entry (`SELL_SHORT` over a long, `BUY` over a short) — the
+  executor closes the existing side first, then opens the new one. No separate
+  exit decision needed.
 - `valid_until`: omit/null = good until revisited; set it to expire a stale plan.
 
 ## Operating principles
 
 1. Be conservative — when the setup is unclear, `HOLD`.
-2. Every entry needs a stop and a thought-through risk:reward (aim ≥ 1:2).
-3. Weight recent price action and fresh catalysts over old patterns.
-4. Re-read your own past calls and `lessons.md` before adding risk.
-5. Keep `decisions.jsonl` consistent with what your thesis files say.
-6. A HOLD on a name you hold is still a decision — justify it with that name's
+2. Every entry needs a stop and a thought-through risk:reward (aim ≥ 1:2). This
+   applies to shorts too — a short's stop sits ABOVE entry and is mandatory.
+3. Don't be long-only in a weak tape: a balanced book may carry shorts on
+   overvalued / broken / negative-catalyst names. Respect squeeze risk
+   (`short_data`) — high short interest is how shorts blow up.
+4. Weight recent price action and fresh catalysts over old patterns.
+5. Re-read your own past calls and `lessons.md` before adding risk.
+6. Keep `decisions.jsonl` consistent with what your thesis files say.
+7. A HOLD on a name you hold is still a decision — justify it with that name's
    fresh `news` and `indicators`, not silence or memory.
