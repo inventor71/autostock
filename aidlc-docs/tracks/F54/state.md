@@ -8,7 +8,7 @@
 - **Track ID**: F54
 - **Title**: 숏 포지션 기능 — 시장 균형에 맞춘 숏 매매 + 숏 분석 지원
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test PASSED 2026-06-04 -->
+- **Status**: merged → main 5cd2eb4 (2026-06-04)
 - **Branch**: feat/F54
 - **Worktree**: .claude/worktrees/F54
 - **Submodule branch**: —
