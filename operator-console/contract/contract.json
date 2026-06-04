@@ -5,6 +5,8 @@
     "flatten",
     "flatten_all",
     "stop",
+    "short",
+    "cover",
     "pause",
     "resume",
     "halt_entries",

@@ -92,6 +92,18 @@ export function parseCommand(input: string): CommandDraft {
       const { size, unit } = parseSize(rest[1], ["%", "sh", "$"]);
       return mk("sell", { symbol, size, unit }, `SELL ${size}${unit} ${symbol} @ market`);
     }
+    // F59: short shorthands, symmetric with buy/sell. /short opens (sell_short,
+    // $ or sh sizing like /buy); /cover closes a short (%/sh/$ like /sell).
+    case "short": {
+      const symbol = sym(rest[0]);
+      const { size, unit } = parseSize(rest[1], ["$", "sh"]);
+      return mk("short", { symbol, size, unit }, `SHORT ${size}${unit} ${symbol} @ market`);
+    }
+    case "cover": {
+      const symbol = sym(rest[0]);
+      const { size, unit } = parseSize(rest[1], ["%", "sh", "$"]);
+      return mk("cover", { symbol, size, unit }, `COVER ${size}${unit} ${symbol} @ market`);
+    }
     case "flatten": {
       const symbol = sym(rest[0]);
       return mk("flatten", { symbol }, `FLATTEN ${symbol} (close + cancel resting)`);

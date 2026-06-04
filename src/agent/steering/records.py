@@ -28,6 +28,8 @@ from src.agent.journal import Decision
 #   close_position / close_all -- close one / all positions
 SteeringVerb = Literal[
     "buy", "sell", "flatten", "flatten_all", "stop",
+    # F59: short shorthands — symmetric with buy/sell (short=open, cover=close).
+    "short", "cover",
     "pause", "resume", "halt_entries", "allow_entries", "kill",
     "approve", "reject", "unlock", "cancel",
     "note", "directive", "directive_clear", "answer",
@@ -40,7 +42,7 @@ SteeringVerb = Literal[
 # verbs that mutate the book / lifecycle and must be confirmed by the operator
 # tool before reaching the channel (BR-1'); everything else is context/admin.
 TRADE_VERBS: frozenset[str] = frozenset({
-    "buy", "sell", "flatten", "flatten_all", "stop",
+    "buy", "sell", "short", "cover", "flatten", "flatten_all", "stop",
     "place_order", "close_position", "close_all",
 })
 EMERGENCY_VERBS: frozenset[str] = frozenset({"kill", "flatten_all", "flatten", "pause", "halt_entries"})

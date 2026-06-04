@@ -79,7 +79,7 @@ export function validateReplaceOrderArgs(args: Record<string, unknown>): string 
   return null;
 }
 
-/** Mutating path (buy/sell/flatten/stop/lifecycle/approval/...). Auto-gated by opencode. */
+/** Mutating path (buy/sell/short/cover/flatten/stop/lifecycle/approval/...). Auto-gated by opencode. */
 export function handleSteer(command: string, fd: FileDrop): string {
   let draft;
   try {

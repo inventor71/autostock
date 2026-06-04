@@ -7,11 +7,11 @@ import pytest
 
 from src.agent.executor import DecisionExecutor
 from src.agent.steering.channel import SteeringChannel
-from src.agent.steering.commands import CommandHandler, build_human_buy
+from src.agent.steering.commands import CommandHandler, build_human_buy, build_human_short
 from src.agent.steering.records import SteeringCommand, SteeringEvent
 from src.agent.steering.state import SteeringState
 from src.core.models import Order
-from src.core.types import OrderClass, OrderSide
+from src.core.types import OrderClass, OrderSide, PositionSide
 from src.execution.brokers.simulated import SimulatedBroker
 from src.risk.manager import RiskManager
 
@@ -83,6 +83,67 @@ def test_build_human_buy_shares_and_no_atr_is_simple():
 def test_build_human_buy_too_small_returns_none():
     rm = RiskManager(use_bracket_orders=True)
     assert build_human_buy("AAPL", 50.0, "$", price=100.0, atr=2.0, risk_manager=rm) is None
+
+
+# --- F59: build_human_short (pure) ------------------------------------------ #
+def test_build_human_short_dollar_floors_with_inverted_bracket():
+    rm = RiskManager(use_bracket_orders=True)
+    o = build_human_short("AAPL", 1000.0, "$", price=100.0, atr=2.0, risk_manager=rm)
+    assert o.qty == 10.0 and o.side == OrderSide.SELL_SHORT
+    # inverted geometry: stop ABOVE entry, target BELOW
+    assert o.order_class == OrderClass.BRACKET
+    assert o.stop_loss_price > 100.0 > o.take_profit_price
+
+
+def test_build_human_short_no_atr_is_bare_sell_short():
+    rm = RiskManager(use_bracket_orders=True)
+    o = build_human_short("AAPL", 5.0, "sh", price=100.0, atr=None, risk_manager=rm)
+    # no resolvable stop → bare SELL_SHORT (the gate rejects with NO_STOP downstream)
+    assert o.qty == 5.0 and o.side == OrderSide.SELL_SHORT
+    assert o.order_class == OrderClass.SIMPLE
+
+
+def test_build_human_short_too_small_returns_none():
+    rm = RiskManager(use_bracket_orders=True)
+    assert build_human_short("AAPL", 50.0, "$", price=100.0, atr=2.0, risk_manager=rm) is None
+
+
+# --- F59: /short and /cover handler wiring ---------------------------------- #
+def test_short_executes_and_opens_short_position(tmp_path):
+    h, broker, state, channel, worker = _setup(tmp_path)
+    h.handle(_cmd("short", symbol="AAPL", size=1000.0, unit="$"))
+    assert _last_event(channel).payload["outcome"] == "executed"
+    pos = broker.get_position("AAPL")
+    assert pos is not None and pos.side == PositionSide.SHORT
+    assert state.lock_status("AAPL") == "locked"
+    assert worker.kinds == ["human"]
+
+
+def test_short_without_stop_rejected_by_gate(tmp_path):
+    # No ATR → bare SELL_SHORT → human-order gate rejects (mandatory stop).
+    h, broker, state, channel, _ = _setup(tmp_path)
+    h.executor._atr = lambda s: None
+    h.handle(_cmd("short", symbol="AAPL", size=1000.0, unit="$"))
+    assert _last_event(channel).payload["outcome"] == "rejected"
+    assert broker.get_position("AAPL") is None
+
+
+def test_cover_closes_short_position(tmp_path):
+    h, broker, state, channel, _ = _setup(tmp_path)
+    broker.submit_order(Order(symbol="AAPL", side=OrderSide.SELL_SHORT, qty=10.0))
+    assert broker.get_position("AAPL").side == PositionSide.SHORT
+    h.handle(_cmd("cover", symbol="AAPL", size=100.0, unit="%"))
+    assert _last_event(channel).payload["outcome"] == "executed"
+    assert broker.get_position("AAPL") is None
+
+
+def test_cover_with_no_short_is_no_order(tmp_path):
+    # A long position is not coverable; /cover must report no short.
+    h, broker, state, channel, _ = _setup(tmp_path)
+    broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10.0))
+    h.handle(_cmd("cover", symbol="AAPL", size=100.0, unit="%"))
+    assert _last_event(channel).payload["outcome"] == "no_order"
+    assert broker.get_position("AAPL").side == PositionSide.LONG
 
 
 # --- handler wiring --------------------------------------------------------- #
