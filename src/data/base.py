@@ -39,16 +39,31 @@ class BaseDataProvider(ABC):
 
         Returns ``None`` when data is unavailable (holiday, error, …).
         Default implementation delegates to ``get_bars`` with Day timeframe.
+
+        The lookback starts a week before ``d`` (not the same day) so the result
+        includes the **previous trading day's** bar — otherwise ``prev_close``
+        could never be resolved across weekends/holidays.
         """
-        start = datetime(d.year, d.month, d.day)
-        end = start + pd.Timedelta(days=1)
-        df = self.get_bars(symbol, TimeFrame.DAY_1, start=start, end=end, limit=2)
+        start = datetime(d.year, d.month, d.day) - pd.Timedelta(days=7)
+        end = datetime(d.year, d.month, d.day) + pd.Timedelta(days=1)
+        df = self.get_bars(symbol, TimeFrame.DAY_1, start=start, end=end, limit=10)
         if df.empty:
             return None
-        row = df.iloc[-1]
+
+        # Locate the row for ``d`` ("today"); fall back to the latest available
+        # bar when ``d`` itself is missing (e.g. holiday / not-yet-printed).
+        today_pos = len(df) - 1
+        for i in range(len(df) - 1, -1, -1):
+            idx = df.index[i]
+            idx_date = idx.date() if hasattr(idx, "date") else idx
+            if idx_date == d:
+                today_pos = i
+                break
+
+        row = df.iloc[today_pos]
         prev_close: float | None = None
-        if len(df) >= 2:
-            prev_close = float(df.iloc[-2]["close"])
+        if today_pos >= 1:
+            prev_close = float(df.iloc[today_pos - 1]["close"])
         return {
             "open": float(row["open"]),
             "high": float(row["high"]),

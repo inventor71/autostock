@@ -263,9 +263,12 @@ class AgentTradingMode:
             from src.surge.detector import SurgeDetector
             from src.surge.settings import SurgeDetectionConfig
             from src.surge.store import SurgeStore
-            from config.config import get_settings
+            from config.config import CONFIG_DIR, load_yaml_config
 
-            config = SurgeDetectionConfig.from_settings(get_settings().model_dump())
+            # Read yaml directly: Settings(extra="ignore") drops the ``surge`` block.
+            config = SurgeDetectionConfig.from_settings(
+                load_yaml_config(CONFIG_DIR / "settings.yaml")
+            )
             detector = SurgeDetector(self.executor.data_provider, config)
             records = detector.scan(list(self.executor.universe))
             store = SurgeStore(base_dir=self.executor.journal.root / "surge")
@@ -276,6 +279,44 @@ class AgentTradingMode:
         except Exception:
             logger.exception("surge scan failed (non-fatal)")
             return 0
+
+    def _setup_early_session(self) -> None:
+        """F51/F56: wire the early-session monitor into the scheduler.
+
+        A market-open job calls ``start()`` (begins the polling window) and a
+        seconds-job drives ``tick()`` (a no-op until ``start()`` runs and again
+        after the ET ``monitor_end``). Disabled cleanly when the config switch is
+        off. Best-effort — a wiring failure must never abort daemon startup."""
+        try:
+            from config.config import CONFIG_DIR, load_yaml_config
+            from src.early_session.config import EarlySessionConfig
+            from src.early_session.monitor import EarlySessionMonitor
+
+            # Read the yaml directly: Settings(extra="ignore") drops the
+            # ``early_session`` block, so get_settings() can't carry it.
+            config = EarlySessionConfig.from_settings(
+                load_yaml_config(CONFIG_DIR / "settings.yaml")
+            )
+            if not config.enabled:
+                logger.info("Early-session monitor disabled (config) — not scheduled")
+                return
+
+            monitor = EarlySessionMonitor(
+                config=config,
+                data_provider=self.executor.data_provider,
+                workspace_root=self.executor.journal.root,
+                symbols=lambda: list(self.executor.universe),
+            )
+            self._early_session = monitor  # keep a ref so the jobs aren't GC'd
+            self.scheduler.add_market_open_job(
+                monitor.start, job_id="early_session_start"
+            )
+            self.scheduler.add_seconds_job(
+                monitor.tick, config.poll_interval_seconds, "early_session_tick"
+            )
+            logger.info("Early-session monitor scheduled (poll {}s)", config.poll_interval_seconds)
+        except Exception:
+            logger.exception("early-session wiring failed (non-fatal)")
 
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
@@ -372,6 +413,7 @@ class AgentTradingMode:
             self._intraday, interval_minutes=self.intraday_minutes, job_id="agent_intraday"
         )
         self.scheduler.add_market_close_job(self._eod, job_id="agent_eod")
+        self._setup_early_session()
         if self.steering is not None:
             self.scheduler.add_seconds_job(self.steering.poll_commands, 2, "steering_poll")
             self.scheduler.add_seconds_job(self.steering.publish_snapshot, 5, "steering_snapshot")

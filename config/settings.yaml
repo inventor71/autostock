@@ -279,6 +279,6 @@ early_session:
   dump_before_minutes: 15             # bars to dump BEFORE the trigger
   dump_after_minutes: 45              # bars to dump AFTER the trigger
   poll_interval_seconds: 30           # bar-fetch cadence
-  buffer_retention_minutes: 20        # circular-buffer capacity (minutes)
+  buffer_retention_minutes: 75        # circular-buffer capacity (min) — must cover dump_before+dump_after+window (auto-raised if too small)
   monitor_start_et: "09:30"           # ET market-open
   monitor_end_et: "10:30"             # ET end of monitoring window

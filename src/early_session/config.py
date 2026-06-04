@@ -24,6 +24,28 @@ class EarlySessionConfig(BaseModel):
     monitor_start_et: str = Field(default="09:30", description="ET time to start monitoring (HH:MM)")
     monitor_end_et: str = Field(default="10:30", description="ET time to stop monitoring (HH:MM)")
 
+    # Margin (minutes) added on top of the dump window when deriving the buffer
+    # retention floor, so a slightly late finalize still finds its bars.
+    _RETENTION_MARGIN_MIN: int = 5
+
+    @property
+    def effective_retention_minutes(self) -> int:
+        """Buffer retention that is guaranteed to cover the whole dump window.
+
+        The circular buffer must retain bars from ``dump_before`` minutes before a
+        trigger through ``dump_after`` minutes after it (plus the detection window
+        and a small margin), otherwise the finalize step dumps a truncated
+        after-window. We take the max of the configured value and that floor so a
+        too-small ``buffer_retention_minutes`` can never silently drop data.
+        """
+        floor = (
+            self.dump_before_minutes
+            + self.dump_after_minutes
+            + self.window_minutes
+            + self._RETENTION_MARGIN_MIN
+        )
+        return max(self.buffer_retention_minutes, floor)
+
     @classmethod
     def from_settings(cls, settings: dict[str, Any]) -> EarlySessionConfig:
         """Create config from the parsed settings dict (``config/settings.yaml``)."""
