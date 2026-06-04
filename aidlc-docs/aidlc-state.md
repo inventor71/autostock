@@ -68,7 +68,7 @@
 | F52 | Research Turn SELL 결정 미실행 근본 원인 분석 + Execution Audit Trail Fix | merged | feat/F52 → main 4e64781 | — (제거됨) | — (monorepo) | 4e64781 | 2026-06-04 |
 | F53 | MCP Position Thesis 노출 — TUI에서 agent position thesis 확인 | merged | feat/F53 (621b227) | — (제거됨) | — (monorepo) | a8957ad→621b227 | 2026-06-04 |
 | F54 | 숏 포지션 기능 — 시장 균형에 맞춘 숏 매매 + 숏 분석 지원 | merged | feat/F54 → main 5cd2eb4 | — (제거됨) | — (monorepo) | a8957ad→5cd2eb4 | 2026-06-04 |
-| F55 | 타임라인에 "데이마켓" 세션 표기 추가 (pre/regular/after 외 누락 세션) | active | feat/F55 | .claude/worktrees/F55 | — (monorepo) | 6bf1b31 | 2026-06-04 |
+| F55 | 타임라인에 "데이마켓" 세션 표기 추가 (pre/regular/after 외 누락 세션) | merged | feat/F55 → main 5c9166d | — (제거됨) | — (monorepo) | 6bf1b31→c6df7ba→5c9166d | 2026-06-04 |
 | F56 | code-review 후속 버그 수정 — surge prev_close / early-session ET·finalize·retention / executor cursor stall | merged | feat/F56 → main 6b043c6 | — (제거됨) | — (monorepo) | 6bf1b31→6b043c6 | 2026-06-04 |
 | F57 | 상단 status + 날짜 nav 바 두줄 깨짐 + research 경과시간 미갱신 버그 수정 (NavRow) | merged | feat/F57 → main f53c4a5 | — (제거됨) | — (monorepo) | 6bf1b31→7eb6ae7→f53c4a5 | 2026-06-04 |
 | F58 | 과거 날짜/타임라인 구간 상단바에 턴 토큰사용량(또는 비용) 표시 | merged | feat/F58 → main 0e071e1 | — (제거됨) | — (monorepo) | 03de978→4f9a79f→0e071e1 | 2026-06-04 |

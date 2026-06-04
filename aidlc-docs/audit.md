@@ -210,3 +210,7 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 
 - 2026-06-04 — **F52 merged** (4e64781): execution audit trail + selective cursor advancement — persist all outcomes to execution_outcomes.jsonl, cursor stops at no_order/error for retry, emit exec_outcome steering events (317 lines, 7 files, 680 tests green)
 
+
+- 2026-06-04 — **/ai-dlc-merge triage** PASS — foreign 변경 없음; 노이즈는 F30/F59 문서(active)·F55 소유뿐. 큐 후보: F55, F59 (둘 다 merge-awaiting, 겹침 0). 사용자 승인 범위 = **F55만 머지** (F59는 다음 기회).
+
+- 2026-06-04 — **F55 merged** (5c9166d): 타임라인에 "데이마켓"(overnight, after_close→익일 pre_open / 20:00–04:00 ET) 세션 amber 밴드 추가. ET 자정-넘김 대응 — 전날·당일 두 overnight span을 모두 derive·emit하고 뷰 밖은 0폭 clamp(critic HIGH). 4 files(timeline-layout/format/timeline-bar + test), rebase 후 85/0 green.

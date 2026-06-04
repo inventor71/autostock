@@ -8,16 +8,21 @@
 - **Track ID**: F55
 - **Title**: 타임라인에 "데이마켓" 세션 표기 추가 (pre/regular/after 외 누락 세션)
 - **Type**: feature
-- **Status**: active  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
+- **Status**: merged → main 5c9166d (2026-06-04)  <!-- Build & Test PASS (rebase 후 85/0) -->
 - **Branch**: feat/F55
 - **Worktree**: .claude/worktrees/F55
 - **Submodule branch**: — (monorepo, post-F35; operator-console/cli TUI 변경 가능성 높음)
-- **Base commit**: <set at worktree creation>
+- **Base commit**: 6bf1b31
 - **Start Date**: 2026-06-04
 
 ## Extension Configuration
-- **Security Baseline**: <TBD — Requirements Analysis opt-in>
-- **Property-Based Testing**: <TBD — Requirements Analysis opt-in>
+| Extension | Enabled | Decided At |
+|---|---|---|
+| Security Baseline | No (Q5=B) | Requirements Analysis |
+| Property-Based Testing | No (Q6=C) | Requirements Analysis |
+
+- **Security Baseline**: Disabled — 본 트랙은 TUI 표기(타임라인 밴드) 변경으로 외부 입력/인증/시크릿 처리 없음. 전 규칙 N/A.
+- **Property-Based Testing**: Disabled — 시간↔x좌표 투영 경계 계산이 있으나 사용자가 PBT opt-out(C). 기존 예제 기반 단위테스트(timeline-layout.test.ts 패턴)로 커버.
 
 ## Scope
 현재 타임라인 바(`timeline-bar.tsx` + `timeline-layout.ts`)는 `MarketRule`의 4개 경계
@@ -38,11 +43,13 @@ Requirements Analysis 질문으로 확정한다.
 
 ## Stage Progress
 - [x] Workspace Detection
-- [ ] Requirements Analysis — standard (UI/UX + 용어 모호성 → 질문 필요)
-- [ ] User Stories — skip (단일 표기 기능, 사용자 워크플로 단순)
-- [ ] Workflow Planning
-- [ ] Application Design — TBD
-- [ ] Units Generation — skip (단일 유닛 예상)
-- [ ] Construction (per-unit Code Generation)
-  - [ ] Timeline session rendering — <note>
-- [ ] Build & Test
+- [x] Requirements Analysis — standard (데이마켓=Alpaca 오버나잇 20:00→04:00 ET 확정)
+- [x] User Stories — skip (단일 표기 기능, 사용자 워크플로 단순)
+- [x] Workflow Planning — execute=Functional Design/Code Gen/Build&Test; skip=AppDesign/Units/NFR×3/Infra
+- [ ] Application Design — skip (새 컴포넌트 없음)
+- [ ] Units Generation — skip (단일 유닛)
+- [ ] Construction
+  - [x] Functional Design — 파생방식(MarketRule 불변), 라벨 DAY/DAY-MKT, 앰버색 확정; artifacts 작성
+  - [x] NFR Requirements/Design/Infra — skip
+  - [x] Code Generation — Timeline `day` region(2-span) + format/REGION_BG + phaseAt; 데몬 불변(파생). bun test 77 pass
+- [x] Build & Test — ✅ 77/0 PASS, typecheck F55 파일 0 에러(잔여 fs/path는 main 동일 pre-existing). merge-awaiting.
