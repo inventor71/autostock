@@ -351,6 +351,14 @@ class RiskManager:
             logger.debug(f"No position for {signal.symbol}, skipping sell")
             return None
 
+        # F60: SELL always exits a long; a SHORT is exited by BUY_TO_COVER. If
+        # SELL fires against a SHORT it would add-to-short (wrong accounting),
+        # so reject with a clear message. The executor never routes SELL for a
+        # short — this is a defense-in-depth guard (SECURITY-15).
+        if position.side == PositionSide.SHORT:
+            logger.warning(f"SELL on SHORT {signal.symbol} rejected — use BUY_TO_COVER")
+            return None
+
         # Support partial sell
         sell_pct = getattr(signal, "sell_pct", 1.0)
         sell_pct = max(0.0, min(1.0, sell_pct))  # Clamp to 0-1 range

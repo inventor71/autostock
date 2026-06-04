@@ -12,7 +12,7 @@ from src.agent.intraday.records import FillEvent
 from src.agent.trades_log import record_trades
 from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioState
-from src.core.types import OrderClass, OrderSide, OrderType
+from src.core.types import OrderClass, OrderSide, OrderType, PositionSide
 from src.execution.base import BaseBroker
 
 try:
@@ -107,6 +107,9 @@ class BrokerApiBroker(BaseBroker):
         self._fill_poll_timeout = fill_poll_timeout
         self._fill_poll_interval = fill_poll_interval
         self._data_client = None
+        # F60: easy-to-borrow cache (only confirmed determinations cached).
+        self._etb_cache: dict[str, tuple[bool, float]] = {}
+        self._etb_ttl = 1800.0  # 30 min
 
         # Validate the account exists and capture the number for secure logging.
         acct = self._c.get_trade_account_by_id(self._account_id)
@@ -332,16 +335,31 @@ class BrokerApiBroker(BaseBroker):
 
     # ── positions / account ──────────────────────────────────────────────
 
+    @staticmethod
+    def _position_side(pos) -> PositionSide:
+        """Map Alpaca's position side ('long'/'short') to ours; a short reports a
+        negative qty which we normalize to positive (direction lives in side)."""
+        raw = str(getattr(pos, "side", "")).split(".")[-1].lower()
+        if raw == "short":
+            return PositionSide.SHORT
+        try:
+            if float(pos.qty) < 0:
+                return PositionSide.SHORT
+        except (TypeError, ValueError):
+            pass
+        return PositionSide.LONG
+
     def get_position(self, symbol: str) -> Position | None:
         try:
             pos = self._c.get_open_position_for_account(self._account_id, symbol)
             return Position(
                 symbol=pos.symbol,
-                qty=float(pos.qty),
+                qty=abs(float(pos.qty)),
+                side=self._position_side(pos),
                 avg_entry_price=float(pos.avg_entry_price),
                 current_price=float(pos.current_price),
                 unrealized_pnl=float(pos.unrealized_pl),
-                market_value=float(pos.market_value),
+                market_value=abs(float(pos.market_value)),
             )
         except Exception:
             return None
@@ -352,11 +370,12 @@ class BrokerApiBroker(BaseBroker):
             return [
                 Position(
                     symbol=p.symbol,
-                    qty=float(p.qty),
+                    qty=abs(float(p.qty)),
+                    side=self._position_side(p),
                     avg_entry_price=float(p.avg_entry_price),
                     current_price=float(p.current_price),
                     unrealized_pnl=float(p.unrealized_pl),
-                    market_value=float(p.market_value),
+                    market_value=abs(float(p.market_value)),
                 )
                 for p in positions
             ]
@@ -420,6 +439,28 @@ class BrokerApiBroker(BaseBroker):
             f"Could not fetch market clock after {retries} tries: {last_err}"
         )
         return False
+
+    def is_shortable(self, symbol: str) -> bool:
+        """F60: True only if Alpaca reports ``symbol`` tradable AND shortable AND
+        easy_to_borrow. Fail-closed (False) on error; a transient failure is NOT
+        cached (would block the symbol for the whole TTL after recovery)."""
+        sym = symbol.upper()
+        now = time.monotonic()
+        hit = self._etb_cache.get(sym)
+        if hit is not None and (now - hit[1]) < self._etb_ttl:
+            return hit[0]
+        try:
+            asset = self._c.get_asset(sym)
+        except Exception as e:
+            logger.warning(f"is_shortable({sym}) check failed; treating as NOT shortable: {e}")
+            return False
+        ok = bool(
+            getattr(asset, "tradable", False)
+            and getattr(asset, "shortable", False)
+            and getattr(asset, "easy_to_borrow", False)
+        )
+        self._etb_cache[sym] = (ok, now)
+        return ok
 
     # ── fills ────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@
 
 The gate lives at the executor (agent path) and command handler (human path),
 BEFORE RiskManager — broker.is_shortable() is the authority, fail-closed.
+Also covers code-review findings: SELL-on-SHORT guard, BrokerApiBroker parity.
 """
 
 from __future__ import annotations
@@ -14,8 +15,8 @@ from src.agent.steering.channel import SteeringChannel
 from src.agent.steering.commands import CommandHandler
 from src.agent.steering.records import SteeringCommand, SteeringEvent
 from src.agent.steering.state import SteeringState
-from src.core.models import Order
-from src.core.types import OrderSide, PositionSide
+from src.core.models import Order, PortfolioState, Position, TradeSignal
+from src.core.types import OrderSide, PositionSide, Signal
 from src.execution.base import BaseBroker
 from src.execution.brokers.simulated import SimulatedBroker
 from src.risk.manager import RiskManager
@@ -128,3 +129,42 @@ def test_human_short_allowed_when_etb(tmp_path):
                              confirmed=True, token=TOKEN))
     assert _last(channel).payload["outcome"] == "executed"
     assert b.get_position("XYZ").side == PositionSide.SHORT
+
+
+# --- SELL-on-SHORT guard (code-review finding) ---------------------------- #
+def test_sell_on_short_position_rejected_by_risk_manager():
+    """A SELL signal against a SHORT is rejected — prevents wrong-direction exit."""
+    rm = RiskManager(use_bracket_orders=True)
+    pos = Position(symbol="X", qty=10, avg_entry_price=100, side=PositionSide.SHORT)
+    pf = PortfolioState(cash=100_000, equity=100_000, positions={"X": pos})
+    sig = TradeSignal(symbol="X", signal=Signal.SELL)
+    assert rm.evaluate_signal(sig, 100, pf) is None
+
+
+def test_cover_on_short_position_accepted():
+    """A BUY_TO_COVER against a SHORT is accepted (correct exit path)."""
+    rm = RiskManager(use_bracket_orders=True)
+    pos = Position(symbol="X", qty=10, avg_entry_price=100, side=PositionSide.SHORT)
+    pf = PortfolioState(cash=100_000, equity=100_000, positions={"X": pos})
+    sig = TradeSignal(symbol="X", signal=Signal.BUY_TO_COVER, sell_pct=1.0)
+    order = rm.evaluate_signal(sig, 100, pf)
+    assert order is not None and order.side == OrderSide.BUY_TO_COVER
+
+
+def test_broker_api_broker_gets_side_from_f54_parity():
+    """BrokerApiBroker.position_side mirrors AlpacaBroker (code-review finding #1).
+    We test the static helper directly — it's shared across get_position/get_all_positions.
+    This ensures a short held via broker_api is visible as SHORT, not defaulted to LONG."""
+    from src.execution.brokers.broker_api_broker import BrokerApiBroker
+
+    class _Pos:
+        def __init__(self, side, qty):
+            self.side = side
+            self.qty = qty
+
+    # Alpaca reports short with negative qty; side attribute may or may not be 'short'.
+    assert BrokerApiBroker._position_side(_Pos("short", -100)) == PositionSide.SHORT
+    assert BrokerApiBroker._position_side(_Pos("long", 100)) == PositionSide.LONG
+    # Fallback via negative qty when side attribute is absent/ambiguous.
+    assert BrokerApiBroker._position_side(_Pos("", -50)) == PositionSide.SHORT
+    assert BrokerApiBroker._position_side(_Pos("", 50)) == PositionSide.LONG

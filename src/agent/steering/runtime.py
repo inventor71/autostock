@@ -671,7 +671,7 @@ def _parse_hhmm(s: str) -> int:
 # F25: human steering verbs that count as trade interventions (Q5=A). Lifecycle/
 # note/approval verbs are excluded from the timeline.
 _TRADE_VERBS = {
-    "buy", "sell", "flatten", "flatten_all", "place_order",
+    "buy", "sell", "short", "cover", "flatten", "flatten_all", "place_order",
     "cancel", "cancel_order", "cancel_all", "close_position", "close_all",
 }
 _MONITOR_INTERVENTIONS = 50

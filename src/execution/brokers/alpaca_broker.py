@@ -313,14 +313,17 @@ class AlpacaBroker(BaseBroker):
             return hit[0]
         try:
             asset = self._client.get_asset(sym)
-            ok = bool(
-                getattr(asset, "tradable", False)
-                and getattr(asset, "shortable", False)
-                and getattr(asset, "easy_to_borrow", False)
-            )
-        except Exception as e:  # fail-closed — cannot confirm ETB → not shortable
+        except Exception as e:  # fail-closed for THIS call, but do NOT cache a
+            # transient failure — caching False would block the symbol for the
+            # whole TTL after the API recovers. Only confirmed determinations are
+            # cached (mirrors is_market_open: fail-closed, but retryable).
             logger.warning(f"is_shortable({sym}) check failed; treating as NOT shortable: {e}")
-            ok = False
+            return False
+        ok = bool(
+            getattr(asset, "tradable", False)
+            and getattr(asset, "shortable", False)
+            and getattr(asset, "easy_to_borrow", False)
+        )
         self._etb_cache[sym] = (ok, now)
         return ok
 
