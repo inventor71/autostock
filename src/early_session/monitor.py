@@ -3,13 +3,19 @@
 Lifecycle:
 - ``start()``: called at market open (09:30 ET) to begin polling.
 - ``tick()``: fetch → buffer → detect → dump, every *poll_interval_seconds*.
-- ``stop()``: called at 10:30 ET (or when all pending finalizes complete).
+- ``stop()``: called at the configured ET end time (or when all pending
+  finalizes complete).
+
+All wall-clock comparisons are done in **US/Eastern** (the market timezone),
+matching the rest of the codebase (``zoneinfo.ZoneInfo("America/New_York")``).
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Callable
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 
@@ -19,9 +25,9 @@ from src.early_session.config import EarlySessionConfig
 from src.early_session.detector import SignalDetector
 from src.early_session.dumper import WindowDumper
 from src.early_session.index_writer import IndexWriter
-from src.early_session.records import BarRecord
+from src.early_session.records import BarRecord, SignalEvent
 
-UTC = timezone.utc
+_ET = ZoneInfo("America/New_York")
 
 
 class EarlySessionMonitor:
@@ -36,12 +42,20 @@ class EarlySessionMonitor:
         config: EarlySessionConfig,
         data_provider,
         workspace_root: Path,
+        symbols: list[str] | Callable[[], list[str]] | None = None,
     ):
         self._config = config
         self._data_provider = data_provider
         self._workspace_root = workspace_root
+        # Universe resolver: an explicit list, a callable returning one (e.g. the
+        # agent's live universe), or None to fall back to config/settings.
+        self._symbols_src = symbols
 
-        self._buffer = BufferManager(retention_minutes=config.buffer_retention_minutes)
+        # The buffer must retain the whole dump window (before + after), not just
+        # the configured minimum — see EarlySessionConfig.effective_retention_minutes.
+        self._buffer = BufferManager(
+            retention_minutes=config.effective_retention_minutes
+        )
         self._detector = SignalDetector(
             threshold_pct=config.threshold_pct,
             window_minutes=config.window_minutes,
@@ -50,8 +64,9 @@ class EarlySessionMonitor:
         self._index_writer = IndexWriter(workspace_root)
 
         self._detected_today: set[str] = set()
-        # symbol → datetime when the after-dump window ends
-        self._pending_finalizes: dict[str, datetime] = {}
+        # symbol → (detected event, datetime when the after-dump window ends).
+        # The event is kept so finalize never has to re-detect/reconstruct it.
+        self._pending_finalizes: dict[str, tuple[SignalEvent, datetime]] = {}
 
         self._monitor_end: datetime | None = None
         self._running = False
@@ -66,10 +81,11 @@ class EarlySessionMonitor:
             logger.info("Early-session monitor disabled — skipping")
             return
 
-        today_str = datetime.now(UTC).strftime("%Y-%m-%d")
-        self._detected_today = self._index_writer.read_detected(today_str)
+        now = datetime.now(_ET)
+        self._detected_today = self._index_writer.read_detected(
+            now.strftime("%Y-%m-%d")
+        )
 
-        now = datetime.now(UTC)
         h, m = map(int, self._config.monitor_end_et.split(":"))
         self._monitor_end = now.replace(hour=h, minute=m, second=0, microsecond=0)
 
@@ -91,7 +107,7 @@ class EarlySessionMonitor:
         if not self._running:
             return
 
-        now = datetime.now(UTC)
+        now = datetime.now(_ET)
 
         # --- 1. fetch -------------------------------------------------------
         symbols = self._symbols()
@@ -130,8 +146,6 @@ class EarlySessionMonitor:
             )
             if day_bars:
                 event.open = day_bars[0].open
-                # prev_close: use the close of the bar immediately before today's first bar
-                # For simplicity, gap_pct is computed from open vs prev_close when available
             prev_close = self._resolve_prev_close(sym, now)
             event.prev_close = prev_close
             if prev_close and event.open:
@@ -148,41 +162,28 @@ class EarlySessionMonitor:
             before_bars = self._buffer.get_range(sym, start, event.detected_at)
             self._dumper.write_before(event, before_bars)
 
-            # --- 3b. schedule finalize --------------------------------------
+            # --- 3b. schedule finalize (keep the event for later) -----------
             finalize_at = now + timedelta(minutes=self._config.dump_after_minutes)
-            self._pending_finalizes[sym] = finalize_at
+            self._pending_finalizes[sym] = (event, finalize_at)
 
         # --- 4. finalize completed events -----------------------------------
-        for sym, finalize_at in list(self._pending_finalizes.items()):
+        for sym, (event, finalize_at) in list(self._pending_finalizes.items()):
             if now < finalize_at:
                 continue
-            # Re-fetch the event from detector state is lost; reconstruct
-            window = self._buffer.get_window(sym, self._config.window_minutes)
-            event = self._detector.detect(window)
-            if event is None:
-                # Event was detected earlier but somehow no longer triggers — still dump
-                after_start = finalize_at - timedelta(minutes=self._config.dump_after_minutes)
-                after_bars = self._buffer.get_range(sym, after_start, now)
-                if after_bars:
-                    # Use the earliest bar as anchor
-                    first_bar = after_bars[0]
-                    # Construct minimal event
-                    event = self._detector.detect(
-                        self._buffer.get_window(sym, self._config.window_minutes)
-                    ) or None
-                else:
-                    del self._pending_finalizes[sym]
-                    continue
 
+            # Use the SignalEvent captured at detection time — never re-detect.
             after_start = finalize_at - timedelta(minutes=self._config.dump_after_minutes)
             after_bars = self._buffer.get_range(sym, after_start, now)
             data_file = self._dumper.write_after(event, after_bars)
 
-            time_start = after_start
             total_bars = len(
-                self._buffer.get_range(sym, after_start - timedelta(minutes=self._config.dump_before_minutes), now)
+                self._buffer.get_range(
+                    sym,
+                    after_start - timedelta(minutes=self._config.dump_before_minutes),
+                    now,
+                )
             )
-            self._index_writer.append(event, data_file, total_bars, time_start, now)
+            self._index_writer.append(event, data_file, total_bars, after_start, now)
 
             logger.info("Early-session dump finalized: {} → {}", sym, data_file)
             del self._pending_finalizes[sym]
@@ -201,13 +202,19 @@ class EarlySessionMonitor:
     # ------------------------------------------------------------------
 
     def _symbols(self) -> list[str]:
-        """Resolve the universe from the data provider or config."""
-        # Use trading.symbols from the settings if available via data_provider
-        if hasattr(self._data_provider, "_symbols"):
-            return list(self._data_provider._symbols)
-        # Fallback: try to get from settings
+        """Resolve the universe: injected list/callable, else config/settings."""
+        src = self._symbols_src
+        if callable(src):
+            try:
+                return list(src())
+            except Exception:
+                logger.opt(exception=True).warning("Early-session symbols callable failed")
+                return []
+        if src is not None:
+            return list(src)
+        # Fallback: trading universe from settings.
         try:
-            from src.config.settings import get_settings
+            from config.config import get_settings
             return list(get_settings().trading.symbols)
         except Exception:
             return []
@@ -215,7 +222,6 @@ class EarlySessionMonitor:
     def _resolve_prev_close(self, symbol: str, now: datetime) -> float:
         """Try to get the previous trading day's close for *symbol*."""
         try:
-            from src.data.base import BaseDataProvider
             df = self._data_provider.get_bars(
                 symbol,
                 timeframe=TimeFrame.DAY_1,

@@ -168,6 +168,16 @@ class DecisionExecutor:
             latest_by_symbol[d.symbol] = (cursor + i, d)
         batch: list[tuple[int, Decision]] = list(latest_by_symbol.values())
 
+        # Any pending index that is NOT the latest for its symbol is superseded —
+        # it will never be executed (a newer same-symbol decision replaces it), so
+        # it is terminal for cursor purposes. Without this the cursor-advance loop
+        # below would stall forever on the first superseded index (it never gets a
+        # status and so never enters terminal_indices).
+        kept = {idx for idx, _ in batch}
+        for i in range(cursor, len(decisions)):
+            if i not in kept:
+                terminal_indices.add(i)
+
         # Filter out already-terminal indices (idempotency: never re-execute a
         # decision that was already resolved on a previous cycle).
         active_batch = [(idx, d) for idx, d in batch if idx not in terminal_indices]
