@@ -1,5 +1,6 @@
 import type { MonitorTurn, MarketRule, InterventionMarker } from "../types"
 import { DEFAULT_MARKET_RULE } from "../types"
+import { shiftDate } from "../hooks/use-session-data"
 
 // F25: market-aware 12h timeline. Everything is computed in absolute epoch ms
 // (the session crosses local midnight in KST, so minutes-of-day is unusable).
@@ -53,6 +54,15 @@ export interface SessionBounds {
   regularOpen: number
   regularClose: number
   afterClose: number
+  // F55: overnight ("데이마켓") session = [after_close(D), pre_open(D+1)]. It crosses ET
+  // midnight, so it's derived across two calendar dates (no MarketRule schema change).
+  // The previous evening's overnight is [overnightPrevOpen, preOpen); the current evening's
+  // is [afterClose, overnightClose). One of the two is what's on screen in an off-market
+  // window; the other clamps to 0 width. (See F55 functional design / critic HIGH.)
+  /** This ET date's 04:00 pre-open == close of the *previous* evening's overnight session. */
+  overnightPrevOpen: number
+  /** Next ET date's 04:00 pre-open == close of *this* evening's overnight session. */
+  overnightClose: number
   /** 12h window centered on the regular session. */
   winStart: number
   winEnd: number
@@ -68,9 +78,13 @@ export function sessionBounds(etDate: string, rule: MarketRule): SessionBounds {
   const regularOpen = etWallToEpoch(etDate, rule.regular_open, tz)
   const regularClose = etWallToEpoch(etDate, rule.regular_close, tz)
   const afterClose = etWallToEpoch(etDate, rule.after_close, tz)
+  // F55: overnight boundaries on the neighbouring ET dates (DST-correct via etWallToEpoch).
+  const overnightPrevOpen = etWallToEpoch(shiftDate(etDate, -1), rule.after_close, tz)
+  const overnightClose = etWallToEpoch(shiftDate(etDate, +1), rule.pre_open, tz)
   const mid = (regularOpen + regularClose) / 2
   return {
     preOpen, regularOpen, regularClose, afterClose,
+    overnightPrevOpen, overnightClose,
     winStart: mid - WINDOW_MS / 2,
     winEnd: mid + WINDOW_MS / 2,
   }
@@ -99,13 +113,17 @@ export function liveWindowStart(now: number, etDate: string, rule: MarketRule): 
   return bounds.winStart + k * WINDOW_MS
 }
 
-export type MarketPhase = "pre" | "regular" | "after" | "closed"
+export type MarketPhase = "pre" | "regular" | "after" | "day" | "closed"
 
 /** Which market phase an instant falls in, per the session bounds. */
 export function phaseAt(b: SessionBounds, ms: number): MarketPhase {
   if (ms >= b.regularOpen && ms < b.regularClose) return "regular"
   if (ms >= b.preOpen && ms < b.regularOpen) return "pre"
   if (ms >= b.regularClose && ms < b.afterClose) return "after"
+  // F55: overnight ("데이마켓") — check both the previous and current evening spans,
+  // since `b` is anchored on a single ET date but the band straddles midnight.
+  if (ms >= b.overnightPrevOpen && ms < b.preOpen) return "day"
+  if (ms >= b.afterClose && ms < b.overnightClose) return "day"
   return "closed"
 }
 
@@ -127,7 +145,7 @@ export interface TickPosition {
 }
 
 export interface RegionSpan {
-  kind: "pre" | "regular" | "after"
+  kind: "pre" | "regular" | "after" | "day"
   x0: number
   x1: number
 }
@@ -253,13 +271,18 @@ export function computeLayout(opts: {
     ticks.push({ label: localHhmm(ms), x: xOf(ms) })
   }
 
-  // Three market regions, derived from the *session* boundary instants but
+  // Market-session regions, derived from the *session* boundary instants but
   // clamped to the *view* window. On the off-market window these may be empty
   // (x1 <= x0), which the renderer already handles with <Show when={r.x1>r.x0}>.
+  // F55: the overnight ("데이마켓") band straddles ET midnight, so both the previous and
+  // the current evening's span are emitted; whichever is outside the view clamps to 0 width
+  // and is dropped by the renderer (a single 12h window can contain at most one of them).
   const regions: RegionSpan[] = [
     { kind: "pre",      x0: clampX(bounds.preOpen),      x1: clampX(bounds.regularOpen) },
     { kind: "regular",  x0: clampX(bounds.regularOpen),  x1: clampX(bounds.regularClose) },
     { kind: "after",    x0: clampX(bounds.regularClose),  x1: clampX(bounds.afterClose) },
+    { kind: "day",      x0: clampX(bounds.overnightPrevOpen), x1: clampX(bounds.preOpen) },
+    { kind: "day",      x0: clampX(bounds.afterClose),    x1: clampX(bounds.overnightClose) },
   ]
 
   const nowX = now >= viewStart && now <= viewEnd ? xOf(now) : -1
