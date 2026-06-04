@@ -95,7 +95,9 @@ server.registerTool(
 
 const placeOrderShape = {
   symbol: z.string().min(1).describe("ticker symbol (e.g. AAPL)"),
-  side: z.enum(["buy", "sell"]),
+  // F54: sell_short opens a short, buy_to_cover closes one (maps 1:1 to the
+  // daemon OrderSide; the daemon applies the short gate — mandatory stop, etc.).
+  side: z.enum(["buy", "sell", "sell_short", "buy_to_cover"]),
   qty: z.number().positive().optional()
     .describe("share count (whole shares preferred); do NOT set if using notional"),
   notional: z.number().positive().optional()

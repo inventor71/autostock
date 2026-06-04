@@ -1,7 +1,7 @@
 // F8 — unit tests for the pure sidebar derivation/format helpers (bun).
 // No solid-js / OpenTUI imports, so this runs without the full submodule install.
 import { expect, test } from "bun:test"
-import { orderRole, orderTrigger, orderDelta, pnlPct, fmtPct, fmtPrice, isUp, mmdd, fillDatePrefix } from "./sidebar-format"
+import { orderRole, orderTrigger, orderDelta, pnlPct, sideMark, fmtPct, fmtPrice, isUp, mmdd, fillDatePrefix } from "./sidebar-format"
 
 test("orderRole mirrors status.py _order_role", () => {
   expect(orderRole({ side: "buy", order_type: "limit" })).toBe("entry")
@@ -26,11 +26,26 @@ test("orderDelta = (trigger/current - 1)*100, blank without current", () => {
   expect(orderDelta({ limit_price: 110, current_price: 0 })).toBeUndefined() // guard /0
 })
 
-test("pnlPct = (current/avg - 1)*100", () => {
+test("pnlPct = (current/avg - 1)*100 for a long (default)", () => {
   expect(pnlPct({ avg_entry_price: 100, current_price: 120 })).toBeCloseTo(20, 6)
   expect(pnlPct({ avg_entry_price: 100, current_price: 90 })).toBeCloseTo(-10, 6)
   expect(pnlPct({ current_price: 120 })).toBeUndefined()
   expect(pnlPct({ avg_entry_price: 0, current_price: 120 })).toBeUndefined()
+})
+
+test("F54: pnlPct inverts for a short (price down = profit)", () => {
+  // short from 100, price 90 → +10% gain (not −10%)
+  expect(pnlPct({ avg_entry_price: 100, current_price: 90, side: "short" })).toBeCloseTo(11.111, 2)
+  // short from 100, price 110 → loss
+  expect(pnlPct({ avg_entry_price: 100, current_price: 110, side: "short" })).toBeCloseTo(-9.0909, 2)
+  // explicit long matches default
+  expect(pnlPct({ avg_entry_price: 100, current_price: 120, side: "long" })).toBeCloseTo(20, 6)
+})
+
+test("F54: sideMark is S for short, L otherwise", () => {
+  expect(sideMark({ side: "short" })).toBe("S")
+  expect(sideMark({ side: "long" })).toBe("L")
+  expect(sideMark({})).toBe("L") // absent → long
 })
 
 test("fmtPct has arrow + sign; fmtPrice 2dp; blanks for nullish", () => {

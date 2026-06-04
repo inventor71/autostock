@@ -100,6 +100,43 @@ class TestPromptShortWiring:
         assert "short" in p.lower()
 
 
+class TestReviewShortPnL:
+    """critic #2: the agent's EOD review must report a short's P&L with the right
+    sign + a SHORT label, not the long-only formula."""
+
+    def _outcome_line(self, side: PositionSide, entry: float, price: float):
+        from datetime import datetime
+        from src.agent import review
+        from src.agent.journal import Decision
+
+        class _Broker:
+            def get_position(self, sym):
+                p = Position(symbol=sym, qty=10, avg_entry_price=entry, side=side)
+                p.update_price(price)
+                return p
+
+        class _DP:
+            def get_latest_price(self, sym):
+                return price
+
+        d = Decision(symbol="X", action="SELL_SHORT" if side == PositionSide.SHORT else "BUY",
+                     ts=datetime.now())
+        return review.outcome_lines([d], _Broker(), _DP())[0]
+
+    def test_winning_short_shows_positive_pct_and_label(self):
+        line = self._outcome_line(PositionSide.SHORT, entry=100, price=90)
+        assert "SHORT" in line
+        assert "+" in line.split("held")[1]  # positive pct on the holding segment
+
+    def test_losing_short_shows_negative_pct(self):
+        line = self._outcome_line(PositionSide.SHORT, entry=100, price=110)
+        assert "SHORT" in line and "-" in line.split("held")[1]
+
+    def test_long_review_unchanged(self):
+        line = self._outcome_line(PositionSide.LONG, entry=100, price=120)
+        assert "SHORT" not in line and "+" in line.split("held")[1]
+
+
 class TestPlaceOrderArgsShort:
     def test_sell_short_side_accepted(self):
         a = PlaceOrderArgs(symbol="X", side="sell_short", qty=10,
