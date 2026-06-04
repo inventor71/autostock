@@ -8,7 +8,7 @@
 - **Track ID**: F56
 - **Title**: code-review 후속 버그 수정 — surge prev_close, early-session ET/finalize/retention, executor cursor stall
 - **Type**: feature (bugfix)
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
+- **Status**: merged → main 6b043c6 (2026-06-04)
 - **Branch**: feat/F56
 - **Worktree**: .claude/worktrees/F56
 - **Submodule branch**: — (operator-console/cli 미변경 예정)
