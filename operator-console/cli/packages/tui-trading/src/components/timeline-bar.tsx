@@ -6,7 +6,7 @@ import type { SessionData } from "../hooks/use-session-data"
 import { readSessionData, readHistoricalSession } from "../hooks/use-session-data"
 import {
   markerGlyph, markerColor, interventionGlyph, interventionColor, fmtCost,
-  phaseLabel, phaseShort, phaseColor, fmtWindowRange, fmtTurnLabel,
+  phaseLabel, phaseShort, phaseColor, fmtWindowRange, fmtTurnLabel, windowedCost,
 } from "../utils/format"
 
 export interface TimelineBarProps {
@@ -99,6 +99,11 @@ export function TimelineBar(props: TimelineBarProps) {
   // F44: queued count (live session only) for the in-flight turn label's "+N queued".
   const queued = () => (isToday() ? (props.monitor()?.queued ?? 0) : 0)
 
+  // F58: cost of the turns inside the CURRENT view window [viewStart, viewEnd) — so the
+  // NavRow shows usage for any window (incl. past dates), not just the live ET-session total.
+  // Sums per-turn cost_usd from session().turns (live = monitor.json, past = turns.jsonl).
+  const windowCost = createMemo(() => windowedCost(session().turns, viewStart(), viewEnd()))
+
   return (
     <box width={props.width} height={3} flexDirection="column">
       <Show when={!disconnected()} fallback={<text fg="gray">{"  Monitor disconnected"}</text>}>
@@ -108,7 +113,7 @@ export function TimelineBar(props: TimelineBarProps) {
           isLive={isLive()}
           phase={phase()}
           width={props.width}
-          todayCost={isLive() ? (props.monitor()?.turns?.today_cost_usd ?? 0) : 0}
+          windowCost={windowCost()}
           currentTurn={isToday() ? props.currentTurn() : null}
           queued={queued()}
           blinkOn={blinkOn()}
@@ -143,7 +148,7 @@ function NavRow(props: {
   isLive: boolean
   phase: string | null
   width: number
-  todayCost: number
+  windowCost: number
   currentTurn: CurrentTurn | null
   queued: number
   blinkOn: boolean
@@ -192,9 +197,9 @@ function NavRow(props: {
       <Show when={props.phase}>
         <text fg={phaseColor(props.phase!)}>{`● ${phaseLabel(props.phase!)}`}</text>
       </Show>
-      <Show when={props.isLive}>
-        <text fg="gray">{`· ${fmtCost(props.todayCost)}`}</text>
-      </Show>
+      {/* F58: window cost — shown for ANY window (live or past), summed over the turns in the
+          current view window. Was live-only (today_cost_usd); past windows showed nothing. */}
+      <text fg="gray">{`· ${fmtCost(props.windowCost)}`}</text>
     </box>
   )
 }

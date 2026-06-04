@@ -100,6 +100,23 @@ export function fmtCost(usd: number): string {
   return `$${usd.toFixed(2)}`
 }
 
+// F58: sum cost_usd of the turns whose ts falls in the half-open view window
+// [startMs, endMs). Lets the NavRow show the cost for ANY window (live or past),
+// not just the live ET-session total. Turns with an unparseable ts are skipped.
+export function windowedCost(
+  turns: ReadonlyArray<{ ts: string; cost_usd: number }>,
+  startMs: number,
+  endMs: number,
+): number {
+  let sum = 0
+  for (const t of turns) {
+    const ms = Date.parse(t.ts)
+    if (Number.isNaN(ms) || ms < startMs || ms >= endMs) continue
+    sum += t.cost_usd || 0
+  }
+  return sum
+}
+
 export function fmtDuration(ms: number | null): string {
   if (ms == null) return "—"
   if (ms < 1000) return `${ms}ms`
