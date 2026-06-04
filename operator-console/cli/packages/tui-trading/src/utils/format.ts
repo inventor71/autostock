@@ -51,13 +51,14 @@ export function interventionColor(verb: string): string {
 
 // F25: market-phase labels/colors for the timeline (region bands + now badge).
 const PHASE_LABEL: Record<string, string> = {
-  pre: "PRE-MARKET", regular: "REGULAR", after: "AFTER-HRS", closed: "CLOSED",
+  pre: "PRE-MARKET", regular: "REGULAR", after: "AFTER-HRS", day: "DAY-MKT", closed: "CLOSED",
 }
 const PHASE_SHORT: Record<string, string> = {
-  pre: "PRE", regular: "OPEN", after: "AFT", closed: "—",
+  pre: "PRE", regular: "OPEN", after: "AFT", day: "DAY", closed: "—",
 }
 const PHASE_COLOR: Record<string, string> = {
-  pre: "#7faaff", regular: "#5fd38d", after: "#c98bdb", closed: "gray",
+  // F55: "데이마켓"(overnight) — amber, distinct from pre(blue)/regular(green)/after(purple).
+  pre: "#7faaff", regular: "#5fd38d", after: "#c98bdb", day: "#d4b86a", closed: "gray",
 }
 export function phaseLabel(p: string): string { return PHASE_LABEL[p] ?? p }
 export function phaseShort(p: string): string { return PHASE_SHORT[p] ?? p }

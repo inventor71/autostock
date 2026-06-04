@@ -91,11 +91,11 @@ describe("computeLayout", () => {
     expect(x).toBeLessThanOrEqual(reg.x1)
   })
 
-  test("three regions present and ordered", () => {
+  test("regions present and ordered (incl. F55 overnight day spans)", () => {
     const layout = computeLayout({
       turns: [], interventions: [], barWidth: 100, etDate: "2026-06-01",
     })
-    expect(layout.regions.map((r) => r.kind)).toEqual(["pre", "regular", "after"])
+    expect(layout.regions.map((r) => r.kind)).toEqual(["pre", "regular", "after", "day", "day"])
   })
 
   test("nowX is -1 when now is outside the window", () => {
@@ -156,15 +156,18 @@ describe("phaseAt", () => {
   const b = sessionBounds("2026-06-01", DEFAULT_MARKET_RULE)
   const at = (hhmm: string) => phaseAt(b, etWallToEpoch("2026-06-01", hhmm, "America/New_York"))
   test("classifies each phase", () => {
-    expect(at("03:00")).toBe("closed")  // before pre-open
+    // F55: 00:00–04:00 and 20:00–24:00 are now the overnight ("데이마켓") session, not closed.
+    expect(at("03:00")).toBe("day")     // overnight (prev evening's span, into this morning)
     expect(at("05:00")).toBe("pre")     // pre-market
     expect(at("10:00")).toBe("regular") // regular session
     expect(at("17:00")).toBe("after")   // after-hours
-    expect(at("21:00")).toBe("closed")  // after close
+    expect(at("21:00")).toBe("day")     // overnight (this evening's span)
   })
   test("boundaries are half-open (open inclusive, close exclusive)", () => {
     expect(at("09:30")).toBe("regular")  // exactly open
     expect(at("16:00")).toBe("after")    // exactly close → after
+    expect(at("04:00")).toBe("pre")      // F55: overnight closes at 04:00 → pre takes over
+    expect(at("20:00")).toBe("day")      // F55: after closes at 20:00 → overnight takes over
   })
 })
 
@@ -337,7 +340,7 @@ describe("computeLayout with window (F45)", () => {
     expect(layout.viewRange.start).toBe(layout.bounds.winStart)
     expect(layout.viewRange.end).toBe(layout.bounds.winEnd)
     expect(layout.nowX).toBe(-1) // default now is outside historical 2026 view
-    expect(layout.regions.map((r) => r.kind)).toEqual(["pre", "regular", "after"])
+    expect(layout.regions.map((r) => r.kind)).toEqual(["pre", "regular", "after", "day", "day"])
   })
 
   test("nowX is in view range when now is inside the window", () => {
@@ -412,5 +415,116 @@ describe("computeLayout with window (F45)", () => {
     })
     expect(layout.viewRange.start).toBe(1_000_000_000)
     expect(layout.viewRange.end).toBe(1_000_000_000 + WINDOW_MS)
+  })
+})
+
+// ──────────── F55: "데이마켓" / overnight session band ────────────
+// The overnight session = [after_close(D), pre_open(D+1)] (20:00 ET → next-day 04:00 ET),
+// crossing ET midnight. The critic-found defect: deriving it from the view-midpoint date
+// alone makes the live band 0-width during exactly the hours it should show. The fix emits
+// BOTH the previous- and current-evening spans; whichever is in view renders.
+describe("F55 overnight (데이마켓) session", () => {
+  const rule = DEFAULT_MARKET_RULE
+  const date = "2026-06-01"
+
+  // E1: overnight boundaries straddle ET midnight (close is the *next* calendar date).
+  test("E1: sessionBounds overnight boundaries cross midnight", () => {
+    const b = sessionBounds(date, rule)
+    // current evening: 20:00 ET 06-01 → 04:00 ET 06-02
+    expect(new Date(b.afterClose).toISOString()).toBe("2026-06-02T00:00:00.000Z")    // 20:00 EDT
+    expect(new Date(b.overnightClose).toISOString()).toBe("2026-06-02T08:00:00.000Z") // 04:00 EDT 06-02
+    expect(b.overnightClose).toBeGreaterThan(b.afterClose)
+    expect(b.overnightClose - b.afterClose).toBe(8 * 60 * 60 * 1000) // 20:00 → 04:00 = 8h
+    // previous evening: 20:00 ET 05-31 → close == this date's 04:00 pre-open
+    expect(b.overnightPrevOpen).toBeLessThan(b.preOpen)
+    expect(b.preOpen - b.overnightPrevOpen).toBe(8 * 60 * 60 * 1000)
+  })
+
+  // E2: DST — 04:00/20:00 overnight boundaries round-trip on transition days.
+  const readBackEt = (ms: number) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: ET, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(ms))
+  test("E2: overnight boundaries round-trip across DST", () => {
+    for (const d of ["2026-03-08", "2026-11-01", "2026-06-01"]) {
+      const b = sessionBounds(d, rule)
+      expect(readBackEt(b.afterClose)).toBe("20:00")
+      expect(readBackEt(b.overnightClose)).toBe("04:00")
+      expect(readBackEt(b.overnightPrevOpen)).toBe("20:00")
+    }
+  })
+
+  // E3: phaseAt classifies both overnight spans (already covered above; assert directly).
+  test("E3: phaseAt returns 'day' for both evening spans", () => {
+    const b = sessionBounds(date, rule)
+    const at = (etDate: string, hhmm: string) => phaseAt(b, etWallToEpoch(etDate, hhmm, ET))
+    expect(at("2026-06-01", "22:00")).toBe("day") // this evening
+    expect(at("2026-06-02", "02:00")).toBe("day") // ...into next morning (current span)
+    expect(at("2026-06-01", "02:00")).toBe("day") // previous evening's span this morning
+    expect(at("2026-06-01", "04:00")).toBe("pre") // overnight closes at 04:00 → pre
+  })
+
+  // E4 (★critic HIGH): the live overnight band must actually RENDER in the off-market window
+  // that the operator sees at, e.g., 02:00 ET — derived from the view-midpoint date alone it
+  // was 0-width. Reproduce the real live geometry and assert width > 0.
+  test("E4: overnight band renders in the post-midnight off-market window", () => {
+    // now = 02:00 ET 06-02; the live tile is the off-market window containing it.
+    const now = etWallToEpoch("2026-06-02", "02:00", ET)
+    const liveStart = liveWindowStart(now, "2026-06-02", rule)
+    const primaryEtDate = etDateOf((liveStart + liveStart + WINDOW_MS) / 2, ET)
+    const layout = computeLayout({
+      turns: [], interventions: [], barWidth: 100, etDate: primaryEtDate,
+      window: { start: liveStart, end: liveStart + WINDOW_MS }, now,
+    })
+    const dayBands = layout.regions.filter((r) => r.kind === "day" && r.x1 > r.x0)
+    expect(dayBands.length).toBe(1)            // exactly one evening's span is in view
+    expect(dayBands[0]!.x1 - dayBands[0]!.x0).toBeGreaterThan(10) // and it's a wide band, not a sliver
+    // the live badge phase is "day" too
+    expect(phaseAt(layout.bounds, now)).toBe("day")
+  })
+
+  // E4b: the NEXT off-market window (22:00 ET) shows the current-evening span.
+  test("E4b: overnight band renders in the pre-midnight off-market window", () => {
+    const now = etWallToEpoch(date, "22:00", ET)
+    const liveStart = liveWindowStart(now, date, rule)
+    const primaryEtDate = etDateOf((liveStart + liveStart + WINDOW_MS) / 2, ET)
+    const layout = computeLayout({
+      turns: [], interventions: [], barWidth: 100, etDate: primaryEtDate,
+      window: { start: liveStart, end: liveStart + WINDOW_MS }, now,
+    })
+    const dayBands = layout.regions.filter((r) => r.kind === "day" && r.x1 > r.x0)
+    expect(dayBands.length).toBe(1)
+    expect(phaseAt(layout.bounds, now)).toBe("day")
+  })
+
+  // E4c: in the market (regular-session-centered) window, BOTH overnight spans are 0-width.
+  test("E4c: overnight bands are not drawn in the market window", () => {
+    const b = sessionBounds(date, rule)
+    const layout = computeLayout({
+      turns: [], interventions: [], barWidth: 100, etDate: date,
+      window: { start: b.winStart, end: b.winEnd },
+    })
+    const dayBands = layout.regions.filter((r) => r.kind === "day" && r.x1 > r.x0)
+    expect(dayBands.length).toBe(0)
+  })
+
+  // E5: month/year rollover via shiftDate (reused helper).
+  test("E5: overnight derivation crosses month boundary", () => {
+    const b = sessionBounds("2026-01-31", rule)
+    // next-day pre-open is 2026-02-01 04:00 ET
+    expect(etDateOf(b.overnightClose, ET)).toBe("2026-02-01")
+    // prev-day after-close is 2026-01-30 20:00 ET
+    expect(etDateOf(b.overnightPrevOpen, ET)).toBe("2026-01-30")
+  })
+
+  // E6 (regression): the DAY band is rendered like pre/after — band + label, no boundary glyph.
+  test("E6: DAY label appears for a wide overnight band", () => {
+    const now = etWallToEpoch("2026-06-02", "02:00", ET)
+    const liveStart = liveWindowStart(now, "2026-06-02", rule)
+    const primaryEtDate = etDateOf((liveStart + liveStart + WINDOW_MS) / 2, ET)
+    const layout = computeLayout({
+      turns: [], interventions: [], barWidth: 100, etDate: primaryEtDate,
+      window: { start: liveStart, end: liveStart + WINDOW_MS }, now,
+    })
+    const cells = labelCells(layout.regions, 100, phaseShort)
+    expect(cells.filter((c) => c.kind === "day").map((c) => c.ch).join("")).toBe("DAY")
   })
 })

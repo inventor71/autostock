@@ -240,6 +240,7 @@ const REGION_BG: Record<string, string> = {
   pre: "#26304d",      // dim blue  (pre-market)
   regular: "#1f4d33",  // green     (regular session — brightest)
   after: "#3d2740",    // dim purple (after-hours)
+  day: "#3d3320",      // dim amber (F55: 데이마켓 / overnight)
 }
 
 function MarkerRow(props: {
