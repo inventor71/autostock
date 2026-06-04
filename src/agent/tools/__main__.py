@@ -40,7 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     for name in ("quote", "indicators", "fundamentals", "news",
-                  "earnings", "insider", "analyst_upgrades", "institutional"):
+                  "earnings", "insider", "analyst_upgrades", "institutional",
+                  "short_data"):
         p = sub.add_parser(name)
         p.add_argument("symbol")
     sub.choices["news"].add_argument("--limit", type=int, default=8)
@@ -97,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
         out = market.indicators(args.symbol, _provider())
     elif args.cmd == "fundamentals":
         out = market.fundamentals(args.symbol)
+    elif args.cmd == "short_data":
+        out = market.short_data(args.symbol)
     elif args.cmd == "news":
         out = market.news(args.symbol, limit=args.limit)
     elif args.cmd == "scoreboard":

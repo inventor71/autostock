@@ -232,7 +232,10 @@ class SteeringRuntime:
             broker = self.executor.broker
             try:
                 ps = broker.get_portfolio_state()
+                # F54: include side so the TUI can mark long vs short (L/S) and
+                # render a short's price-down-is-profit coloring correctly.
                 positions = {s: {"qty": p.qty, "avg_entry_price": p.avg_entry_price,
+                                 "side": getattr(getattr(p, "side", None), "value", "long"),
                                  "current_price": p.current_price,
                                  "market_value": p.market_value,
                                  "unrealized_pnl": p.unrealized_pnl}

@@ -162,6 +162,66 @@ def fundamentals(symbol: str, ticker_factory: Callable[[str], Any] | None = None
     return {"symbol": symbol.upper(), **{k: info.get(k) for k in _FUNDAMENTAL_KEYS}}
 
 
+def short_data(symbol: str, ticker_factory: Callable[[str], Any] | None = None) -> dict:
+    """F54: short-selling decision data — short interest + a computed squeeze flag.
+
+    Surfaces the short-interest metrics yfinance exposes (short % of float, days-
+    to-cover, share counts + month-over-month change) and computes a
+    ``squeeze_risk`` flag the agent must weigh before shorting (FR-6.3).
+
+    Borrow rate / locate availability are NOT in yfinance and are deliberately
+    reported as broker-determined: Alpaca decides at order time and surfaces a
+    no-borrow as an order reject. Reporting a fake number here would give false
+    confidence (fail-honest), so ``borrow_availability`` is descriptive only.
+    """
+    if ticker_factory is None:
+        import yfinance as yf
+        ticker_factory = yf.Ticker
+    try:
+        info = ticker_factory(symbol).info or {}
+    except Exception as exc:
+        return {"symbol": symbol.upper(), "error": str(exc)}
+
+    short_float = info.get("shortPercentOfFloat")  # fraction, e.g. 0.18 = 18%
+    shares_short = info.get("sharesShort")
+    shares_short_prior = info.get("sharesShortPriorMonth")
+    si_change_pct = None
+    if shares_short and shares_short_prior:
+        try:
+            si_change_pct = _round((shares_short - shares_short_prior) / shares_short_prior * 100, 1)
+        except ZeroDivisionError:
+            si_change_pct = None
+
+    short_float_pct = _round(short_float * 100, 2) if short_float is not None else None
+    if short_float_pct is None:
+        squeeze_risk = "UNKNOWN"
+    elif short_float_pct > 40:
+        squeeze_risk = "HIGH"
+    elif short_float_pct > 20:
+        squeeze_risk = "ELEVATED"
+    else:
+        squeeze_risk = "LOW"
+
+    note = (
+        f"squeeze_risk={squeeze_risk}"
+        + (f" (short float {short_float_pct}% of float)" if short_float_pct is not None else "")
+        + ". A short into HIGH/ELEVATED short interest risks a squeeze — size down "
+        "or skip. Borrow availability/rate is decided by Alpaca at order time."
+    )
+
+    return {
+        "symbol": symbol.upper(),
+        "short_percent_of_float": short_float_pct,
+        "short_ratio": info.get("shortRatio"),  # days-to-cover
+        "shares_short": shares_short,
+        "shares_short_prior_month": shares_short_prior,
+        "short_interest_change_pct": si_change_pct,
+        "squeeze_risk": squeeze_risk,
+        "borrow_availability": "broker-determined (Alpaca decides at order time)",
+        "note": note,
+    }
+
+
 def news(symbol: str, news_provider=None, limit: int = 8) -> dict:
     """Recent news headlines for a symbol, with links."""
     if news_provider is None:
@@ -205,11 +265,20 @@ def account(broker) -> dict:
 
     positions = []
     for p in sorted(state.positions.values(), key=lambda x: x.symbol):
-        unreal_pct = (
-            (p.current_price / p.avg_entry_price - 1) * 100 if p.avg_entry_price else None
-        )
+        # F54: P&L % is direction-aware — a short gains as price falls. side is
+        # surfaced so the agent (and the TUI consuming this) never mis-reads a
+        # short's number as a long's.
+        side = getattr(p, "side", None)
+        side_str = side.value if side is not None and hasattr(side, "value") else "long"
+        if not p.avg_entry_price:
+            unreal_pct = None
+        elif side_str == "short":
+            unreal_pct = (p.avg_entry_price / p.current_price - 1) * 100 if p.current_price else None
+        else:
+            unreal_pct = (p.current_price / p.avg_entry_price - 1) * 100
         positions.append({
             "symbol": p.symbol,
+            "side": side_str,
             "qty": _round(p.qty),
             "avg_entry": _round(p.avg_entry_price, 2),
             "price": _round(p.current_price, 2),
