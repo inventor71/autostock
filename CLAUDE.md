@@ -546,7 +546,7 @@ The Operations stage will eventually include:
 │   │       ├── audit.md             #   per-track append-only audit
 │   │       ├── inception/           #   requirements/ plans/ user-stories/ application-design/
 │   │       └── construction/        #   plans/ {unit}/{functional-design,nfr-*,code}/ build-and-test/
-│   ├── aidlc-state.md               # Track Registry only (+ archived pre-partition history)
+│   ├── aidlc-state.md               # Track Registry only
 │   └── audit.md                     # GLOBAL timeline (merge-time appends only)
 ```
 

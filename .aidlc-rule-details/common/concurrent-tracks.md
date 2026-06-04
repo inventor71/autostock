@@ -50,8 +50,9 @@ aidlc-docs/
   resolve conflicts beyond what `git diff --name-only` can see.
 - **Per-track `audit.md`**: every user input / approval / AI action for this track, append-only,
   ISO 8601 timestamps, raw user input (never summarized) — same format as before, just scoped.
-- **Root `aidlc-state.md`**: demoted to the **Track Registry** (table below) plus archived
-  pre-partition history. Do NOT add new per-track detail here.
+- **Root `aidlc-state.md`**: the **Track Registry** (table below) only. Do NOT add per-track
+  detail here — it lives in `tracks/<id>/state.md`. The only edits to this file are Registry
+  rows (at track create / merge / close).
 - **Root `audit.md`**: a global cross-track timeline. A track appends to it **only at merge**
   (fold a one-line summary), never mid-flight — so there is no concurrent append race.
 
