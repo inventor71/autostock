@@ -25,6 +25,18 @@ class BaseBroker(ABC):
         brokers are always 'open')."""
         return True
 
+    def is_shortable(self, symbol: str) -> bool:
+        """Whether ``symbol`` may be SOLD SHORT right now — i.e. it is tradable,
+        shortable, AND easy-to-borrow at the broker (F60).
+
+        Short entries are gated on this (fail-closed) so the bot only shorts
+        liquid, easy-to-borrow names — bounding both borrow cost and recall/
+        buy-in risk (a hard-to-borrow short can be force-closed against you).
+        Default True for simulated/backtest brokers (no borrow concept); live
+        brokers (Alpaca) override with the real asset flags and fail closed
+        (False) when the status can't be confirmed."""
+        return True
+
     def get_fills(self, since: str | None = None) -> list[FillEvent]:
         """Broker fill events after ``since`` (an opaque, broker-specific cursor).
 

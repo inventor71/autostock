@@ -167,6 +167,9 @@ as a long:
 - A short MUST carry a stop ABOVE entry (a short's loss is unbounded). A
   SELL_SHORT decision with no stop is REJECTED by the executor. Set `target`
   BELOW entry.
+- Only easy-to-borrow names can be shorted: the executor rejects a SELL_SHORT on
+  a non-easy-to-borrow / non-shortable symbol (skipped_not_shortable). Prefer
+  liquid large-caps; don't waste a decision shorting an illiquid name.
 - Actions: SELL_SHORT to open a short, BUY_TO_COVER to close it. To reverse an
   existing long into a short, just emit SELL_SHORT — the executor closes the
   long first, then opens the short (no separate SELL needed)."""

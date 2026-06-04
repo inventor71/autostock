@@ -242,7 +242,12 @@ class CommandHandler:
     def _submit_gated(self, cmd: SteeringCommand, sym: str, order: Order,
                       price: float | None, atr: float | None, force: bool) -> None:
         """Run an Order through RiskManager.receive_human_order, then submit or
-        emit a structured reject. Shared by /buy shorthand and place_order."""
+        emit a structured reject. Shared by /buy + /short shorthands and place_order."""
+        # F60: easy-to-borrow gate for shorts (fail-closed). Not force-overridable —
+        # a non-ETB short carries recall/buy-in risk the operator can't control.
+        if order.side == OrderSide.SELL_SHORT and not self.broker.is_shortable(sym):
+            self._emit(cmd, "rejected", "NOT_SHORTABLE — not easy-to-borrow / not shortable at broker")
+            return
         decision = self.risk_manager.receive_human_order(
             order, self.broker.get_portfolio_state(), price, atr=atr, force=force)
         if not decision.accepted:
