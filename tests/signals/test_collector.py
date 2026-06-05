@@ -27,8 +27,10 @@ class _Headline:
 class _FakeNews:
     def __init__(self, raises=False):
         self.raises = raises
+        self.calls = 0
 
     def get_news(self, symbol, limit=3):
+        self.calls += 1
         if self.raises:
             raise RuntimeError("news boom")
         return [_Headline(f"{symbol} earnings guidance miss")]
@@ -139,6 +141,24 @@ def test_horizon_override_is_part_of_cache_key(patch_scoreboard):
     b_default = collector.collect(today=_TODAY)
     b_override = collector.collect(today=_TODAY, horizon_days=7)
     assert b_default is not b_override  # different horizon → not a cache hit
+
+
+def test_cause_hint_lookups_are_capped(patch_scoreboard):
+    # 8 banks all crater (8 read-through triggers), but news lookups are capped.
+    cfg = _CONFIG.model_copy(update={
+        "peer_groups": {"banks": ["JPM", "BAC", "WFC", "C", "USB", "GS", "MS", "PNC"]},
+        "max_cause_hint_lookups": 3,
+    })
+    syms = ["JPM", "BAC", "WFC", "C", "USB", "GS", "MS", "PNC"]
+    patch_scoreboard([{"symbol": s, "chg_1d": -9.0, "vol_ratio": 3.0, "close": 50.0} for s in syms])
+    news = _FakeNews()
+    collector = SignalCollector(
+        config=cfg, universe=syms, price_provider=object(),
+        news_provider=news, earnings_source=_FakeEarnings(),
+    )
+    brief = collector.collect(today=_TODAY)
+    assert len(brief.readthrough_alerts) == 8     # all triggers still surfaced
+    assert news.calls == 3                          # but news fan-out is capped
 
 
 def test_scan_timeout_degrades_without_blocking(monkeypatch):

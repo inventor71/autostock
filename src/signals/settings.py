@@ -31,6 +31,9 @@ class SignalsConfig(BaseModel):
     # Read-through (R2)
     readthrough_min_pct: float = Field(default=7.0, ge=0.0)
     max_peers: int = Field(default=8, ge=1)
+    # Cap the per-trigger news lookups used to fill cause_hint, so a volatile day
+    # with many alerts can't fan out into an unbounded news call count.
+    max_cause_hint_lookups: int = Field(default=5, ge=0)
 
     # Earnings (R3)
     earnings_horizon_days: int = Field(default=2, ge=0)

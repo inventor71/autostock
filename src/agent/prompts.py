@@ -313,11 +313,13 @@ def sub_agent_prompt(
     universe: list[str],
     signals: list[str] | None = None,
     today: date | None = None,
+    signal_brief: str | None = None,
 ) -> str:
     today = today or date.today()
     universe_str = ", ".join(universe)
     signal_guide = _build_signal_guide(signals)
-    return f"""You are an independent analyst for a PM trading agent — {today.isoformat()}.
+    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    return f"""{prefix}You are an independent analyst for a PM trading agent — {today.isoformat()}.
 
 Your assigned task: {task_description}
 
@@ -335,12 +337,13 @@ Your output (this response) is your full report.
 {_ADVISOR_REMINDER}"""
 
 
-def parallel_synthesis_prompt(reports: list[str]) -> str:
+def parallel_synthesis_prompt(reports: list[str], signal_brief: str | None = None) -> str:
     sections = []
     for i, report in enumerate(reports):
         sections.append(f"--- Analyst {i + 1} Report ---\n{report}\n")
     reports_text = "\n".join(sections)
-    return f"""You have received reports from {len(reports)} independent analysts:
+    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    return f"""{prefix}You have received reports from {len(reports)} independent analysts:
 
 {reports_text}
 

@@ -354,7 +354,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         return tasks
 
     def _run_sub_agent(self, task: SubAgentTask, workspace: Path,
-                       timeout: float) -> SubAgentReport:
+                       timeout: float, signal_brief: str | None = None) -> SubAgentReport:
         try:
             sub = AgentSession.create_sub_agent(
                 workspace=workspace,
@@ -365,6 +365,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             result = sub.run_turn(
                 prompts.sub_agent_prompt(
                     task.description, self.universe, self._research_signals,
+                    signal_brief=signal_brief,
                 ),
                 model=self.research_model,
                 timeout=timeout,
@@ -381,6 +382,11 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
 
         before = len(self.journal.read_decisions())
 
+        # F61: assemble the market-signal brief ONCE (collect() is TTL-cached) and
+        # hand it to every parallel sub-agent — the discovery sub-agent especially
+        # must see today's movers/read-through before hunting new entries.
+        signal_brief = self._signal_brief()
+
         workspaces: list[Path] = []
         reports: list[SubAgentReport] = []
         try:
@@ -389,7 +395,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 for task in tasks:
                     ws = self._create_isolated_workspace()
                     workspaces.append(ws)
-                    futures[pool.submit(self._run_sub_agent, task, ws, sub_timeout)] = task
+                    futures[pool.submit(self._run_sub_agent, task, ws, sub_timeout, signal_brief)] = task
                 for f in as_completed(futures, timeout=sub_timeout + 30):
                     try:
                         reports.append(f.result())
@@ -434,7 +440,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         error = False
         try:
             result = self.session.run_turn(
-                prompts.parallel_synthesis_prompt(report_texts)
+                prompts.parallel_synthesis_prompt(report_texts, signal_brief=signal_brief)
                 + (f"\n{lesson_ctx}" if lesson_ctx else ""),
                 model=self.research_model,
                 timeout=max(total_timeout * 0.3, 60.0),

@@ -123,7 +123,20 @@ class SignalCollector:
 
     # -- helpers ---------------------------------------------------------- #
     def _scan_symbols(self) -> list[str]:
-        watch = [_norm(s) for s in self.config.bellwether_watchlist]
+        # Bellwethers are signal-only — enforce in-process (not just in the config
+        # test): drop any that is also a tradeable universe symbol so it can never
+        # be surfaced as an actionable read-through peer.
+        uni = set(self.universe)
+        watch = []
+        for s in self.config.bellwether_watchlist:
+            sn = _norm(s)
+            if sn in uni:
+                logger.warning(
+                    "signals: bellwether {} is also in the tradeable universe — "
+                    "treating as universe-only (not signal-only)", sn,
+                )
+                continue
+            watch.append(sn)
         seen: set[str] = set()
         out: list[str] = []
         for s in self.universe + watch:
@@ -133,33 +146,37 @@ class SignalCollector:
         return out
 
     def _scan_rows(self, symbols: list[str], degraded: list[str]) -> list[MoverRow]:
-        from concurrent.futures import ThreadPoolExecutor
-        from concurrent.futures import TimeoutError as FutureTimeout
+        import threading
 
         from src.agent.tools import market
 
         # yfinance has no per-call timeout, so bound the WHOLE scan: a slow/hung
-        # backend must not stall the research turn (NFR-2). Run it off-thread and
-        # abandon it on timeout — note we do NOT use `with`, whose __exit__ would
-        # join the hung worker and defeat the bound; shutdown(wait=False) lets the
-        # worker drain in the background while we degrade immediately.
-        ex = ThreadPoolExecutor(max_workers=1)
-        try:
-            future = ex.submit(market.scoreboard, symbols, self.price_provider)
-            raw = future.result(timeout=self.config.scan_timeout_seconds)
-        except FutureTimeout:
+        # backend must not stall the research turn (NFR-2). Run it on a DAEMON
+        # thread and join with a deadline — a daemon worker can be abandoned on
+        # timeout without leaking a non-daemon thread that blocks interpreter exit.
+        box: dict = {}
+
+        def _worker():
+            try:
+                box["raw"] = market.scoreboard(symbols, self.price_provider)
+            except Exception as exc:  # captured, surfaced after join
+                box["err"] = exc
+
+        t = threading.Thread(target=_worker, name="signals-price-scan", daemon=True)
+        t.start()
+        t.join(self.config.scan_timeout_seconds)
+        if t.is_alive():
             logger.warning(
                 "signals: price scan exceeded {}s budget — degrading",
                 self.config.scan_timeout_seconds,
             )
             degraded.append("prices:timeout")
             return []
-        except Exception as exc:
-            logger.warning("signals: scoreboard scan failed: {}", exc)
+        if "err" in box:
+            logger.warning("signals: scoreboard scan failed: {}", box["err"])
             degraded.append("prices:scoreboard")
             return []
-        finally:
-            ex.shutdown(wait=False)
+        raw = box.get("raw", [])
         rows: list[MoverRow] = []
         for r in raw:
             if r.get("error"):
@@ -178,7 +195,9 @@ class SignalCollector:
         if not alerts or self.news_provider is None:
             return
         failed = False
-        for alert in alerts:
+        # Cap the fan-out: only the strongest triggers get a news lookup, so a
+        # volatile day with many alerts can't run an unbounded number of calls.
+        for alert in alerts[: self.config.max_cause_hint_lookups]:
             try:
                 items = self.news_provider.get_news(alert.trigger_symbol, limit=3)
             except Exception as exc:
