@@ -25,11 +25,23 @@ def morning_research_prompt(
     universe: list[str],
     held: list[str] | None = None,
     today: date | None = None,
+    shorting_enabled: bool = True,
 ) -> str:
-    """Deep morning turn: regime, pure-LLM discovery, theses, decisions."""
+    """Deep morning turn: regime, pure-LLM discovery, theses, decisions.
+
+    ``shorting_enabled`` gates the short-selling guidance: when shorts are off
+    (the shipped default), the agent isn't told to find shorts — so it doesn't
+    waste turns proposing SELL_SHORTs the executor would reject."""
     today = today or date.today()
     held_str = ", ".join(held) if held else "none"
     universe_str = ", ".join(universe)
+    short_discovery = (
+        " Equally, consider SHORT candidates (overvalued / broken / "
+        "negative-catalyst names): run `short_data` first and add a SELL_SHORT "
+        "(stop above entry, mandatory) on genuine conviction."
+        if shorting_enabled else ""
+    )
+    short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
     return f"""Morning research turn — {today.isoformat()}.
 
 Start by reading CLAUDE.md, lessons.md, regime.md, watchlist.md, and the thesis
@@ -64,13 +76,9 @@ following:
 4. Discovery: scan `python -m src.agent.tools scoreboard`, then for each
    promising candidate dig in with indicators / fundamentals / news (and web
    search) before writing a thesis. Add a BUY — always with a stop, and a target
-   where you have one — only on genuine conviction. Equally, consider SHORT
-   candidates (overvalued / broken / negative-catalyst names): run `short_data`
-   first and add a SELL_SHORT (stop above entry, mandatory) on genuine conviction.
+   where you have one — only on genuine conviction.{short_discovery}
 5. Update watchlist.md with the names you are tracking and why.
-
-{_SHORT_GUIDANCE}
-
+{short_block}
 Keep decisions.jsonl consistent with what your thesis files say.
 
 {_ADVISOR_REMINDER}"""
@@ -216,12 +224,21 @@ def multi_research_initial_prompt(
     n_rounds: int = 2,
     max_lessons: int = 10,
     today: date | None = None,
+    shorting_enabled: bool = True,
 ) -> str:
     today = today or date.today()
     held_str = ", ".join(held) if held else "none"
     universe_str = ", ".join(universe)
     lesson_ctx = _build_lesson_context(lessons or [], max_n=max_lessons)
     signal_guide = _build_signal_guide(signals)
+    discovery = (
+        "4. Discovery: scan scoreboard, dig into promising candidates — long AND "
+        "short\n   (run short_data before any short; squeeze_risk HIGH/ELEVATED → "
+        "size down/skip)."
+        if shorting_enabled else
+        "4. Discovery: scan scoreboard, dig into promising long candidates."
+    )
+    short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
     return f"""Morning research turn — {today.isoformat()} (multi-agent, round 1 of {n_rounds + 1}).
 
 Start by reading CLAUDE.md, lessons.md, regime.md, watchlist.md, and the thesis
@@ -237,12 +254,9 @@ Ground every call in fresh data pulled THIS turn. Do the following:
 1. Account truth: run `python -m src.agent.tools account`
 2. Regime: refresh regime.md using tools and web research.
 3. Held positions: for EACH held name, pull indicators + news, update thesis.
-4. Discovery: scan scoreboard, dig into promising candidates — long AND short
-   (run short_data before any short; squeeze_risk HIGH/ELEVATED → size down/skip).
+{discovery}
 5. Update watchlist.md.
-
-{_SHORT_GUIDANCE}
-
+{short_block}
 This is round 1 of a {n_rounds + 1}-round cross-validation process.
 Do NOT write to decisions.jsonl yet — record your analysis and preliminary
 views in your session context. The last round will produce the verdicts.

@@ -168,3 +168,64 @@ def test_broker_api_broker_gets_side_from_f54_parity():
     # Fallback via negative qty when side attribute is absent/ambiguous.
     assert BrokerApiBroker._position_side(_Pos("", -50)) == PositionSide.SHORT
     assert BrokerApiBroker._position_side(_Pos("", 50)) == PositionSide.LONG
+
+
+# --- master short on/off toggle (F60) -------------------------------------- #
+def test_config_ships_shorting_disabled():
+    """Deployed default is OFF (opt-in) — the system trades long-only until enabled."""
+    from config.config import RiskConfig
+    assert RiskConfig().shorting_enabled is False
+
+
+def test_disabled_rejects_agent_short():
+    rm = RiskManager(use_bracket_orders=True, shorting_enabled=False)
+    sig = TradeSignal(symbol="X", signal=Signal.SELL_SHORT,
+                      metadata={"key_levels": {"entry": 100, "stop_loss": 108, "take_profit": 85}})
+    assert rm.evaluate_signal(sig, 100, PortfolioState(cash=1e5, equity=1e5)) is None
+
+
+def test_disabled_still_allows_cover_and_long():
+    """Disabling shorts must NOT trap an existing short (cover works) or block longs."""
+    rm = RiskManager(use_bracket_orders=True, shorting_enabled=False)
+    pos = Position(symbol="X", qty=10, avg_entry_price=100, side=PositionSide.SHORT)
+    pf = PortfolioState(cash=1e5, equity=1e5, positions={"X": pos})
+    cover = rm.evaluate_signal(TradeSignal(symbol="X", signal=Signal.BUY_TO_COVER, sell_pct=1.0), 95, pf)
+    assert cover is not None and cover.side == OrderSide.BUY_TO_COVER
+    # a long entry on a different symbol is unaffected
+    buy = rm.evaluate_signal(
+        TradeSignal(symbol="Y", signal=Signal.BUY,
+                    metadata={"key_levels": {"entry": 50, "stop_loss": 45, "take_profit": 70}}),
+        50, PortfolioState(cash=1e5, equity=1e5))
+    assert buy is not None and buy.side == OrderSide.BUY
+
+
+def test_disabled_executor_skips_short_without_closing_long():
+    """Master switch checked before auto-flip → a disabled short never flattens a long."""
+    b = SimulatedBroker(initial_capital=100_000)
+    b.set_current_price("XYZ", 100)
+    b.submit_order(Order(symbol="XYZ", side=OrderSide.BUY, qty=10))
+    rm = RiskManager(use_bracket_orders=True, shorting_enabled=False)
+    ex = DecisionExecutor(b, rm, _DP(), journal=Journal(root=tempfile.mkdtemp()), universe=["XYZ"])
+    out = ex.execute_decision(Decision(symbol="XYZ", action="SELL_SHORT", stop=108, target=85))
+    assert out.status == "skipped_shorting_disabled"
+    assert b.get_position("XYZ").side == PositionSide.LONG  # long untouched
+
+
+def test_enabled_allows_short():
+    rm = RiskManager(use_bracket_orders=True, shorting_enabled=True)
+    sig = TradeSignal(symbol="X", signal=Signal.SELL_SHORT,
+                      metadata={"key_levels": {"entry": 100, "stop_loss": 108, "take_profit": 85}})
+    order = rm.evaluate_signal(sig, 100, PortfolioState(cash=1e5, equity=1e5))
+    assert order is not None and order.side == OrderSide.SELL_SHORT
+
+
+def test_prompt_omits_short_guidance_when_disabled():
+    """When shorts are off, the research prompt must NOT instruct the agent to
+    short — otherwise it wastes turns proposing rejected SELL_SHORTs."""
+    from src.agent import prompts
+    on = prompts.morning_research_prompt(["AAPL"], ["AAPL"], shorting_enabled=True)
+    off = prompts.morning_research_prompt(["AAPL"], ["AAPL"], shorting_enabled=False)
+    assert "SELL_SHORT" in on and "Short selling" in on
+    assert "SELL_SHORT" not in off and "Short selling" not in off
+    # multi-agent prompt too
+    assert "SELL_SHORT" not in prompts.multi_research_initial_prompt(["AAPL"], shorting_enabled=False)
