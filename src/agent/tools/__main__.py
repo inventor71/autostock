@@ -69,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     la.add_argument("--signal", default="")
     la.add_argument("--outcome", default="")
     la.add_argument("--takeaway", required=True)
+    # F62: situational recall keys (F65). Tag the conditions a lesson depends on
+    # at creation time, else the lesson is born untagged and recall can't key on it.
+    la.add_argument("--regime", default="", help="market regime this lesson depends on")
+    la.add_argument("--sector", default=None, help="sector this lesson is about (optional)")
 
     sc = sub.add_parser("scoreboard")
     sc.add_argument(
@@ -148,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
             signal_used=args.signal,
             outcome=args.outcome,
             takeaway=args.takeaway,
+            regime=args.regime,
+            sector=args.sector,
         )
         journal.append_lesson_record(record)
         out = {"added": record.model_dump()}

@@ -40,6 +40,14 @@ class LessonRecord(BaseModel):
     signal_used: str = ""
     outcome: str = ""
     takeaway: str = ""
+    # F62: recall keys (F65 situational recall filters on these). Born from the
+    # `lesson` tool at creation time; legacy lines parse with the defaults.
+    regime: str = ""
+    sector: str | None = None
+    # F62: kept for serialization compatibility, but the AUTHORITATIVE applied
+    # count is DERIVED on read via ``applied_counts`` (Σ over decisions'
+    # ``lessons_cited``) -- an in-place increment would race the cross-process
+    # agent appender on the append-only lessons.jsonl.
     times_applied: int = 0
 
 
@@ -72,6 +80,12 @@ class Decision(BaseModel):
     thesis_ref: str | None = None  # e.g. "positions/AAPL.md"
     valid_until: datetime | None = None
     reason: str = ""
+    # F62 attribution: which lessons informed this call (LLM-emitted, see
+    # CLAUDE.md schema) and which guidance prompt version was live when it was
+    # made (Python-stamped post-hoc -- the LLM cannot know it; default "seed"
+    # covers every pre-F64 decision). Legacy lines parse with the defaults.
+    lessons_cited: list[str] = Field(default_factory=list)
+    prompt_version: str = "seed"
 
     @field_validator("symbol")
     @classmethod
@@ -150,6 +164,22 @@ class Journal:
                 continue
             out.append(decision)
         return out
+
+    def restamp_decisions(self, decisions: list[Decision]) -> None:
+        """Rewrite decisions.jsonl from the given (mutated) list, atomically.
+
+        The LLM subprocess writes decisions.jsonl directly; Python never appends
+        (``append_decision`` is unused). To stamp ``prompt_version`` (or fix up
+        ``lessons_cited``) onto the lines the agent just wrote, the orchestrator
+        reads them, mutates, and calls this to re-persist the WHOLE file via an
+        atomic replace -- never a partial in-place edit. Call only between turns
+        (after the agent subprocess has exited) so it cannot race a concurrent
+        append.
+        """
+        from src.agent.steering.jsonl import atomic_write_text
+
+        text = "".join(d.model_dump_json() + "\n" for d in decisions)
+        atomic_write_text(self.decisions_file, text)
 
     # ------------------------------------------------------------------ #
     # Per-symbol thesis files
