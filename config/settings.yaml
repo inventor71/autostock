@@ -70,7 +70,7 @@ monitoring:
   telegram_chat_id: ""
 
 llm:
-  provider: claude           # claude (API key) | openai (API key) | claude_code (CLI subscription, dev only)
+  provider: claude_code       # claude (API key) | openai (API key) | claude_code (CLI subscription, dev only)
   model: null                # null uses provider default (claude-sonnet-4-6 / gpt-4o / 'sonnet' for claude_code)
   temperature: 0.3           # Lower = more deterministic (ignored by claude_code)
   prompt_version: latest     # latest, best, v1, v2, etc.
