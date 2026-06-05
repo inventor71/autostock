@@ -229,8 +229,13 @@ def _extract_benchmark_paths(
 
     if not outcomes:
         return None, None
+    # Guard: if every outcome has an empty price_path the generators
+    # below produce nothing and min()/max() raise ValueError.
+    dates_with_data = [o.price_path[0].date for o in outcomes if o.price_path]
+    if not dates_with_data:
+        return None, None
 
-    earliest = min(o.price_path[0].date for o in outcomes if o.price_path)
+    earliest = min(dates_with_data)
     latest = max(o.price_path[-1].date for o in outcomes if o.price_path)
 
     for bench, name in [("SPY", "vs_spy"), ("QQQ", "vs_qqq")]:
@@ -372,4 +377,17 @@ def _attach_excess(
         if not vals:
             continue
         base = sum(vals) / len(vals)
-        o.excess = -base if o.decision.action == "SELL_SHORT" else base
+        if o.decision.action == "SELL_SHORT":
+            # ``benchmark_excess`` returns stock_return - bench_return (long-oriented).
+            # For a short: holding return = -stock_return,
+            #   excess = (-stock_return) - bench_return = -(stock_return + bench_return)
+            # From base = stock_return - bench_return → bench_return = stock_return - base:
+            #   excess = -(stock_return + stock_return - base) = base - 2*stock_return
+            # (Old ``-base`` = bench_return - stock_return, wrong by 2×bench_return.)
+            if o.price_path and len(o.price_path) >= 2:
+                stock_return = (o.price_path[-1].close / o.price_path[0].close) - 1
+                o.excess = base - 2.0 * stock_return
+            else:
+                o.excess = None
+        else:
+            o.excess = base

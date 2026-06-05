@@ -19,6 +19,7 @@ degrades ranking gracefully to relevance + recency.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -86,7 +87,7 @@ def _relevance(lesson: LessonRecord, fp: SituationFingerprint) -> int:
     """Count of fingerprint tag matches. Untagged lessons score 0 (neutral) —
     they are never filtered out, only out-ranked when a tagged peer matches."""
     score = 0
-    if lesson.regime and fp.regime and lesson.regime.lower() in fp.regime:
+    if lesson.regime and fp.regime and re.search(rf'\b{re.escape(lesson.regime.lower())}\b', fp.regime):
         score += 1
     if lesson.sector and lesson.sector.lower() in fp.sectors:
         score += 1

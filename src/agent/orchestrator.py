@@ -104,6 +104,11 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         # price provider), so cache it per session-day and reuse across turns.
         self._efficacy_cache: dict | None = None
         self._efficacy_cache_day: date | None = None
+        # F64: constitution-bounded self-rewritten guidance, loaded lazily from
+        # the Python-managed store. ``rewrite_fn`` stays None in v1 (inert) — the
+        # machinery ships safe; providing a rewrite_fn activates self-rewriting.
+        self._guidance = None  # GuidanceHistory | None
+        self._rewrite_fn = None
 
     # ------------------------------------------------------------------ #
     def held_symbols(self) -> list[str]:
@@ -132,7 +137,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         if self._on_turn_start:
             self._on_turn_start(turn_id, turn_type)
 
-        before = len(self.journal.read_decisions())
+        # F64: prepend the constitution + evolvable guidance on guidance-bearing
+        # turns only (not eod/reconcile).
+        if turn_type in ("research", "intraday", "wake"):
+            prompt = self._guidance_preamble() + "\n\n" + prompt
+
+        before = self.journal.count_decisions()
         result = None
         error = False
         try:
@@ -141,7 +151,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             error = True
             raise
         finally:
-            self.last_new_decisions = self.journal.read_decisions()[before:]
+            try:
+                self.last_new_decisions = self._stamp_new(before)
+            except Exception as stamp_exc:
+                logger.warning(f"stamp failed during {turn_type} turn: {stamp_exc}")
+                all_d = self.journal.read_decisions()
+                self.last_new_decisions = all_d[before:]
             for d in self.last_new_decisions:
                 d.turn_id = turn_id
             self.last_kept, self.last_rejected = filter_in_universe(
@@ -211,6 +226,36 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         )
 
     # -- F23: multi-agent research ----------------------------------------- #
+
+    # -- F64: constitution-bounded guidance --------------------------------- #
+    def _guidance_history(self):
+        if self._guidance is None:
+            from src.agent.self_rewrite import load_history
+            self._guidance = load_history(self.journal.root)
+        return self._guidance
+
+    def _guidance_version(self) -> str:
+        return self._guidance_history().current_version
+
+    def _guidance_preamble(self) -> str:
+        """Constitution + current evolvable guidance, prepended to guidance-bearing
+        turns (morning/intraday/wake/research). Eval turns and EOD are excluded."""
+        from src.agent.self_rewrite import build_guidance
+        return build_guidance(self._guidance_history())
+
+    def _stamp_new(self, before: int) -> list[Decision]:
+        """Read decisions the LLM just wrote, stamp the active guidance
+        ``prompt_version`` onto them (the LLM can't know it), and re-persist the
+        file atomically (F62). Runs between turns, so no race with the appender."""
+        all_d = self.journal.read_decisions()
+        new = all_d[before:]
+        if new:
+            ver = self._guidance_version()
+            if any(d.prompt_version != ver for d in new):
+                for d in new:
+                    d.prompt_version = ver
+                self.journal.restamp_decisions(all_d)
+        return new
 
     def _lesson_efficacy(self) -> dict:
         """Per-lesson efficacy (F62), cached per day. Fail-safe: any error
@@ -288,7 +333,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         error = False
         try:
             r0 = self.session.run_turn(
-                prompts.multi_research_initial_prompt(
+                self._guidance_preamble() + "\n\n" + prompts.multi_research_initial_prompt(
                     self.universe, held, self._research_signals, lessons, n_rounds,
                     max_lessons=self._reflection_max_lessons,
                     shorting_enabled=self._shorting_enabled,
@@ -316,7 +361,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 ))
 
             result = self.session.run_turn(
-                prompts.synthesis_prompt(n_rounds),
+                self._guidance_preamble() + "\n\n" + prompts.synthesis_prompt(n_rounds),
                 model=self.research_model,
                 timeout=per_round,
             )
@@ -325,7 +370,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             self.session.reset_session()
             raise
         finally:
-            self.last_new_decisions = self.journal.read_decisions()[before:]
+            try:
+                self.last_new_decisions = self._stamp_new(before)
+            except Exception as stamp_exc:
+                logger.warning(f"stamp failed during sequential research: {stamp_exc}")
+                all_d = self.journal.read_decisions()
+                self.last_new_decisions = all_d[before:]
             for d in self.last_new_decisions:
                 d.turn_id = turn_id
             self.last_kept, self.last_rejected = filter_in_universe(
@@ -485,7 +535,8 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         error = False
         try:
             result = self.session.run_turn(
-                prompts.parallel_synthesis_prompt(report_texts, signal_brief=signal_brief)
+                self._guidance_preamble() + "\n\n"
+                + prompts.parallel_synthesis_prompt(report_texts, signal_brief=signal_brief)
                 + (f"\n{lesson_ctx}" if lesson_ctx else ""),
                 model=self.research_model,
                 timeout=max(total_timeout * 0.3, 60.0),
@@ -494,7 +545,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             error = True
             raise
         finally:
-            self.last_new_decisions = self.journal.read_decisions()[before:]
+            try:
+                self.last_new_decisions = self._stamp_new(before)
+            except Exception as stamp_exc:
+                logger.warning(f"stamp failed during parallel research: {stamp_exc}")
+                all_d = self.journal.read_decisions()
+                self.last_new_decisions = all_d[before:]
             for d in self.last_new_decisions:
                 d.turn_id = turn_id
             self.last_kept, self.last_rejected = filter_in_universe(
@@ -572,7 +628,46 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         # them from the broker; otherwise fall back to a plain decision list.
         if outcomes is None:
             outcomes = [f"{d.symbol} {d.action}" for d in self.journal.read_decisions()[-20:]]
-        return self._run(prompts.eod_review_prompt(outcomes, surge_count=surge_count), "eod")
+        result = self._run(prompts.eod_review_prompt(outcomes, surge_count=surge_count), "eod")
+        self._run_self_rewrite()
+        return result
+
+    def _run_self_rewrite(self) -> None:
+        """F64 EOD step: propose a guidance rewrite (inert unless ``_rewrite_fn``
+        is set), then auto-rollback a degraded version. Fully guarded; any error
+        is swallowed so it can never break the EOD turn."""
+        try:
+            from src.agent.efficacy import lesson_efficacy, prompt_version_efficacy
+            from src.agent.quality.collector import collect_outcomes
+            from src.agent.self_rewrite import (
+                maybe_rollback,
+                propose_rewrite,
+                save_history,
+                should_rewrite,
+            )
+
+            # Fuse: call collect_outcomes ONCE, feed both efficacy views.
+            outcomes = collect_outcomes(self.journal)
+            hist = self._guidance_history()
+            eff = lesson_efficacy(outcomes)
+            ver_eff = prompt_version_efficacy(outcomes)
+
+            # Rollback: compare per-version avg_excess.
+            cur = hist.current()
+            changed = maybe_rollback(
+                hist,
+                {v: ve.avg_excess for v, ve in ver_eff.items()},
+            )
+            # Rewrite: gate + propose.
+            cur_eff = ver_eff.get(cur.version)
+            sample = cur_eff.applied_n if cur_eff else 0
+            if self._rewrite_fn is not None and should_rewrite(hist, sample):
+                res = propose_rewrite(hist, eff, rewrite_fn=self._rewrite_fn)
+                changed = changed or res.action in ("adopted", "rejected")
+            if changed:
+                save_history(self.journal.root, hist)
+        except Exception as exc:  # never let self-rewrite sink the EOD turn
+            logger.warning(f"self-rewrite step skipped: {exc}")
 
     def run_reconcile(self, context: str = "") -> AgentTurnResult:
         """Out-of-band turn after a human intervention (F4 FR-6): the agent

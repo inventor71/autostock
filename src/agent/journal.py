@@ -44,11 +44,12 @@ class LessonRecord(BaseModel):
     # `lesson` tool at creation time; legacy lines parse with the defaults.
     regime: str = ""
     sector: str | None = None
-    # F62: kept for serialization compatibility, but the AUTHORITATIVE applied
-    # count is DERIVED on read via ``applied_counts`` (Σ over decisions'
-    # ``lessons_cited``) -- an in-place increment would race the cross-process
-    # agent appender on the append-only lessons.jsonl.
-    times_applied: int = 0
+    # F62: DEPRECATED — kept for backward-compat serialization only. The
+    # authoritative applied count is ``LessonEfficacy.applied_n`` (computed from
+    # ``collect_outcomes``). This field is never set to a non-zero value because
+    # an in-place increment on append-only lessons.jsonl would race the cross-
+    # process agent appender. Do not read this field for decisions.
+    times_applied: int = Field(default=0, repr=False)
 
 
 class Decision(BaseModel):
@@ -175,11 +176,35 @@ class Journal:
         atomic replace -- never a partial in-place edit. Call only between turns
         (after the agent subprocess has exited) so it cannot race a concurrent
         append.
+
+        Safety: if any raw line was skipped during read (malformed), the input
+        ``decisions`` is shorter than the file's raw line count. When this
+        happens restamp refuses to rewrite to prevent silent data loss — the
+        caller logs and falls back to read-only.
         """
-        from src.agent.steering.jsonl import atomic_write_text
+        from src.agent.steering.jsonl import atomic_write_text, read_complete_lines
+
+        raw_n = 0
+        if self.decisions_file.exists():
+            raw_lines, _ = read_complete_lines(self.decisions_file, 0)
+            raw_n = len(raw_lines)
+        if raw_n > len(decisions):
+            logger.warning(
+                f"restamp_decisions refused: {raw_n - len(decisions)} line(s) were "
+                f"skipped during read (malformed) — not rewriting to avoid data loss"
+            )
+            return
 
         text = "".join(d.model_dump_json() + "\n" for d in decisions)
         atomic_write_text(self.decisions_file, text)
+
+    def count_decisions(self) -> int:
+        """Return the number of complete lines without Pydantic parsing."""
+        if not self.decisions_file.exists():
+            return 0
+        from src.agent.steering.jsonl import read_complete_lines
+        lines, _ = read_complete_lines(self.decisions_file, 0)
+        return len(lines)
 
     # ------------------------------------------------------------------ #
     # Per-symbol thesis files
