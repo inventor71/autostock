@@ -43,6 +43,17 @@
 - **Rationale**: Bounded autonomy — the agent improves its own prompts without escaping fixed guardrails.
 - **Implemented In**: `src/agent/review.py` + efficacy/lessons/rewrite modules (tracks F64/F65/F66/F67/F68).
 
+### Steering / Human Intervention
+#### Advisor-only invariant
+- **Rule**: The operator-console LLM is advisory only. The human operator must confirm commands. All confirmed commands are sent via the `steering/` file-drop channel and the daemon routes them through the same `RiskManager → Broker` gate.
+- **Rationale**: Structural authority separation — no shortcut around the risk gate, even for human-initiated orders.
+- **Implemented In**: `src/agent/steering/runtime.py`, `operator-console/`
+
+#### Shorting master gate
+- **Rule**: Short entries are globally disabled by default (`shorting_enabled: false`). When disabled, every short entry (agent, `/short` command, auto-flip) is rejected. Covering an existing short is always allowed.
+- **Rationale**: Unbounded-loss risk; opt-in per deployment.
+- **Implemented In**: `src/risk/manager.py`
+
 ### Markets
 #### Multi-broker market routing
 - **Rule**: US equities route through Alpaca; Korean equities through KIS; backtests through Simulated.

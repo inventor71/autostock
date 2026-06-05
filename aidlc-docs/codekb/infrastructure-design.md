@@ -30,9 +30,10 @@
 ## CI/CD
 - **Pipeline**: GitHub Actions (`inventor71/autostock`).
 - **CodeKB Refresh**: `.github/workflows/codekb-refresh.yml` — on every push to `main` (excluding
-  `aidlc-docs/codekb/**`), re-runs Reverse Engineering via `anthropics/claude-code-action@v1` and
-  commits the refreshed CodeKB back to `main`. Auth via `CLAUDE_CODE_OAUTH_TOKEN` secret;
-  `GITHUB_TOKEN` needs write permission to push.
+  `aidlc-docs/codekb/**`), runs the Claude Code CLI headless (`claude -p`) with `--permission-mode acceptEdits`
+  to re-run Reverse Engineering and overwrite CodeKB files, then commits back to `main`.
+  Auth via `CLAUDE_CODE_OAUTH_TOKEN` secret (subscription token, not API key);
+  `GITHUB_TOKEN` content-write permission required. Uses `--model sonnet`.
 - **Verify harness**: containerized `worktree-setup.sh --docker-verify` →
   `docker compose ... run --rm verify {typecheck,unit,smoke}`, isolated to a TEST account.
 - **Worktree gate**: `.claude/hooks/guard-main-edits.py` (PreToolUse) blocks app-code edits on the

@@ -44,6 +44,17 @@ All core entities are Pydantic v2 models / enums defined in `src/core/` and depe
 - **Lifecycle**: appended by AgentTradingLoop → read once by DecisionExecutor (cursor-tracked) → outcome
   attributed at EOD review.
 
+### LessonRecord (self-learning)
+- **Purpose**: A single lesson learned from a trading outcome, persisted in `lessons.jsonl`. Contains recall keys (regime, sector) used by situational recall to select relevant lessons for injection into prompts.
+- **Key Fields**: lesson_id, date, category, regime, sector, outcome, takeaway, signal_used.
+- **Defined In**: `src/agent/journal.py`
+- **Lifecycle**: Written by EOD `review.py`; recalled by `src/agent/recall.py`; efficacy tracked in `src/agent/efficacy.py`.
+
+### SurgeRecord
+- **Purpose**: Records a stock that had an abnormal EOD move (surge/dive) beyond a threshold. Used as agent analysis input during the EOD review turn.
+- **Key Fields**: symbol, date, return_pct, direction (surge/dive).
+- **Defined In**: `src/surge/records.py`
+
 ## Enums
 - `OrderSide`, `OrderType`, `OrderClass`, `PositionSide`, `TimeFrame`, `TradingMode`, `Signal` — `src/core/types.py`.
 

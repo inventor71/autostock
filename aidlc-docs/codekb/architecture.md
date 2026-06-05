@@ -89,6 +89,15 @@ EOD turn                  -> review.py -> lessons (self-learning) -> next-day pr
 - **Brain/body split (agent)** — orchestrator reasons (LLM) and journals; deterministic executor places orders.
 - **Idempotent journal consumer** — cursor file makes `DecisionExecutor` safe across restarts.
 
+### Operator Console / Human Steering (F4/F5/F6)
+- **operator-console** (TypeScript, Bun) — opencode-derived trader terminal; LLM advisory layer with human confirm before writes. Sends commands via `steering/` file-drop channel.
+- **SteeringRuntime** (`src/agent/steering/runtime.py`) — daemon-side engine: reads file-drop channel, publishes snapshots, `CommandBus` (per-kind serialisation), `RunState` (pause/halt/entries_halted).
+- **TurnCoordinator** (`src/agent/steering/turns.py`) — single `turn_lock`; serialises all LLM turns (wake/intraday/human-reconcile).
+
+### Signals / Research (F61)
+- **SignalCollector** (`src/signals/collector.py`) — assembles movers, read-through peers, and earnings calendar before each research turn; injected into the prompt as a structured brief.
+- **Bellwether peer map** (`src/signals/peer_map.py`) — static sector groups; a bellwether ETF move propagates to related tickers.
+
 ## Layer Dependency Rule (intended)
 `trading`/`backtest`/`agent` → `strategy`/`risk`/`execution`/`data`/`signals` → `core`.
 `core` depends on nothing.

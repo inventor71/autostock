@@ -1,7 +1,6 @@
 # NFR Design
 
-> NFR patterns observable in the codebase at HEAD `58ca6a7`. Some structural findings from the M1
-> reverse-engineering snapshot (2026-05-28) may have been addressed by later tracks.
+> NFR patterns observable in the codebase at HEAD `3572f30` (2026-06-05).
 
 ## Resilience
 | Pattern | Implementation | Location |
@@ -11,6 +10,8 @@
 | Circuit breaker / expiry / pool checks | Guards before routing agent decisions | `src/agent/executor.py` |
 | Fail-honest collectors | Signals/data collectors surface failures rather than fabricating | `src/signals/`, `src/data/providers/` |
 | Polled stop/take-profit (legacy mode) | Engine polls exits when not in bracket mode | `src/trading/engine.py` |
+| Event-driven intraday wakes | Wake detector (5s, cache-only) fires on fills/abnormal moves/watch triggers without blocking the scheduler thread | `src/agent/intraday/wake.py`, `src/agent/intraday/abnormal.py` |
+| Single turn lock | All LLM turns serialised by a single `turn_lock`; human reconcile waits at most one wake turn | `src/agent/steering/turns.py` |
 
 ## Scalability
 | Pattern | Implementation | Location |
@@ -35,9 +36,8 @@
 | Structured logging | loguru | project-wide |
 | Health monitoring | health checks | `src/monitoring/health/` |
 
-## Known Structural Debt (M1 snapshot — verify current state)
-- **S-2**: `RiskManager` is dual-mode toggled by a boolean (bracket vs legacy).
-- **S-3**: Some `src/` modules reach into the config singleton directly (layering leak).
-- **S-4**: Broker abstraction had duck-typing leaks around `BaseBroker`.
-- **H-1**: Short positions were half-modeled.
-(Several B-series backtest bugs were fixed in commit `9384b3c`.)
+## Known Structural Debt
+- **S-2**: `RiskManager` is dual-mode toggled by a boolean (`use_bracket_orders`: legacy market-order + polled exits vs resting BRACKET/OCO). The two modes diverge in behavior.
+- **S-3**: Some `src/` modules reach into the config singleton directly (layer violation vs injecting through `main.py`).
+- Short-selling is implemented (F60) but shipped OFF by default (`shorting_enabled: false` in settings.yaml) — opt-in.
+- LLM auto-improvement loop does not automatically re-backtest with the new prompt (manual re-run needed).

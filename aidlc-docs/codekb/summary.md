@@ -30,5 +30,5 @@ telemetry, journaling, and EOD self-review (self-learning lessons).
 ## Current State
 - **Primary markets**: US equities (Alpaca); Korean equities supported via KIS broker/data (multi-broker)
 - **Storage**: file-based — `workspace/` journal (markdown theses + append-only `decisions.jsonl`) + JSONL telemetry logs; no database
-- **Last Significant Change**: self-learning stack (lesson attribution, hybrid recall, charter-bounded prompt self-rewrite) — tracks F64/F65/F66/F67/F68
-- **Snapshot**: HEAD `58ca6a7` (2026-06-06). This is the bootstrap seed; CI refreshes it on each push to `main`.
+- **Last Significant Change**: F68 — self-learning stack cleanup: self-learning stack pruning (#7 #8 #10); M1 — CodeKB CI adoption; includes short-selling (F60), intraday wake redesign (F3), steering/operator-console (F4/F5/F6), and signals research turn (F61)
+- **Snapshot**: HEAD `3572f30` (2026-06-05). Refreshed by CI.

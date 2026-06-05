@@ -24,7 +24,11 @@
 | `decisions.jsonl` | append-only file (cursor-based) | AgentTradingLoop (brain) | DecisionExecutor (body) | hand-off of trade decisions; idempotent via cursor file |
 | APScheduler jobs | in-process scheduler | `TradingScheduler` | trading modes | interval ticks + US-market cron turns (pre-market/intraday/EOD) |
 
+| `steering/` file-drop channel | directory (files) | operator-console (human) | daemon SteeringRuntime | human commands/events/snapshot hand-off to running agent |
+
 ## Notes
 - **KIS specifics**: pykis 2.1.6 has no `stop` param; 모의투자(paper) does not support stop-limit
-  (`ORD_DVSN=22`), live-only; env keys `KIS_PAPER_API_*`. (See project memory `kis-api-facts`.)
+  (`ORD_DVSN=22`), live-only; env keys `KIS_PAPER_API_*`.
 - **Auth model**: all external credentials come from environment variables / `.env`; no secrets in repo.
+- **Signals sources**: movers/news via Alpaca Markets (primary) + yfinance (fallback); earnings via Finnhub; toggleable per `settings.yaml signals.sources`.
+- **Early-session**: `src/early_session/` polls Alpaca/KIS bars for the first 60 min of the session, records ±threshold% moves and dumps bar windows for analysis.
