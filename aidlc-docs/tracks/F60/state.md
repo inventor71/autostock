@@ -1,4 +1,4 @@
-# Track F60 — Easy-to-borrow 숏 게이트 (F54/F59 follow-up)
+# Track F60 — 숏 안전 제어: ETB 게이트 + 마스터 on/off (F54/F59 follow-up)
 
 > Per-track state. **Single writer = this track's worktree session.**
 > See `.aidlc-rule-details/common/concurrent-tracks.md`.
@@ -54,6 +54,13 @@
     #4 transient-cache no-poison, #5 runtime _TRADE_VERBS, #6 TUI verbs/color
   - #7 (ETB gate duplication) deferred — note in Merge Risk
   - +3 tests; full suite 804 green
+- [x] Master short on/off toggle (commit 9b597d9), 2026-06-05 — 사용자 요청
+  - `risk.shorting_enabled` (배포 기본 **OFF/opt-in**; RiskManager ctor 기본 True, main.py가 config 연결)
+  - 단일 소스 RiskManager.shorting_enabled: agent skip / human reject(SHORTING_DISABLED, force 비우회) /
+    executor auto-flip 이전 차단(skipped_shorting_disabled terminal) / _submit_gated 사전 차단
+  - 기존 숏 커버·손절은 비활성 시에도 작동(포지션 안 가둠)
+  - prompts: 비활성 시 숏 가이던스 전부 생략(에이전트 결정 낭비 방지) — orchestrator.shorting_enabled 연결
+  - config-only(런타임 verb 없음, 사용자 결정). +6 tests; full suite 810 green
 
 ### Build & Test 산출물
 - `construction/build-and-test/build-and-test-summary.md`
