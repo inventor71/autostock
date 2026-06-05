@@ -600,3 +600,52 @@ def surge_analyze(
         return {"status": "error", "message": str(exc)}
 
     return {"status": "ok", "symbol": symbol.upper(), "date": date_str}
+
+
+# -- F61: market-signal tools ---------------------------------------------- #
+
+
+def movers(collector=None) -> dict:
+    """Mover scan: universe + bellwethers that cleared the threshold (FR-1).
+
+    ``collector`` is an injected ``SignalCollector`` (tests pass a fake); the CLI
+    wires the real one. Read-only; fail-honest (degraded sources are reported,
+    never crash).
+    """
+    brief = collector.collect()
+    return {
+        "as_of": brief.as_of.isoformat(),
+        "movers": [m.model_dump(mode="json") for m in brief.movers],
+        "readthrough_alerts": [a.model_dump(mode="json") for a in brief.readthrough_alerts],
+        "degraded_sources": brief.degraded_sources,
+    }
+
+
+def readthrough(symbol: str, peer_map, universe) -> dict:
+    """Peers a big move in ``symbol`` may read through to (FR-3) — pure lookup.
+
+    Surfaces the symbol's peer groups and the universe (actionable) peers. The
+    agent judges whether a read-through actually applies.
+    """
+    sym = symbol.upper()
+    uni = {s.upper() for s in universe}
+    peers_all = peer_map.peers_of(sym)
+    return {
+        "symbol": sym,
+        "groups": peer_map.groups_of(sym),
+        "peers_universe": [p for p in peers_all if p in uni],
+        "peers_all": peers_all,
+    }
+
+
+def earnings_calendar(collector, days: int | None = None) -> dict:
+    """Imminent earnings for universe / held names within the horizon (FR-4).
+
+    ``days`` overrides the horizon for this call only (passed through to
+    ``collect`` — it does not mutate the collector's config)."""
+    brief = collector.collect(horizon_days=days)
+    return {
+        "as_of": brief.as_of.isoformat(),
+        "imminent_earnings": [e.model_dump(mode="json") for e in brief.imminent_earnings],
+        "degraded_sources": brief.degraded_sources,
+    }

@@ -76,8 +76,8 @@ class AgentTradingLoop:
         research_signals: list[str] | None = None,
         reflection_enabled: bool = True,
         reflection_max_lessons: int = 10,
-        shorting_enabled: bool = True,
-    ):
+shorting_enabled: bool = True,
+signal_brief_provider: Callable[[], str | None] | None = None,    ):
         self.session = session or AgentSession()
         self.journal: Journal = self.session.journal
         self.universe = universe
@@ -91,7 +91,9 @@ class AgentTradingLoop:
         self._reflection_enabled = reflection_enabled
         self._reflection_max_lessons = reflection_max_lessons
         self._shorting_enabled = shorting_enabled  # F60: gates short prompt guidance
-
+        # F61: optional callable that returns the market-signal brief text to
+        # prepend to the research prompt. Fail-honest — any error → no brief.
+        self._signal_brief_provider = signal_brief_provider
         self.last_new_decisions: list[Decision] = []
         self.last_kept: list[Decision] = []
         self.last_rejected: list[Decision] = []
@@ -176,14 +178,29 @@ class AgentTradingLoop:
     # ------------------------------------------------------------------ #
     # Turn types
     # ------------------------------------------------------------------ #
+    def _signal_brief(self) -> str | None:
+        """F61: market-signal brief to prepend to the research prompt, or None.
+
+        Fail-honest: a provider error never blocks the research turn."""
+        if self._signal_brief_provider is None:
+            return None
+        try:
+            return self._signal_brief_provider()
+        except Exception as exc:
+            logger.warning("signal brief provider failed, skipping: {}", exc)
+            return None
+
     def run_morning_research(self) -> AgentTurnResult:
         if self._multi_agent_enabled and self._multi_agent_n >= 2:
             if self._multi_agent_mode == "parallel":
                 return self._run_parallel_research()
             return self._run_sequential_research()
         return self._run(
-            prompts.morning_research_prompt(self.universe, self.held_symbols(),
-                                            shorting_enabled=self._shorting_enabled),
+            prompts.morning_research_prompt(
+                self.universe, self.held_symbols(),
+                shorting_enabled=self._shorting_enabled,
+                signal_brief=self._signal_brief(),
+            ),
             "research",
             model=self.research_model,
             timeout=self.research_timeout,
@@ -230,6 +247,7 @@ class AgentTradingLoop:
                     self.universe, held, self._research_signals, lessons, n_rounds,
                     max_lessons=self._reflection_max_lessons,
                     shorting_enabled=self._shorting_enabled,
+                    signal_brief=self._signal_brief(),
                 ),
                 model=self.research_model,
                 timeout=per_round,
@@ -336,7 +354,7 @@ class AgentTradingLoop:
         return tasks
 
     def _run_sub_agent(self, task: SubAgentTask, workspace: Path,
-                       timeout: float) -> SubAgentReport:
+                       timeout: float, signal_brief: str | None = None) -> SubAgentReport:
         try:
             sub = AgentSession.create_sub_agent(
                 workspace=workspace,
@@ -347,6 +365,7 @@ class AgentTradingLoop:
             result = sub.run_turn(
                 prompts.sub_agent_prompt(
                     task.description, self.universe, self._research_signals,
+                    signal_brief=signal_brief,
                 ),
                 model=self.research_model,
                 timeout=timeout,
@@ -363,6 +382,11 @@ class AgentTradingLoop:
 
         before = len(self.journal.read_decisions())
 
+        # F61: assemble the market-signal brief ONCE (collect() is TTL-cached) and
+        # hand it to every parallel sub-agent — the discovery sub-agent especially
+        # must see today's movers/read-through before hunting new entries.
+        signal_brief = self._signal_brief()
+
         workspaces: list[Path] = []
         reports: list[SubAgentReport] = []
         try:
@@ -371,7 +395,7 @@ class AgentTradingLoop:
                 for task in tasks:
                     ws = self._create_isolated_workspace()
                     workspaces.append(ws)
-                    futures[pool.submit(self._run_sub_agent, task, ws, sub_timeout)] = task
+                    futures[pool.submit(self._run_sub_agent, task, ws, sub_timeout, signal_brief)] = task
                 for f in as_completed(futures, timeout=sub_timeout + 30):
                     try:
                         reports.append(f.result())
@@ -388,8 +412,11 @@ class AgentTradingLoop:
         if not report_texts:
             logger.warning("No sub-agent reports; falling back to single-session research")
             return self._run(
-                prompts.morning_research_prompt(self.universe, self.held_symbols(),
-                                                shorting_enabled=self._shorting_enabled),
+                prompts.morning_research_prompt(
+                    self.universe, self.held_symbols(),
+                    shorting_enabled=self._shorting_enabled,
+                    signal_brief=self._signal_brief(),
+                ),
                 "research", model=self.research_model, timeout=max(total_timeout * 0.3, 60.0),
             )
 
@@ -413,7 +440,7 @@ class AgentTradingLoop:
         error = False
         try:
             result = self.session.run_turn(
-                prompts.parallel_synthesis_prompt(report_texts)
+                prompts.parallel_synthesis_prompt(report_texts, signal_brief=signal_brief)
                 + (f"\n{lesson_ctx}" if lesson_ctx else ""),
                 model=self.research_model,
                 timeout=max(total_timeout * 0.3, 60.0),

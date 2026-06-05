@@ -1,0 +1,29 @@
+{
+  "id": "S1",
+  "type": "earnings_shock_readthrough",
+  "description": "AVGO -15% on a guidance miss should read through to semiconductor peers.",
+  "universe": ["AVGO", "NVDA", "AMD", "MRVL", "QCOM", "MSFT"],
+  "held": ["NVDA"],
+  "peer_groups": {
+    "semiconductors": ["AVGO", "NVDA", "AMD", "MRVL", "QCOM"],
+    "ai_hyperscalers": ["MSFT", "GOOGL"]
+  },
+  "rows": [
+    {"symbol": "AVGO", "change_pct": -15.2, "volume_ratio": 3.4, "close": 1180.0},
+    {"symbol": "NVDA", "change_pct": -3.1, "volume_ratio": 1.4, "close": 118.0},
+    {"symbol": "AMD", "change_pct": -2.4, "volume_ratio": 1.2, "close": 150.0},
+    {"symbol": "MRVL", "change_pct": -2.0, "volume_ratio": 1.1, "close": 70.0},
+    {"symbol": "QCOM", "change_pct": -1.0, "volume_ratio": 0.9, "close": 165.0},
+    {"symbol": "MSFT", "change_pct": 0.3, "volume_ratio": 0.8, "close": 430.0}
+  ],
+  "news": {"AVGO": "Broadcom cuts AI revenue guidance, forecast misses estimates"},
+  "earnings": [],
+  "expect": {
+    "mover_symbols": ["AVGO"],
+    "readthrough_triggers": ["AVGO"],
+    "readthrough_peers_include": {"AVGO": ["NVDA", "AMD", "MRVL", "QCOM"]},
+    "readthrough_peers_exclude": {"AVGO": ["MSFT", "GOOGL", "AVGO"]},
+    "cause_hint_contains": {"AVGO": "guidance"},
+    "no_readthrough": false
+  }
+}

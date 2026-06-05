@@ -26,15 +26,22 @@ def morning_research_prompt(
     held: list[str] | None = None,
     today: date | None = None,
     shorting_enabled: bool = True,
+    signal_brief: str | None = None,
 ) -> str:
     """Deep morning turn: regime, pure-LLM discovery, theses, decisions.
 
     ``shorting_enabled`` gates the short-selling guidance: when shorts are off
     (the shipped default), the agent isn't told to find shorts — so it doesn't
-    waste turns proposing SELL_SHORTs the executor would reject."""
+    waste turns proposing SELL_SHORTs the executor would reject.
+
+    F61: when a Python-assembled ``signal_brief`` is supplied (movers,
+    read-through, imminent earnings), it is prepended so the agent sees what just
+    moved in the market before it starts. None → unchanged (backward compatible).
+    """
     today = today or date.today()
     held_str = ", ".join(held) if held else "none"
     universe_str = ", ".join(universe)
+    prefix = f"{signal_brief}\n\n" if signal_brief else ""
     short_discovery = (
         " Equally, consider SHORT candidates (overvalued / broken / "
         "negative-catalyst names): run `short_data` first and add a SELL_SHORT "
@@ -42,8 +49,7 @@ def morning_research_prompt(
         if shorting_enabled else ""
     )
     short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
-    return f"""Morning research turn — {today.isoformat()}.
-
+    return f"""{prefix}Morning research turn — {today.isoformat()}.
 Start by reading CLAUDE.md, lessons.md, regime.md, watchlist.md, and the thesis
 file for every held/tracked name.
 
@@ -158,6 +164,9 @@ _SIGNAL_TOOL_GUIDE = {
     "institutional": "`python -m src.agent.tools institutional <SYM>` — top institutional holders",
     "account": "`python -m src.agent.tools account` — live equity, positions, resting orders",
     "short_data": "`python -m src.agent.tools short_data <SYM>` — short interest, days-to-cover, squeeze_risk flag (check before any short)",
+    "movers": "`python -m src.agent.tools movers` — today's biggest movers (universe + bellwethers) with read-through alerts",
+    "readthrough": "`python -m src.agent.tools readthrough <SYM>` — peer names a big move in SYM may read through to",
+    "earnings_calendar": "`python -m src.agent.tools earnings_calendar` — imminent earnings (universe / held) within the horizon",
 }
 
 
@@ -224,8 +233,8 @@ def multi_research_initial_prompt(
     n_rounds: int = 2,
     max_lessons: int = 10,
     today: date | None = None,
-    shorting_enabled: bool = True,
-) -> str:
+shorting_enabled: bool = True,
+signal_brief: str | None = None,) -> str:
     today = today or date.today()
     held_str = ", ".join(held) if held else "none"
     universe_str = ", ".join(universe)
@@ -239,7 +248,8 @@ def multi_research_initial_prompt(
         "4. Discovery: scan scoreboard, dig into promising long candidates."
     )
     short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
-    return f"""Morning research turn — {today.isoformat()} (multi-agent, round 1 of {n_rounds + 1}).
+    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    return f"""{prefix}Morning research turn — {today.isoformat()} (multi-agent, round 1 of {n_rounds + 1}).
 
 Start by reading CLAUDE.md, lessons.md, regime.md, watchlist.md, and the thesis
 file for every held/tracked name.
@@ -303,11 +313,13 @@ def sub_agent_prompt(
     universe: list[str],
     signals: list[str] | None = None,
     today: date | None = None,
+    signal_brief: str | None = None,
 ) -> str:
     today = today or date.today()
     universe_str = ", ".join(universe)
     signal_guide = _build_signal_guide(signals)
-    return f"""You are an independent analyst for a PM trading agent — {today.isoformat()}.
+    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    return f"""{prefix}You are an independent analyst for a PM trading agent — {today.isoformat()}.
 
 Your assigned task: {task_description}
 
@@ -325,12 +337,13 @@ Your output (this response) is your full report.
 {_ADVISOR_REMINDER}"""
 
 
-def parallel_synthesis_prompt(reports: list[str]) -> str:
+def parallel_synthesis_prompt(reports: list[str], signal_brief: str | None = None) -> str:
     sections = []
     for i, report in enumerate(reports):
         sections.append(f"--- Analyst {i + 1} Report ---\n{report}\n")
     reports_text = "\n".join(sections)
-    return f"""You have received reports from {len(reports)} independent analysts:
+    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    return f"""{prefix}You have received reports from {len(reports)} independent analysts:
 
 {reports_text}
 

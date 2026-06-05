@@ -35,6 +35,19 @@ def _universe() -> list[str]:
     return list(get_settings().trading.symbols)
 
 
+def _signal_collector():
+    from src.signals.collector import SignalCollector
+
+    # Wire held positions so the tools surface imminent earnings for held names
+    # that sit OUTSIDE the tradeable universe too (matches the daemon push path).
+    # The broker is built lazily inside the callable; collect()'s held lookup is
+    # best-effort, so a missing-key/broker failure degrades to held=[].
+    def _held() -> list[str]:
+        return sorted(_broker().get_portfolio_state().positions.keys())
+
+    return SignalCollector.from_settings(price_provider=_provider(), held_provider=_held)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m src.agent.tools")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -89,6 +102,13 @@ def main(argv: list[str] | None = None) -> int:
     sa.add_argument("cause")
     sa.add_argument("leading_indicators")
     sa.add_argument("information_gap")
+
+    # F61: market-signal tools
+    sub.add_parser("movers")  # no args: scan universe + bellwethers
+    rt = sub.add_parser("readthrough")
+    rt.add_argument("symbol")
+    ec = sub.add_parser("earnings_calendar")
+    ec.add_argument("--days", type=int, default=None, help="Horizon override (default: config)")
 
     args = parser.parse_args(argv)
 
@@ -152,6 +172,17 @@ def main(argv: list[str] | None = None) -> int:
             out = {"cleared": args.id}
         else:  # list
             out = {"active": [t.model_dump(mode="json") for t in store.active()]}
+    elif args.cmd == "movers":
+        out = market.movers(_signal_collector())
+    elif args.cmd == "readthrough":
+        from config.config import get_settings
+        from src.signals.peer_map import PeerMap
+        from src.signals.settings import SignalsConfig
+
+        cfg = SignalsConfig.from_settings(get_settings().signals)
+        out = market.readthrough(args.symbol, PeerMap.from_config(cfg.peer_groups), _universe())
+    elif args.cmd == "earnings_calendar":
+        out = market.earnings_calendar(_signal_collector(), days=args.days)
     elif args.cmd == "surge-list":
         out = market.surge_list(args.date)
     elif args.cmd == "surge-analyze":

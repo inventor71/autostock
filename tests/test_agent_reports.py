@@ -174,10 +174,10 @@ class TestParallelCapture:
 
         real_sub = loop._run_sub_agent
 
-        def _one_fails(task, ws, timeout):
+        def _one_fails(task, ws, timeout, signal_brief=None):
             if task.agent_index == 0:
                 return SubAgentReport(task.agent_index, task, "", False, "injected failure")
-            return real_sub(task, ws, timeout)
+            return real_sub(task, ws, timeout, signal_brief)
 
         loop._run_sub_agent = _one_fails  # type: ignore[assignment]
         loop.run_morning_research()

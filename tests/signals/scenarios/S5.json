@@ -1,0 +1,23 @@
+{
+  "id": "S5",
+  "type": "quiet_day",
+  "description": "A quiet day: nothing clears the thresholds. The brief must be empty — no movers, no alerts, no false noise.",
+  "universe": ["AAPL", "MSFT", "GOOGL"],
+  "held": [],
+  "peer_groups": {
+    "megacap_tech": ["AAPL", "MSFT", "GOOGL"]
+  },
+  "rows": [
+    {"symbol": "AAPL", "change_pct": 1.2, "volume_ratio": 1.1, "close": 230.0},
+    {"symbol": "MSFT", "change_pct": -0.8, "volume_ratio": 0.9, "close": 430.0},
+    {"symbol": "GOOGL", "change_pct": 2.4, "volume_ratio": 1.3, "close": 175.0}
+  ],
+  "news": {},
+  "earnings": [],
+  "expect": {
+    "mover_symbols": [],
+    "readthrough_triggers": [],
+    "no_readthrough": true,
+    "empty_brief": true
+  }
+}

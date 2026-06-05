@@ -330,6 +330,36 @@ def run_paper(settings, strategies_config: dict) -> None:
     mode.start()
 
 
+def _make_signal_brief_provider(settings, data_provider, broker):
+    """F61: build the callable that returns the market-signal brief text (or None).
+
+    Best-effort and fail-honest: if signals are disabled or wiring fails, return
+    None so the research turn runs exactly as before."""
+    from src.signals.settings import SignalsConfig
+
+    cfg = SignalsConfig.from_settings(settings.signals)
+    if not cfg.enabled:
+        return None
+    try:
+        from src.signals.brief import to_prompt_text
+        from src.signals.collector import SignalCollector
+
+        def _held() -> list[str]:
+            return sorted(broker.get_portfolio_state().positions.keys())
+
+        collector = SignalCollector.from_settings(
+            price_provider=data_provider, held_provider=_held
+        )
+
+        def _brief() -> str | None:
+            return to_prompt_text(collector.collect()) or None
+
+        return _brief
+    except Exception as exc:  # never let signal wiring break agent startup
+        logger.warning("signal brief provider unavailable: {}", exc)
+        return None
+
+
 def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
     """Run the agentic PM trading loop: the LLM agent writes the journal, the
     executor trades its decisions through RiskManager (bracket orders) -> Broker.
@@ -367,6 +397,11 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
     session = AgentSession(model=settings.agent.model, timeout=settings.agent.turn_timeout)
     research_signals = settings.research.get("signals") if settings.research else None
     reflection_cfg = settings.research.get("reflection", {}) if settings.research else {}
+
+    # F61: market-signal brief — assembled fresh each research turn and prepended
+    # to the prompt. Best-effort; any wiring failure leaves the agent unaffected.
+    signal_brief_provider = _make_signal_brief_provider(settings, data_provider, broker)
+
     orchestrator = AgentTradingLoop(
         session=session,
         universe=universe,
@@ -380,6 +415,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         reflection_enabled=reflection_cfg.get("enabled", True),
         reflection_max_lessons=reflection_cfg.get("max_lessons_injected", 10),
         shorting_enabled=settings.risk.shorting_enabled,
+        signal_brief_provider=signal_brief_provider,
     )
     executor = DecisionExecutor(
         broker, risk_manager, data_provider, journal=session.journal, universe=universe
