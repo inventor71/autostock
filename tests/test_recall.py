@@ -42,12 +42,14 @@ def _eff(lid, applied_n, avg_excess):
 # --------------------------------------------------------------------------- #
 # fingerprint
 # --------------------------------------------------------------------------- #
-def test_build_fingerprint_first_real_line_and_dedup():
+def test_build_fingerprint_full_text_and_dedup():
+    # Non-comment lines are joined (not just line 1) so a regime keyword
+    # mentioned anywhere matches; comment/heading lines are dropped.
     fp = build_fingerprint(
         regime_text="# Market Regime\nBull, low vol\nmore",
         held_sectors=["Tech", "tech", "Energy"],
     )
-    assert fp.regime == "bull, low vol"
+    assert fp.regime == "bull, low vol more"
     assert fp.sectors == ("energy", "tech")
 
 
@@ -77,6 +79,16 @@ def test_relevance_boosts_regime_match():
     fp = SituationFingerprint(regime="high-vol gap risk")
     ranked = prefilter_and_rank(lessons, fp, {}, RecallWeights(), k_prime=10, today=TODAY)
     assert ranked[0].lesson.lesson_id == "L2"  # regime match wins with no efficacy
+    assert ranked[0].relevance == 1
+
+
+def test_relevance_matches_regime_keyword_on_later_line():
+    # The keyword sits on line 2+ of regime.md (line 1 is a heading) and is a
+    # hyphenated tag — the old first-line-only word-boundary regex missed both.
+    fp = build_fingerprint(regime_text="# Regime\nChoppy tape, risk-off into the close")
+    lessons = [_lesson("L1"), _lesson("L2", regime="risk-off")]
+    ranked = prefilter_and_rank(lessons, fp, {}, RecallWeights(), k_prime=10, today=TODAY)
+    assert ranked[0].lesson.lesson_id == "L2"
     assert ranked[0].relevance == 1
 
 

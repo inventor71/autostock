@@ -19,7 +19,6 @@ degrades ranking gracefully to relevance + recency.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -61,11 +60,12 @@ def build_fingerprint(
     pending_categories: list[str] | None = None,
 ) -> SituationFingerprint:
     """Assemble today's situation key from journal/market context (pure)."""
-    regime = (regime_text or "").strip().lower()
-    # keep it compact: first non-empty line of regime.md, lowercased
-    if regime:
-        regime = next((ln.strip() for ln in regime.splitlines() if ln.strip()
-                       and not ln.lstrip().startswith("#")), regime)
+    # Full searchable haystack: every non-comment line of regime.md joined and
+    # lowercased (not just line 1) so a regime tag mentioned anywhere matches.
+    regime = " ".join(
+        ln.strip() for ln in (regime_text or "").splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ).lower()
     return SituationFingerprint(
         regime=regime,
         sectors=tuple(sorted({s.lower() for s in (held_sectors or []) if s})),
@@ -87,7 +87,9 @@ def _relevance(lesson: LessonRecord, fp: SituationFingerprint) -> int:
     """Count of fingerprint tag matches. Untagged lessons score 0 (neutral) —
     they are never filtered out, only out-ranked when a tagged peer matches."""
     score = 0
-    if lesson.regime and fp.regime and re.search(rf'\b{re.escape(lesson.regime.lower())}\b', fp.regime):
+    # Substring match (like sector below) — robust to hyphenated/multi-word tags
+    # ('risk-off') that word-boundary regex mishandles.
+    if lesson.regime and fp.regime and lesson.regime.lower() in fp.regime:
         score += 1
     if lesson.sector and lesson.sector.lower() in fp.sectors:
         score += 1

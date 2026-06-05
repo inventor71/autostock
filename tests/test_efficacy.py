@@ -190,3 +190,24 @@ def test_attach_excess_is_direction_aware():
     assert buy.excess is not None and buy.excess > 0.09
     assert shrt.excess is not None and shrt.excess < -0.09  # inverted for shorts
     assert exit_.excess is None  # exits carry no entry-excess
+
+
+# --------------------------------------------------------------------------- #
+# execution-timestamp parsing (regression: naive ts must parse, not silently None)
+# --------------------------------------------------------------------------- #
+def test_parse_exec_ts_handles_naive_and_aware():
+    from datetime import datetime, timezone
+
+    from src.agent.quality.collector import _parse_exec_ts
+
+    # Naive ISO (the common logged form) — must parse as UTC, NOT return None.
+    naive = _parse_exec_ts("2026-06-05T14:30:00")
+    assert naive is not None
+    assert naive == datetime(2026, 6, 5, 14, 30, tzinfo=timezone.utc).timestamp()
+
+    # tz-aware ISO parses too.
+    aware = _parse_exec_ts("2026-06-05T14:30:00+00:00")
+    assert aware is not None and aware == naive
+
+    # Genuinely unparseable -> None (fail-safe).
+    assert _parse_exec_ts("not-a-timestamp") is None

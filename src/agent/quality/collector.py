@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -139,7 +139,7 @@ def _parse_exec_ts(ts_str: str) -> float | None:
     try:
         dt = datetime.fromisoformat(ts_str)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=datetime.timezone.utc)
+            dt = dt.replace(tzinfo=timezone.utc)
         return dt.timestamp()
     except Exception:
         return None
