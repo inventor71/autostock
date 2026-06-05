@@ -296,6 +296,38 @@ Create `aidlc-docs/construction/build-and-test/build-and-test-summary.md`:
 
 ---
 
+## Step 7.5: Post-Merge Guide (CONDITIONAL — user-facing / real-usage changes)
+
+The build-and-test summary covers how to verify the code **in the worktree before merge**. It does
+NOT tell the user what to expect **once it lands on the prod branch**, or how to sanity-check it in
+**real usage** (live data, the running daemon, actual user workflows). For any change a person will
+observe in production, write that guide.
+
+**Execute IF** the change is user-facing or has real-usage behavior worth verifying after merge:
+- new/changed runtime behavior the operator or end-user will see (new tools, prompts, UI, signals,
+  scheduled jobs, external-API integrations),
+- new config knobs or env keys the user must set or may tune,
+- anything whose correctness depends on live data / external services (so worktree tests with fakes
+  can't fully prove it).
+
+**Skip IF** purely internal with no observable prod effect (refactor, test-only, docs, infra-neutral
+cleanup) — note the skip in `state.md`.
+
+**Create `aidlc-docs/tracks/<id>/post-merge-guide.md`** covering:
+1. **무엇이 바뀌나 (prod 기대 동작)** — 머지 후 프로드에서 달라지는 동작을 한 줄 요약 + 구체.
+2. **전제/활성 조건** — 데몬 재기동 필요 여부, 새 env 키(`.env`)·config 블록, 기본 on/off 상태.
+3. **실사용 확인 체크리스트** — 운영자가 실제로 눌러볼 순서(스모크 명령, 어디를 보면 되는지:
+   로그/콘솔/산출 파일), 무엇이 "정상"인지(기대 출력)와 fail-honest 시 신호.
+4. **튜닝 노브** — `config/...`에서 조정 가능한 값과 의미(시드 기본값 포함).
+5. **롤백/비활성** — 부분/완전 비활성 방법(예: `enabled: false`, 소스 토글, 머지 revert).
+6. **알려진 한계 / 범위 밖** — 이번 트랙이 커버하지 **않는** 것(후속 트랙 후보) — 기대치 오정렬 방지.
+
+가능하면 worktree에서 **실데이터 라이브 스모크를 1회** 돌려(외부 연동은 fake 테스트가 못 잡는다)
+그 결과를 가이드의 검증 상태에 적어둔다. 이 문서는 머지 후에도 `tracks/<id>/`에 남아 운영자의
+실사용 검증 길잡이가 된다.
+
+---
+
 ## Step 8: Update State Tracking + enqueue for merge
 
 > **Partition model (see `common/concurrent-tracks.md`)**: progress lives in the track's own
@@ -313,6 +345,15 @@ Update `aidlc-docs/tracks/<id>/state.md`:
   - If Build & Test did **not** pass, keep `**Status**: active` and do not enqueue; fix and rerun.
   - This only *enqueues*; `/ai-dlc-merge` still has its own approval gate before any merge, so
     setting `merge-awaiting` here cannot cause a premature merge.
+
+> **`merge-awaiting` is provisional — revert it the moment work resumes.** If a track sitting at
+> `merge-awaiting` gets ANY further work — more implementation, a `/code-review` or `/critic` round
+> that produces fixes, a design change, a follow-up request — it is no longer "done and ready". The
+> agent doing that work MUST flip the track's `state.md` `**Status**:` back to **`active`** BEFORE
+> making changes, and only re-set `merge-awaiting` after Build & Test is green again. New commits
+> alone do NOT un-enqueue a track — only the Status flag does, and `/ai-dlc-merge` reads that flag —
+> so leaving it `merge-awaiting` while editing risks the orchestrator merging a half-finished track.
+> (See `common/concurrent-tracks.md` → merge-awaiting lifecycle.)
 
 ---
 
@@ -369,6 +410,7 @@ Present completion message in this structure:
 - integration-test-instructions.md
 - performance-test-instructions.md
 - build-and-test-summary.md
+- post-merge-guide.md (if user-facing / real-usage change — `tracks/<id>/post-merge-guide.md`)
 
 ---
 ```

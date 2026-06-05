@@ -438,11 +438,25 @@ workflow start. Its non-negotiable rules define where every doc in this workflow
    - Performance test instructions (if applicable)
    - Additional test instructions as needed (contract tests, security tests, e2e tests)
 4. Create instruction files in build-and-test/ subdirectory: build-instructions.md, unit-test-instructions.md, integration-test-instructions.md, performance-test-instructions.md, build-and-test-summary.md
+4.5. **Post-Merge Guide (CONDITIONAL — user-facing / real-usage changes).** For any change a person
+   will observe in production (new behavior/tools/prompts/UI/integrations, new config or env keys,
+   anything depending on live data/external services), write `aidlc-docs/tracks/<id>/post-merge-guide.md`:
+   what changes on the prod branch, prerequisites (daemon restart, env/config), a **real-usage
+   verification checklist** (smoke steps + where to look + what "normal" looks like), tuning knobs,
+   rollback, and known limits / out-of-scope. Run a real-data live smoke once where feasible
+   (fakes can't prove external integrations). Skip only for purely internal changes (note the skip).
+   See `construction/build-and-test.md` Step 7.5.
 5. **MANDATORY: enqueue for merge.** When Build & Test PASSES (all green), set the track's
    `aidlc-docs/tracks/<id>/state.md` `**Status**:` to **`merge-awaiting`** (see build-and-test.md
    Step 8 + `common/concurrent-tracks.md`). This is the standard hand-off so `/ai-dlc-merge` sees
    the track in its queue without a separate manual step. Leave the root Track Registry row `active`
    (`/ai-dlc-merge` flips it to `merged` at actual merge time). If tests did not pass, keep `active`.
+   - **`merge-awaiting` is provisional — revert it when work resumes.** If a track already at
+     `merge-awaiting` gets further work (more implementation, a `/code-review` or `/critic` round
+     with fixes, a design change, a follow-up request), flip its `state.md` `**Status**:` back to
+     **`active`** BEFORE editing, and only re-set `merge-awaiting` once Build & Test is green again.
+     New commits alone don't un-enqueue a track — only the Status flag does, and `/ai-dlc-merge`
+     reads it, so editing while left `merge-awaiting` risks merging a half-finished track.
 6. **Wait for Explicit Approval**: Ask: "**Build and test instructions complete. Track marked `merge-awaiting` — run `/ai-dlc-merge` to merge?**" - DO NOT PROCEED until user confirms
 7. **MANDATORY**: Log user's response in audit.md with complete raw input
 

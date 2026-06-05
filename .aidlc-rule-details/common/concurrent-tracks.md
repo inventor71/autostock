@@ -69,6 +69,14 @@ A single table is the authority for which tracks exist and where they live:
   **its own** `tracks/<id>/state.md` when Build & Test passes (the standard hand-off — see
   `construction/build-and-test.md` Step 8). `merge-awaiting` enqueues the track for `/ai-dlc-merge`;
   the registry row stays `active` until that command flips it to `merged` at actual merge time.
+- **`merge-awaiting` lifecycle — it is provisional, revert it when work resumes.** The flag means
+  "green and ready to merge, untouched since". The moment a `merge-awaiting` track receives further
+  work — additional implementation, a `/code-review` or `/critic` round that lands fixes, a design
+  change, any follow-up request — it is no longer ready. **Flip its `state.md` `**Status**:` back to
+  `active` BEFORE making the change**, and only re-set `merge-awaiting` once Build & Test is green
+  again. New commits alone do NOT un-enqueue a track; `/ai-dlc-merge` reads the Status flag, so a
+  track left at `merge-awaiting` while being edited can be merged half-finished. (The registry row
+  is `active` throughout either way — this flip is on the per-track `state.md`.)
 - A registry row is written at track **creation** and flipped at **merge/close**. These are the
   only two cross-track edits; serialize them with `git pull --rebase` before committing.
 
