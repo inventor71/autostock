@@ -34,11 +34,26 @@ class RiskChecker(BaseChecker):
         t0 = time.monotonic()
         try:
             halt_pct = self._settings.risk.market_halt_threshold_pct
-            # Fetch SPY daily change via yfinance (fast, no auth needed)
+            # Fetch SPY daily change via yfinance (fast, no auth needed).
+            # fast_info keys are camelCase (yfinance internals), not snake_case.
             import yfinance as yf
             spy = yf.Ticker("SPY")
-            prev_close = spy.fast_info.get("previous_close") or spy.fast_info.get("regularMarketPreviousClose")
-            last_price = spy.fast_info.get("last_price") or spy.fast_info.get("regularMarketPrice")
+            fi = spy.fast_info
+            prev_close = (
+                fi.get("previousClose")
+                or fi.get("regularMarketPreviousClose")
+            )
+            last_price = (
+                fi.get("lastPrice")
+                or fi.get("regularMarketPrice")
+            )
+            # Fallback: use the slower .info dict if fast_info is empty
+            if prev_close is None or last_price is None:
+                info = spy.info
+                if prev_close is None:
+                    prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+                if last_price is None:
+                    last_price = info.get("lastPrice") or info.get("regularMarketPrice") or info.get("currentPrice")
             if prev_close and last_price:
                 chg_pct = (last_price / prev_close - 1)
                 elapsed = (time.monotonic() - t0) * 1000
