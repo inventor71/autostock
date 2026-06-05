@@ -53,6 +53,11 @@ class RiskConfig(BaseModel):
     atr_stop_multiple: float = 3.0  # default stop = N x ATR when no explicit level
     market_halt_threshold_pct: float = -0.03  # halt new buys if SPY day-change <= this
     default_risk_reward: float = 2.5  # derived take-profit R:R when none given
+    # F60: master short on/off. Shipped OFF (opt-in) — the system trades long-only
+    # until an operator explicitly enables shorts. When false, ALL short entries
+    # (agent + human + auto-flip) are rejected; covering/stopping an existing
+    # short is unaffected (never traps a position).
+    shorting_enabled: bool = False
     # F54 short-selling risk (optional; None → fall back to the long value).
     short_market_halt_threshold_pct: float = 0.03  # halt new shorts if SPY >= this
     individual_stock_halt_pct: float = 0.10  # reject fresh short if name up >= this today

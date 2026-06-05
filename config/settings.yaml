@@ -187,6 +187,10 @@ risk:
   atr_stop_multiple: 3.0  # default stop = 3x ATR when LLM gives no level
   market_halt_threshold_pct: -0.03  # halt new buys if SPY day-change <= -3%
   default_risk_reward: 2.5  # derived take-profit R:R when LLM gives no target
+  # F60: master short on/off. Shipped OFF — long-only until you flip this to true.
+  # false → every short entry (agent + /short + auto-flip) is rejected; covering an
+  # existing short still works. Restart the daemon after changing.
+  shorting_enabled: false
   # F54 short-selling risk (all optional; null/omitted → fall back to the long
   # value above). Shorts carry unbounded loss, so the stop is always mandatory.
   short_market_halt_threshold_pct: 0.03  # halt new shorts if SPY day-change >= +3%

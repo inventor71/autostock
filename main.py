@@ -275,6 +275,7 @@ def run_paper(settings, strategies_config: dict) -> None:
         atr_stop_multiple=settings.risk.atr_stop_multiple,
         market_halt_threshold_pct=settings.risk.market_halt_threshold_pct,
         default_risk_reward=settings.risk.default_risk_reward,
+        shorting_enabled=settings.risk.shorting_enabled,
         short_market_halt_threshold_pct=settings.risk.short_market_halt_threshold_pct,
         individual_stock_halt_pct=settings.risk.individual_stock_halt_pct,
         short_stop_loss_pct=settings.risk.short_stop_loss_pct,
@@ -353,6 +354,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         atr_stop_multiple=settings.risk.atr_stop_multiple,
         market_halt_threshold_pct=settings.risk.market_halt_threshold_pct,
         default_risk_reward=settings.risk.default_risk_reward,
+        shorting_enabled=settings.risk.shorting_enabled,
         short_market_halt_threshold_pct=settings.risk.short_market_halt_threshold_pct,
         individual_stock_halt_pct=settings.risk.individual_stock_halt_pct,
         short_stop_loss_pct=settings.risk.short_stop_loss_pct,
@@ -377,6 +379,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         research_signals=research_signals,
         reflection_enabled=reflection_cfg.get("enabled", True),
         reflection_max_lessons=reflection_cfg.get("max_lessons_injected", 10),
+        shorting_enabled=settings.risk.shorting_enabled,
     )
     executor = DecisionExecutor(
         broker, risk_manager, data_provider, journal=session.journal, universe=universe

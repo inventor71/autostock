@@ -189,6 +189,8 @@ class DecisionExecutor:
         # stops before them so they are re-processed next cycle.
         _TERMINAL = frozenset({
             "executed", "skipped_hold", "skipped_out_of_universe", "skipped_expired",
+            "skipped_not_shortable",  # F60: ETB reject is permanent for this decision
+            "skipped_shorting_disabled",  # F60: master switch off — permanent skip
         })
 
         outcomes: list[ExecutionOutcome] = []
@@ -245,6 +247,18 @@ class DecisionExecutor:
 
         if d.action == "ADJUST_STOP":
             return self._adjust_stop(d)
+
+        # F60: short gates — checked BEFORE the auto-flip so a rejected short never
+        # closes an existing long first.
+        if d.action == "SELL_SHORT":
+            # Master switch (shipped OFF / opt-in).
+            if not self.risk_manager.shorting_enabled:
+                logger.debug(f"Shorting disabled; skipping {d.symbol}")
+                return ExecutionOutcome(d, "skipped_shorting_disabled", "shorting disabled")
+            # Easy-to-borrow gate — only short liquid, easy-to-borrow names.
+            if not self.broker.is_shortable(d.symbol):
+                logger.warning(f"Rejecting short {d.symbol}: not easy-to-borrow / not shortable")
+                return ExecutionOutcome(d, "skipped_not_shortable", "not easy-to-borrow / not shortable")
 
         # BUY / SELL / SELL_SHORT / BUY_TO_COVER -> RiskManager -> broker
         portfolio = self.broker.get_portfolio_state()

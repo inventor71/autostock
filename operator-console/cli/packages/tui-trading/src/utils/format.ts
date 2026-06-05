@@ -44,7 +44,8 @@ export function interventionGlyph(_verb: string): string {
 
 export function interventionColor(verb: string): string {
   // Buy-ish green, sell/flatten/close red, cancels gray.
-  if (verb === "buy" || verb === "place_order") return "green"
+  // F60: short opens (sell_short), cover closes (buy_to_cover — a buy-side risk-reducing action).
+  if (verb === "buy" || verb === "place_order" || verb === "cover") return "green"
   if (verb.startsWith("cancel")) return "gray"
   return "red"
 }

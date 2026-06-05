@@ -40,7 +40,7 @@ function normalizeAction(v: unknown): MonitorDecision["action"] {
 }
 
 const TRADE_VERBS = new Set([
-  "buy", "sell", "flatten", "flatten_all", "place_order",
+  "buy", "sell", "short", "cover", "flatten", "flatten_all", "place_order",
   "cancel", "cancel_order", "cancel_all", "close_position", "close_all",
 ])
 

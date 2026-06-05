@@ -76,6 +76,7 @@ class AgentTradingLoop:
         research_signals: list[str] | None = None,
         reflection_enabled: bool = True,
         reflection_max_lessons: int = 10,
+        shorting_enabled: bool = True,
     ):
         self.session = session or AgentSession()
         self.journal: Journal = self.session.journal
@@ -89,6 +90,7 @@ class AgentTradingLoop:
         self._research_signals = research_signals
         self._reflection_enabled = reflection_enabled
         self._reflection_max_lessons = reflection_max_lessons
+        self._shorting_enabled = shorting_enabled  # F60: gates short prompt guidance
 
         self.last_new_decisions: list[Decision] = []
         self.last_kept: list[Decision] = []
@@ -180,7 +182,8 @@ class AgentTradingLoop:
                 return self._run_parallel_research()
             return self._run_sequential_research()
         return self._run(
-            prompts.morning_research_prompt(self.universe, self.held_symbols()),
+            prompts.morning_research_prompt(self.universe, self.held_symbols(),
+                                            shorting_enabled=self._shorting_enabled),
             "research",
             model=self.research_model,
             timeout=self.research_timeout,
@@ -226,6 +229,7 @@ class AgentTradingLoop:
                 prompts.multi_research_initial_prompt(
                     self.universe, held, self._research_signals, lessons, n_rounds,
                     max_lessons=self._reflection_max_lessons,
+                    shorting_enabled=self._shorting_enabled,
                 ),
                 model=self.research_model,
                 timeout=per_round,
@@ -384,7 +388,8 @@ class AgentTradingLoop:
         if not report_texts:
             logger.warning("No sub-agent reports; falling back to single-session research")
             return self._run(
-                prompts.morning_research_prompt(self.universe, self.held_symbols()),
+                prompts.morning_research_prompt(self.universe, self.held_symbols(),
+                                                shorting_enabled=self._shorting_enabled),
                 "research", model=self.research_model, timeout=max(total_timeout * 0.3, 60.0),
             )
 

@@ -89,6 +89,10 @@ class AlpacaBroker(BaseBroker):
         self._api_key = api_key
         self._secret_key = secret_key
         self._data_client = None
+        # F60: easy-to-borrow cache. ETB status changes ~daily, so a short TTL
+        # avoids a get_asset call on every short check without going stale.
+        self._etb_cache: dict[str, tuple[bool, float]] = {}
+        self._etb_ttl = 1800.0  # 30 min
         logger.info(f"AlpacaBroker initialized (paper={paper})")
 
     def _poll_for_fill(self, order_id: str):
@@ -297,6 +301,31 @@ class AlpacaBroker(BaseBroker):
                     time.sleep(delay)
         logger.warning(f"Could not fetch market clock after {retries} tries: {last_err}")
         return False
+
+    def is_shortable(self, symbol: str) -> bool:
+        """F60: True only if Alpaca reports ``symbol`` tradable AND shortable AND
+        easy_to_borrow. Fail-closed: any error (or missing flags) → False, so an
+        unconfirmable name is never shorted. Cached for ``_etb_ttl`` seconds."""
+        sym = symbol.upper()
+        now = time.monotonic()
+        hit = self._etb_cache.get(sym)
+        if hit is not None and (now - hit[1]) < self._etb_ttl:
+            return hit[0]
+        try:
+            asset = self._client.get_asset(sym)
+        except Exception as e:  # fail-closed for THIS call, but do NOT cache a
+            # transient failure — caching False would block the symbol for the
+            # whole TTL after the API recovers. Only confirmed determinations are
+            # cached (mirrors is_market_open: fail-closed, but retryable).
+            logger.warning(f"is_shortable({sym}) check failed; treating as NOT shortable: {e}")
+            return False
+        ok = bool(
+            getattr(asset, "tradable", False)
+            and getattr(asset, "shortable", False)
+            and getattr(asset, "easy_to_borrow", False)
+        )
+        self._etb_cache[sym] = (ok, now)
+        return ok
 
     @staticmethod
     def _to_open_order(o, default_symbol: str | None = None) -> OpenOrder:

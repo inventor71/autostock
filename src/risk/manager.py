@@ -66,6 +66,12 @@ class RiskManager:
         market_halt_threshold_pct: float = -0.03,
         default_risk_reward: float = 2.5,
         use_bracket_orders: bool = False,
+        # F60: master short on/off. The constructor default is True so the short
+        # *capability* is exercised directly (tests/scripts); the DEPLOYED default
+        # is False — main.py wires settings.risk.shorting_enabled (config-shipped
+        # OFF, opt-in). When False, every short entry is rejected; covers/stops
+        # on an existing short are unaffected.
+        shorting_enabled: bool = True,
         # F54: short-specific config (all optional). None → fall back to the
         # matching long parameter, so a deployment that doesn't set them behaves
         # exactly as before for shorts (Q3=C: shared + override).
@@ -83,6 +89,7 @@ class RiskManager:
         self.market_halt_threshold_pct = market_halt_threshold_pct
         self.default_risk_reward = default_risk_reward
         self.use_bracket_orders = use_bracket_orders
+        self.shorting_enabled = shorting_enabled  # F60 master short on/off
         # F54 short config (override-or-fallback resolved via the properties below).
         self.short_market_halt_threshold_pct = short_market_halt_threshold_pct
         self._short_stop_loss_pct = short_stop_loss_pct
@@ -351,6 +358,14 @@ class RiskManager:
             logger.debug(f"No position for {signal.symbol}, skipping sell")
             return None
 
+        # F60: SELL always exits a long; a SHORT is exited by BUY_TO_COVER. If
+        # SELL fires against a SHORT it would add-to-short (wrong accounting),
+        # so reject with a clear message. The executor never routes SELL for a
+        # short — this is a defense-in-depth guard (SECURITY-15).
+        if position.side == PositionSide.SHORT:
+            logger.warning(f"SELL on SHORT {signal.symbol} rejected — use BUY_TO_COVER")
+            return None
+
         # Support partial sell
         sell_pct = getattr(signal, "sell_pct", 1.0)
         sell_pct = max(0.0, min(1.0, sell_pct))  # Clamp to 0-1 range
@@ -391,6 +406,9 @@ class RiskManager:
         """Open a short. Unlike a long, a short has no fallback to an
         unprotected market order — a short with no resolvable stop is REJECTED
         (FR-4.1: mandatory stop, because a short's loss is unbounded)."""
+        if not self.shorting_enabled:
+            logger.debug(f"Shorting disabled; skipping short {signal.symbol}")
+            return None
         if self._new_shorts_halted:
             logger.warning(f"New shorts halted (circuit breaker), skipping {signal.symbol}")
             return None
@@ -737,6 +755,13 @@ class RiskManager:
         """Human short entry gate. Mirrors _receive_human_buy with inverted
         protective-leg geometry, plus the MANDATORY-stop rule (a human short
         with no resolvable stop is rejected, even with force — fail-closed)."""
+        # F60: master switch — NOT force-overridable (operator must flip the config
+        # to enable shorting at all).
+        if not self.shorting_enabled:
+            return OrderDecision(
+                accepted=False, reason_code="SHORTING_DISABLED",
+                message="shorting is disabled (set risk.shorting_enabled: true to allow)",
+            )
         # 1) pool / breaker / no-add — overridable by force (except mandatory stop).
         if not force:
             if self._new_shorts_halted:
