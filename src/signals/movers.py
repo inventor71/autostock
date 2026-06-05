@@ -7,6 +7,7 @@ it AND). Output is sorted by ``abs(change_pct)`` descending and capped.
 
 from __future__ import annotations
 
+import math
 from typing import Literal
 
 from src.signals.records import Mover, MoverRow
@@ -14,6 +15,10 @@ from src.signals.records import Mover, MoverRow
 
 def _norm(symbol: str) -> str:
     return symbol.strip().upper()
+
+
+def _is_nan(value) -> bool:
+    return isinstance(value, float) and math.isnan(value)
 
 
 def detect_movers(
@@ -34,10 +39,14 @@ def detect_movers(
     movers: list[Mover] = []
 
     for row in rows:
-        if row.change_pct is None:
+        # A missing OR NaN change is unusable — data providers (yfinance) can
+        # return NaN for halted/stale/just-listed bars. Without a real change we
+        # can't report magnitude/direction or a read-through trigger, so skip the
+        # row entirely rather than emit a "+nan%" mover.
+        if row.change_pct is None or _is_nan(row.change_pct):
             continue
         chg = row.change_pct
-        vr = row.volume_ratio
+        vr = None if _is_nan(row.volume_ratio) else row.volume_ratio
 
         qualified_by: list[Literal["price", "volume"]] = []
         if abs(chg) >= price_pct:
