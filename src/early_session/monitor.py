@@ -212,10 +212,12 @@ class EarlySessionMonitor:
                 return []
         if src is not None:
             return list(src)
-        # Fallback: trading universe from settings.
+        # Fallback: the provider-resolved trading universe (F30 replaced the
+        # static trading.symbols list with resolve_universe).
         try:
             from config.config import get_settings
-            return list(get_settings().trading.symbols)
+            from src.universe.factory import resolve_universe
+            return list(resolve_universe(get_settings()))
         except Exception:
             return []
 
