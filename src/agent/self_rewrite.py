@@ -20,7 +20,6 @@ the authoritative copy outside the agent cwd; this is not a hard lockout.
 
 from __future__ import annotations
 
-import json
 from datetime import date, datetime
 from pathlib import Path
 
@@ -57,8 +56,11 @@ class GuidanceHistory(BaseModel):
         self.versions[v.version] = v
 
     def next_version_id(self) -> str:
-        n = sum(1 for k in self.versions if k.startswith("g")) + 1
-        return f"g{n}"
+        g_keys = [k for k in self.versions if k.startswith("g")]
+        if not g_keys:
+            return "g1"
+        max_n = max(int(k[1:]) for k in g_keys if k[1:].isdigit())
+        return f"g{max_n + 1}"
 
 
 def seed_history() -> GuidanceHistory:
@@ -147,7 +149,8 @@ def propose_rewrite(
         logger.warning(f"self-rewrite proposal failed: {exc}")
         return RewriteResult(action="held", reason=f"proposal error: {exc}")
 
-    result = check_compliance(proposed, current.evolved_section)
+    result = check_compliance(proposed, current.evolved_section,
+                              is_seed_parent=(current.version == SEED_VERSION))
     if not result.ok:
         # record the rejected attempt in lineage for audit, do NOT adopt
         rej = history.next_version_id()

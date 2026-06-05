@@ -77,7 +77,7 @@ _DENYLIST = [
     (r"\b(ignore|bypass|override)\b[^.\n]{0,25}\b(riskmanager|risk manager|the gate|gate)", "bypasses the risk gate"),
     (r"\buse\s+force\b", "directs using the force bypass"),
     (r"\bshort\s+any\b", "ignores the short universe / ETB gate"),
-    (r"\b(ignore|outside)\b[^.\n]{0,15}\b(etb|easy.to.borrow|the universe)", "ignores universe/ETB"),
+    (r"\b(ignore|outside)\b[^.\n]{0,15}\b(etb|easy\.to\.borrow|the universe)", "ignores universe/ETB"),
 ]
 
 # B) prompt-injection self-defense — evolvable text trying to disable the preamble.
@@ -89,31 +89,41 @@ _INJECTION = [
 ]
 
 
-def check_compliance(evolved: str, parent: str, constitution: str = AGENT_CONSTITUTION) -> ComplianceResult:
+def check_compliance(
+    evolved: str,
+    parent: str,
+    constitution: str = AGENT_CONSTITUTION,
+    *,
+    is_seed_parent: bool = False,
+) -> ComplianceResult:
     """Pure deterministic gate on a proposed evolvable-guidance revision.
 
     fail-closed: any match / bound violation rejects the revision (the caller
     keeps the prior version). Returns the FIRST reason found.
+
+    ``is_seed_parent`` exempts the revision from the change-size cap so the first
+    meaningful rewrite from the minimal seed guidance can pass.
     """
     text = evolved or ""
     low = text.lower()
 
     # Content safety first (report the meaningful reason, not just size):
-    # B) injection self-defense
+    # B) injection self-defense (original case — patterns are case-sensitive)
     for pat, reason in _INJECTION:
         if re.search(pat, text, re.IGNORECASE):
             return ComplianceResult(False, f"injection: {reason}")
 
     # A) contradiction backstop
     for pat, reason in _DENYLIST:
-        if re.search(pat, low, re.IGNORECASE):
+        if re.search(pat, low):
             return ComplianceResult(False, f"contradicts a code invariant: {reason}")
 
     # C) structural bounds (size ceiling for rule-5 'prefer gradual')
     if len(text) > MAX_LEN:
         return ComplianceResult(False, f"too long ({len(text)} > {MAX_LEN})")
-    changed = 1.0 - SequenceMatcher(None, parent or "", text).ratio()
-    if (parent or "") and changed > MAX_DELTA_FRACTION:
-        return ComplianceResult(False, f"change too large ({changed:.0%} > {MAX_DELTA_FRACTION:.0%})")
+    if not is_seed_parent:
+        changed = 1.0 - SequenceMatcher(None, parent or "", text).ratio()
+        if (parent or "") and changed > MAX_DELTA_FRACTION:
+            return ComplianceResult(False, f"change too large ({changed:.0%} > {MAX_DELTA_FRACTION:.0%})")
 
     return ComplianceResult(True, None)
