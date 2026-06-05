@@ -15,6 +15,7 @@ import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Callable
 
@@ -102,8 +103,11 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         self._on_turn_end: Callable[[], None] | None = None
         # F65: lesson efficacy is expensive to compute (collect_outcomes hits the
         # price provider), so cache it per session-day and reuse across turns.
-        self._efficacy_cache: dict | None = None
-        self._efficacy_cache_day: date | None = None
+        # (day, efficacy) cached as ONE tuple so the cross-thread swap is atomic:
+        # a reader never observes a fresh day paired with a stale/half-built dict
+        # (concurrent scheduler turns may both recompute — that's accepted; only
+        # the torn read is prevented). No lock needed (single-attr assign is atomic).
+        self._efficacy_cached: tuple[date, dict] | None = None
         # F64: constitution-bounded self-rewritten guidance, loaded lazily from
         # the Python-managed store. ``rewrite_fn`` stays None in v1 (inert) — the
         # machinery ships safe; providing a rewrite_fn activates self-rewriting.
@@ -140,9 +144,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         # F64: prepend the constitution + evolvable guidance on guidance-bearing
         # turns only (not eod/reconcile).
         if turn_type in ("research", "intraday", "wake"):
-            prompt = self._guidance_preamble() + "\n\n" + prompt
+            prompt = self._assemble_turn(prompt)
 
-        before = self.journal.count_decisions()
+        # Must index the SAME list _stamp_new slices (read_decisions, which skips
+        # malformed lines) — count_decisions counts raw lines, so with any
+        # unparseable line it overshoots and the slice drops the new decisions.
+        before = len(self.journal.read_decisions())
         result = None
         error = False
         try:
@@ -243,6 +250,17 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         from src.agent.self_rewrite import build_guidance
         return build_guidance(self._guidance_history())
 
+    def _assemble_turn(self, core: str, *, lessons: str = "") -> str:
+        """The single prompt-assembly point for guidance-bearing turns:
+        constitution/guidance preamble + core prompt + optional lesson context.
+        Every decision-emitting turn routes through here so none silently skips
+        the F64 guidance layer (the prior hand-concatenation at each call site
+        was easy to miss on a new turn type)."""
+        text = self._guidance_preamble() + "\n\n" + core
+        if lessons:
+            text += f"\n{lessons}"
+        return text
+
     def _stamp_new(self, before: int) -> list[Decision]:
         """Read decisions the LLM just wrote, stamp the active guidance
         ``prompt_version`` onto them (the LLM can't know it), and re-persist the
@@ -262,11 +280,10 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         (e.g. the price provider being unreachable) yields {} so recall simply
         falls back to relevance + recency ranking — efficacy never breaks a turn.
         """
-        from datetime import date as _date
-
-        today = _date.today()
-        if self._efficacy_cache is not None and self._efficacy_cache_day == today:
-            return self._efficacy_cache
+        today = date.today()
+        cached = self._efficacy_cached  # single read — can't tear
+        if cached is not None and cached[0] == today:
+            return cached[1]
         eff: dict = {}
         try:
             from src.agent.efficacy import lesson_efficacy
@@ -276,8 +293,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         except Exception as exc:  # never let efficacy collection sink a turn
             logger.warning(f"lesson efficacy unavailable, recall uses recency/relevance: {exc}")
             eff = {}
-        self._efficacy_cache = eff
-        self._efficacy_cache_day = today
+        self._efficacy_cached = (today, eff)  # single atomic swap
         return eff
 
     def _get_lessons(self):
@@ -333,12 +349,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         error = False
         try:
             r0 = self.session.run_turn(
-                self._guidance_preamble() + "\n\n" + prompts.multi_research_initial_prompt(
+                self._assemble_turn(prompts.multi_research_initial_prompt(
                     self.universe, held, self._research_signals, lessons, n_rounds,
                     max_lessons=self._reflection_max_lessons,
                     shorting_enabled=self._shorting_enabled,
                     signal_brief=self._signal_brief(),
-                ),
+                )),
                 model=self.research_model,
                 timeout=per_round,
             )
@@ -361,7 +377,8 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 ))
 
             result = self.session.run_turn(
-                self._guidance_preamble() + "\n\n" + prompts.synthesis_prompt(n_rounds),
+                self._assemble_turn(
+                    prompts.synthesis_prompt(n_rounds, signal_brief=self._signal_brief())),
                 model=self.research_model,
                 timeout=per_round,
             )
@@ -535,9 +552,9 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         error = False
         try:
             result = self.session.run_turn(
-                self._guidance_preamble() + "\n\n"
-                + prompts.parallel_synthesis_prompt(report_texts, signal_brief=signal_brief)
-                + (f"\n{lesson_ctx}" if lesson_ctx else ""),
+                self._assemble_turn(
+                    prompts.parallel_synthesis_prompt(report_texts, signal_brief=signal_brief),
+                    lessons=lesson_ctx),
                 model=self.research_model,
                 timeout=max(total_timeout * 0.3, 60.0),
             )

@@ -288,8 +288,9 @@ Do NOT write to decisions.jsonl — this is an evaluation round.
 {_ADVISOR_REMINDER}"""
 
 
-def synthesis_prompt(total_rounds: int) -> str:
-    return f"""Final synthesis round (round {total_rounds + 1} of {total_rounds + 1}).
+def synthesis_prompt(total_rounds: int, signal_brief: str | None = None) -> str:
+    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    return f"""{prefix}Final synthesis round (round {total_rounds + 1} of {total_rounds + 1}).
 
 You have completed {total_rounds} rounds of analysis and cross-validation.
 Now produce your final verdicts:
