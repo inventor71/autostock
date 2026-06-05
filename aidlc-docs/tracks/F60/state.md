@@ -7,7 +7,7 @@
 - **Track ID**: F60
 - **Title**: Easy-to-borrow 숏 게이트 — 숏 유니버스를 ETB 종목으로 한정 (라이브 브로커 판정)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test PASSED 2026-06-04 -->
+- **Status**: merged → main b4e41be (2026-06-05)
 - **Branch**: feat/F60
 - **Worktree**: .claude/worktrees/F60
 - **Submodule branch**: — (parent-repo Python only; no opencode change)

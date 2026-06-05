@@ -216,3 +216,4 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-04 — **F55 merged** (5c9166d): 타임라인에 "데이마켓"(overnight, after_close→익일 pre_open / 20:00–04:00 ET) 세션 amber 밴드 추가. ET 자정-넘김 대응 — 전날·당일 두 overnight span을 모두 derive·emit하고 뷰 밖은 0폭 clamp(critic HIGH). 4 files(timeline-layout/format/timeline-bar + test), rebase 후 85/0 green.
 - 2026-06-05 — **/ai-dlc-merge triage** — PASS. Foreign/unregistered: none. Queue: F59→F60. Noise left untouched: F30/F61/F62 (active docs), F64/F65 (active-paused docs), aidlc-state.md (shared).
 - 2026-06-05 — **F59 merged** (88f6edf) — 운영자 /short·/cover shorthand (verb 대칭, /sell 숏-오해 footgun 해소). TS parser/schema + Python steering.
+- 2026-06-05 — **F60 merged** (see merge) — 숏 안전 제어: easy-to-borrow 게이트(라이브 브로커 ETB) + 마스터 on/off 토글(risk.shorting_enabled, 기본 OFF/opt-in) + code-review 6건(BrokerApiBroker side/is_shortable, SELL-on-SHORT guard, transient-cache, TUI verbs). 810 green.

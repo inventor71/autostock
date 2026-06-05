@@ -73,7 +73,7 @@
 | F57 | 상단 status + 날짜 nav 바 두줄 깨짐 + research 경과시간 미갱신 버그 수정 (NavRow) | merged | feat/F57 → main f53c4a5 | — (제거됨) | — (monorepo) | 6bf1b31→7eb6ae7→f53c4a5 | 2026-06-04 |
 | F58 | 과거 날짜/타임라인 구간 상단바에 턴 토큰사용량(또는 비용) 표시 | merged | feat/F58 → main 0e071e1 | — (제거됨) | — (monorepo) | 03de978→4f9a79f→0e071e1 | 2026-06-04 |
 | F59 | 운영자 `/short`·`/cover` shorthand — F54 숏 후속 (verb 대칭 + footgun 해소) | merged | feat/F59 | — | — (opencode fork: parser/schema) | d988a65→88f6edf | 2026-06-04 |
-| F60 | 숏 안전 제어 — ETB 게이트 + 마스터 on/off 토글(shorting_enabled, 기본 OFF) (F59 위 분기) | active | feat/F60 | .claude/worktrees/F60 | — (parent-repo Python) | feat/F59 41183fd | 2026-06-04 |
+| F60 | 숏 안전 제어 — ETB 게이트 + 마스터 on/off 토글(shorting_enabled, 기본 OFF) (F59 위 분기) | merged | feat/F60 | — | — (parent-repo Python) | d988a65→b4e41be | 2026-06-04 |
 | F61 | 리서치 턴 주식 시그널 강화 — 시장 무버/뉴스 catalyst 포착 + 종목 간 read-through 전파 | active | feat/F61 (TBD) | .claude/worktrees/F61 (TBD) | — (parent-repo Python 예상) | e8b112b | 2026-06-05 |
 | F62 | 귀속/효능 기반 — 레슨/프롬프트버전→결정→결과 링크 + 효능 스코어 (자가학습 에픽 U0) | active | feat/F62 (TBD) | .claude/worktrees/F62 (TBD) | — (monorepo) | e8b112b | 2026-06-05 |
 | F65 | 하이브리드 회상 — 상황 기반 레슨 회상 (태그 사전필터+LLM 재랭크), F62 위 분기 | active (paused) | feat/F65 (TBD) | .claude/worktrees/F65 (TBD) | — (monorepo) | F62 merge (TBD) | 2026-06-05 |
