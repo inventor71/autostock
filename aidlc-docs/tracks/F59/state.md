@@ -7,7 +7,7 @@
 - **Track ID**: F59
 - **Title**: 운영자 콘솔 `/short`·`/cover` shorthand — F54 숏 후속 (verb 대칭 + footgun 해소)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test PASSED 2026-06-04 -->
+- **Status**: merged → main 88f6edf (2026-06-05)
 - **Branch**: feat/F59
 - **Worktree**: .claude/worktrees/F59
 - **Submodule branch**: — (opencode fork: parser/schema 변경 포함)
