@@ -43,27 +43,39 @@ class ConfigEnvChecker(BaseChecker):
     # ------------------------------------------------------------------
 
     def _check_env_vars(self) -> CheckResult:
-        """Check essential environment variables are set."""
-        missing: list[str] = []
+        """Check essential settings values are populated (from env or .env).
 
-        # Always-needed broker keys
-        for var in self.ESSENTIAL_ENV:
-            if not os.environ.get(var):
-                missing.append(var)
+        Uses pydantic-settings attribute access rather than os.environ because
+        values may be loaded from a .env file (not exported into os.environ).
+        """
+        missing: list[str] = []
+        s = self._settings
+
+        # Always-needed broker keys — checked via settings attributes
+        if not s.alpaca_api_key:
+            missing.append("ALPACA_API_KEY")
+        if not s.alpaca_api_secret:
+            missing.append("ALPACA_API_SECRET")
 
         # LLM-specific keys
-        provider = self._settings.llm.provider
-        llm_vars = self.LLM_ENV_MAP.get(provider, [])
-        for var in llm_vars:
-            if not os.environ.get(var):
-                missing.append(var)
+        provider = s.llm.provider
+        if provider == "claude" and not s.anthropic_api_key:
+            missing.append("ANTHROPIC_API_KEY")
+        elif provider == "openai" and not s.openai_api_key:
+            missing.append("OPENAI_API_KEY")
+        # claude_code needs no key
 
-        # Finnhub (optional but check if earnings signals are enabled)
-        signals_cfg = self._settings.signals if isinstance(self._settings.signals, dict) else {}
-        if signals_cfg.get("enabled", False):
-            if not os.environ.get("FINNHUB_API_KEY"):
-                # Not blocking — earnings provider is optional
-                pass
+        # Finnhub (optional — earnings provider)
+        signals_cfg = s.signals if isinstance(s.signals, dict) else {}
+        if signals_cfg.get("enabled", False) and not s.finnhub_api_key:
+            pass  # Not blocking — earnings provider is optional
+
+        # Broker API keys (only if provider is broker_api)
+        if s.broker.provider == "broker_api":
+            if not s.broker_api_key:
+                missing.append("BROKER_API_KEY")
+            if not s.broker_api_secret:
+                missing.append("BROKER_API_SECRET")
 
         if missing:
             return CheckResult(
@@ -75,7 +87,7 @@ class ConfigEnvChecker(BaseChecker):
         return CheckResult(
             name="env_vars",
             status=CheckStatus.OK,
-            detail=f"All essential env vars present (provider={provider})",
+            detail=f"All essential settings present (LLM provider={provider})",
             severity=Severity.ERROR,
         )
 
