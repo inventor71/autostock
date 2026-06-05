@@ -43,7 +43,7 @@
 | F29 | Supervisor-mode codebase orientation — steer_read{command:/codebase} 프로젝트 트리 | merged | feat/F29 | .claude/worktrees/F29 | — (parent repo only; gitlink updated to match main) | bb2da2d→55581d6→merge | 2026-06-02 |
 | R2 | Speed/throughput review — behavior-preserving (×3 engine, ×5.6 optimizer, parallel fetch) | merged | feat/R2 | — | — | 46c48a9→dfb8200 | 2026-06-01 |
 | F28 | Normal-mode UI self-explanation — steer_read{command:/ui-legend} 정적 TUI 사전(21엔트리, 의미만) | merged | feat/F28 | .claude/worktrees/F28 | feat/F28 → fork main b26a930 | a4b1732→d1f72e6→02d6a41 | 2026-06-03 |
-| F30 | KIS OpenAPI 브로커 확장 — 한국주식 페이퍼트레이딩 (KIS 단독 PoC) | active | feat/F30 | .claude/worktrees/F30 | — (monorepo, post-F35) | 2253029 | 2026-06-03 |
+| F30 | KIS OpenAPI 브로커 확장 — 한국주식 페이퍼트레이딩 (KIS 단독 PoC) | merged | feat/F30 → main 1609182 | — | — (monorepo, post-F35) | 2253029→1609182 | 2026-06-05 |
 | F31 | TUI Sidebar Orders 색상 깜박임 버그 수정 | merged | feat/F31 | — | feat/F31 (opencode) | 1746d6a→TBD | 2026-06-02 |
 | F32 | Timeline Markers 사라짐 버그 수정 | merged | feat/F32 | — | — | a3e67ee | 2026-06-02 |
 | F33 | 멀티브로커 동시 운영 — Alpaca(US) + KIS(KR) (F30 후속) | active (paused) | feat/F33 (TBD) | .claude/worktrees/F33 (TBD) | — | TBD | 2026-06-02 |

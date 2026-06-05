@@ -59,7 +59,7 @@ Related memories: [[llm-trader-redesign]], [[risk-execution-redesign]], [[worktr
   - Follow-up ①③ 완료(2026-06-03): KR 동적 universe + KRX 공휴일 캘린더.
   - **Follow-up ② 완료(2026-06-04)**: 모의 장시간(09:00–15:30 KST) 주문 placement 라이브 검증 — 시장가 매수/매도, 지정가+취소, Bracket emulated OCO(진입→TP arm→취소) 전부 통과.
   - **알려진 모의 제한**: `get_open_orders`(VTTC0084R "없는 서비스 코드")·`get_order_status`(VTTC8001R "자료가 없습니다")는 모의투자 미지원 → silently fallback. 주문 배치는 정상 동작.
-- **Status**: **merge-awaiting** (Build & Test all green → `/ai-dlc-merge` 대기)
+- **Status**: merged → main 1609182 (2026-06-05)  <!-- /ai-dlc-merge: rebased onto 1437d44 (config.py signals+universe 공존, main.py kis+broker_api+alpaca 3-way, agent.py early_session+kis_reconcile 중복 close-job 제거, manager.py SHORT side-aware + stop_overrides 병합), cross-integration fix(F61/F51 trading.symbols→resolve_universe), verify green (927 passed), --no-ff merged -->
 
 ## Application Design 델타 — Universe Provider unit (2026-06-03)
 > Q6 답변(B + "US도 동적, 테마 extend, KRUniverseProvider 네이밍")으로 추가된 신규 unit.
