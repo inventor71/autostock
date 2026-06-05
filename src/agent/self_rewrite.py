@@ -27,6 +27,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from src.agent.constitution import AGENT_CONSTITUTION, check_compliance
+from src.agent.efficacy import MIN_EFFICACY_SAMPLE
 
 SEED_VERSION = "seed"
 _SEED_GUIDANCE = (
@@ -118,7 +119,7 @@ def should_rewrite(
     *,
     today: date | None = None,
     cooldown_days: int = 7,
-    min_sample: int = 20,
+    min_sample: int = MIN_EFFICACY_SAMPLE,
 ) -> bool:
     """Gate (constitution rule 5 'gradual' + F62 small-sample guard): hold unless
     the current version is past its cooldown AND has enough measured decisions."""

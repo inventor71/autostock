@@ -101,13 +101,15 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         self.last_turn_id: str = ""
         self._on_turn_start: Callable[[str, str], None] | None = None
         self._on_turn_end: Callable[[], None] | None = None
-        # F65: lesson efficacy is expensive to compute (collect_outcomes hits the
-        # price provider), so cache it per session-day and reuse across turns.
-        # (day, efficacy) cached as ONE tuple so the cross-thread swap is atomic:
-        # a reader never observes a fresh day paired with a stale/half-built dict
-        # (concurrent scheduler turns may both recompute — that's accepted; only
-        # the torn read is prevented). No lock needed (single-attr assign is atomic).
-        self._efficacy_cached: tuple[date, dict] | None = None
+        # F65/F68: collect_outcomes is the expensive step (it hits the price
+        # provider). Cache the OUTCOMES per session-day so both the recall path
+        # (_lesson_efficacy, every turn) and the EOD self-rewrite share ONE fetch;
+        # the per-lesson / per-version efficacy views are pure derivations off it.
+        # (day, outcomes) is one tuple so the cross-thread swap is atomic: a reader
+        # never observes a fresh day paired with a stale/half-built list
+        # (concurrent scheduler turns may both recompute — accepted; only the torn
+        # read is prevented). No lock needed (single-attr assign is atomic).
+        self._efficacy_cached: tuple[date, list] | None = None
         # F64: constitution-bounded self-rewritten guidance, loaded lazily from
         # the Python-managed store. ``rewrite_fn`` stays None in v1 (inert) — the
         # machinery ships safe; providing a rewrite_fn activates self-rewriting.
@@ -275,26 +277,33 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 self.journal.restamp_decisions(all_d)
         return new
 
-    def _lesson_efficacy(self) -> dict:
-        """Per-lesson efficacy (F62), cached per day. Fail-safe: any error
-        (e.g. the price provider being unreachable) yields {} so recall simply
-        falls back to relevance + recency ranking — efficacy never breaks a turn.
+    def _cached_outcomes(self) -> list:
+        """Today's DecisionOutcomes, cached per session-day. ``collect_outcomes``
+        hits the price provider (expensive), so the recall path and the EOD
+        self-rewrite share one fetch. Fail-safe: on error, cache an empty list so
+        a turn degrades to no-efficacy without re-failing every call.
         """
         today = date.today()
         cached = self._efficacy_cached  # single read — can't tear
         if cached is not None and cached[0] == today:
             return cached[1]
-        eff: dict = {}
+        outcomes: list = []
         try:
-            from src.agent.efficacy import lesson_efficacy
             from src.agent.quality.collector import collect_outcomes
+            outcomes = collect_outcomes(self.journal)
+        except Exception as exc:  # never let outcome collection sink a turn
+            logger.warning(f"outcome collection unavailable, efficacy degraded: {exc}")
+            outcomes = []
+        self._efficacy_cached = (today, outcomes)  # single atomic swap
+        return outcomes
 
-            eff = lesson_efficacy(collect_outcomes(self.journal))
-        except Exception as exc:  # never let efficacy collection sink a turn
-            logger.warning(f"lesson efficacy unavailable, recall uses recency/relevance: {exc}")
-            eff = {}
-        self._efficacy_cached = (today, eff)  # single atomic swap
-        return eff
+    def _lesson_efficacy(self) -> dict:
+        """Per-lesson efficacy (F62), a pure derivation off the cached daily
+        outcomes — so recall never re-fetches and never breaks a turn (empty
+        outcomes → empty efficacy → recall falls back to relevance + recency).
+        """
+        from src.agent.efficacy import lesson_efficacy
+        return lesson_efficacy(self._cached_outcomes())
 
     def _get_lessons(self):
         """F65: situational recall. Instead of the last-N lessons by date, select
@@ -655,7 +664,6 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         is swallowed so it can never break the EOD turn."""
         try:
             from src.agent.efficacy import lesson_efficacy, prompt_version_efficacy
-            from src.agent.quality.collector import collect_outcomes
             from src.agent.self_rewrite import (
                 maybe_rollback,
                 propose_rewrite,
@@ -663,24 +671,31 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 should_rewrite,
             )
 
-            # Fuse: call collect_outcomes ONCE, feed both efficacy views.
-            outcomes = collect_outcomes(self.journal)
+            # Reuse the day's cached outcomes (collect_outcomes already ran for
+            # recall); feed both efficacy views off that one fetch (F68 #8).
+            outcomes = self._cached_outcomes()
             hist = self._guidance_history()
             eff = lesson_efficacy(outcomes)
             ver_eff = prompt_version_efficacy(outcomes)
 
-            # Rollback: compare per-version avg_excess.
-            cur = hist.current()
-            changed = maybe_rollback(
+            # Rollback first: compare per-version avg_excess.
+            rolled_back = maybe_rollback(
                 hist,
                 {v: ve.avg_excess for v, ve in ver_eff.items()},
             )
-            # Rewrite: gate + propose.
-            cur_eff = ver_eff.get(cur.version)
-            sample = cur_eff.applied_n if cur_eff else 0
-            if self._rewrite_fn is not None and should_rewrite(hist, sample):
-                res = propose_rewrite(hist, eff, rewrite_fn=self._rewrite_fn)
-                changed = changed or res.action in ("adopted", "rejected")
+            changed = rolled_back
+            # Rewrite: gate + propose — but NEVER in the same EOD as a rollback
+            # (don't grow a new generation off a version we just abandoned; let
+            # the rolled-back parent accrue a fresh sample first). cur/sample are
+            # read AFTER any rollback so the gate reflects the now-current version,
+            # not the discarded child (F68 #7).
+            if not rolled_back and self._rewrite_fn is not None:
+                cur = hist.current()
+                cur_eff = ver_eff.get(cur.version)
+                sample = cur_eff.applied_n if cur_eff else 0
+                if should_rewrite(hist, sample):
+                    res = propose_rewrite(hist, eff, rewrite_fn=self._rewrite_fn)
+                    changed = changed or res.action in ("adopted", "rejected")
             if changed:
                 save_history(self.journal.root, hist)
         except Exception as exc:  # never let self-rewrite sink the EOD turn
