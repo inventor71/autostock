@@ -216,13 +216,12 @@ def _build_signal_guide(signals: list[str] | None = None) -> str:
 
 
 def _build_lesson_context(lessons: "list[LessonRecord]", max_n: int = 10) -> str:
-    if not lessons:
-        return ""
-    recent = lessons[-max_n:]
-    lines = ["\n## Recent lessons from past trades (apply these):"]
-    for r in recent:
-        lines.append(f"- [{r.date}] [{r.category}] {r.takeaway}")
-    return "\n".join(lines)
+    # F65: situational + efficacy selection now happens upstream (orchestrator
+    # ._get_lessons -> recall.recall_lessons); this renders the already-selected
+    # lessons WITH their lesson_id so the agent can cite them in ``lessons_cited``
+    # (F62 attribution loop). Lessons arrive pre-ranked, so no recency truncation.
+    from src.agent.recall import build_lesson_context
+    return build_lesson_context(lessons, max_n=max_n)
 
 
 def multi_research_initial_prompt(

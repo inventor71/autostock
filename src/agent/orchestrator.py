@@ -100,6 +100,10 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         self.last_turn_id: str = ""
         self._on_turn_start: Callable[[str, str], None] | None = None
         self._on_turn_end: Callable[[], None] | None = None
+        # F65: lesson efficacy is expensive to compute (collect_outcomes hits the
+        # price provider), so cache it per session-day and reuse across turns.
+        self._efficacy_cache: dict | None = None
+        self._efficacy_cache_day: date | None = None
 
     # ------------------------------------------------------------------ #
     def held_symbols(self) -> list[str]:
@@ -208,10 +212,51 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
 
     # -- F23: multi-agent research ----------------------------------------- #
 
+    def _lesson_efficacy(self) -> dict:
+        """Per-lesson efficacy (F62), cached per day. Fail-safe: any error
+        (e.g. the price provider being unreachable) yields {} so recall simply
+        falls back to relevance + recency ranking — efficacy never breaks a turn.
+        """
+        from datetime import date as _date
+
+        today = _date.today()
+        if self._efficacy_cache is not None and self._efficacy_cache_day == today:
+            return self._efficacy_cache
+        eff: dict = {}
+        try:
+            from src.agent.efficacy import lesson_efficacy
+            from src.agent.quality.collector import collect_outcomes
+
+            eff = lesson_efficacy(collect_outcomes(self.journal))
+        except Exception as exc:  # never let efficacy collection sink a turn
+            logger.warning(f"lesson efficacy unavailable, recall uses recency/relevance: {exc}")
+            eff = {}
+        self._efficacy_cache = eff
+        self._efficacy_cache_day = today
+        return eff
+
     def _get_lessons(self):
+        """F65: situational recall. Instead of the last-N lessons by date, select
+        the lessons most relevant to today's regime and ranked by demonstrated
+        efficacy (F62). Returns a pre-ranked top-N list the prompts render with
+        lesson_id so the agent can cite them back (``lessons_cited``)."""
         if not self._reflection_enabled:
             return []
-        return self.journal.read_lessons_jsonl()
+        all_lessons = self.journal.read_lessons_jsonl()
+        if not all_lessons:
+            return []
+        from src.agent.recall import build_fingerprint, recall_lessons
+
+        fp = build_fingerprint(regime_text=self.journal.read_regime())
+        return recall_lessons(
+            all_lessons,
+            fp,
+            self._lesson_efficacy(),
+            k=self._reflection_max_lessons,
+            # rerank_fn left None for v1: deterministic pure ranking. The LLM
+            # rerank turn is a documented activation point (recall.recall_lessons
+            # accepts rerank_fn; fallback to this same order on any failure).
+        )
 
     def _run_sequential_research(self) -> AgentTurnResult:
         from datetime import datetime as _dt
