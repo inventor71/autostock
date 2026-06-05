@@ -26,6 +26,15 @@ resolve with `git pull --rebase`.
 aidlc-docs/
 ├── aidlc-state.md            # Track Registry ONLY (thin index). Rarely edited.
 ├── audit.md                  # GLOBAL timeline. Append-only, written ONLY at merge-time.
+├── codekb/                   # Shared codebase knowledge. Single writer: CI (bootstrap exception: first track).
+│   ├── summary.md
+│   ├── architecture.md
+│   ├── integration-map.md
+│   ├── domain-entities.md
+│   ├── business-rules.md
+│   ├── nfr-design.md
+│   ├── infrastructure-design.md
+│   └── codekb-state.md
 └── tracks/
     ├── _TEMPLATE/            # copy this to start a track
     │   ├── state.md
@@ -55,6 +64,13 @@ aidlc-docs/
   rows (at track create / merge / close).
 - **Root `audit.md`**: a global cross-track timeline. A track appends to it **only at merge**
   (fold a one-line summary), never mid-flight — so there is no concurrent append race.
+- **Root `codekb/`**: shared codebase knowledge (architecture, domain entities, integration map,
+  business rules — see `common/codekb.md`). **Single writer is CI**: a GitHub Actions job
+  (`.github/workflows/codekb-refresh.yml`) re-runs full RE on every push to `main` and overwrites
+  `codekb/` entirely. No track writes to it; `/ai-dlc-merge` doesn't touch it. The one exception is
+  **first-track bootstrap**: if `codekb/` is absent during a track's inception RE, that track seeds
+  it once (reverse-engineering.md Step 12a), and CI takes over after the first merge. All other
+  tracks are **read-only consumers** — load `codekb/` as baseline context during inception.
 
 ## Track Registry (in root aidlc-state.md)
 A single table is the authority for which tracks exist and where they live:
@@ -161,6 +177,7 @@ same class as the daemon claude-CLI PATH bug), and (b) assuming the install need
 ## What is still global / shared
 - The **Track Registry** (root `aidlc-state.md`).
 - The **global timeline** (root `audit.md`) — merge-time appends only.
+- The **CodeKB** (`aidlc-docs/codekb/`) — shared codebase knowledge. Single writer is CI (refreshes on every push to `main`). First-track bootstrap during inception RE if CodeKB absent. All tracks read-only.
 - The rule files under the rule-details dir and `CLAUDE.md` — changing process itself is a track too.
 
 ## Quick checklist for any agent starting work
@@ -168,3 +185,5 @@ same class as the daemon claude-CLI PATH bug), and (b) assuming the install need
 - [ ] Does my track have `aidlc-docs/tracks/<id>/{state.md,audit.md}`? If not → create from template + register.
 - [ ] Am I about to edit root `aidlc-state.md`/`audit.md` mid-flight? → Don't. Use my track files.
 - [ ] Am I writing a phase doc to top-level `inception/`/`construction/`? → Don't. Put it under `tracks/<id>/`.
+- [ ] Am I about to edit `codekb/` from a track? → Don't. Only CI writes it (bootstrap exception: first track during inception RE).
+- [ ] Starting inception on a brownfield track? → Check CodeKB SHA vs `HEAD`. Load if it exists; bootstrap if absent.

@@ -12,13 +12,23 @@
 
 ## Execution Steps
 
-### Step 1: Load Reverse Engineering Context (if available)
+### Step 1: Load Codebase Context (if brownfield)
 
-**IF brownfield project**:
-- Load `aidlc-docs/inception/reverse-engineering/architecture.md`
-- Load `aidlc-docs/inception/reverse-engineering/component-inventory.md`
-- Load `aidlc-docs/inception/reverse-engineering/technology-stack.md`
-- Use these to understand existing system when analyzing request
+**IF brownfield project**, load context from two sources — CodeKB for global baseline, per-track RE for detail:
+
+**1a. Load CodeKB (global baseline)** (see `common/codekb.md`):
+- `aidlc-docs/codekb/summary.md`
+- `aidlc-docs/codekb/architecture.md`
+- `aidlc-docs/codekb/domain-entities.md`
+- `aidlc-docs/codekb/integration-map.md`
+- Read `codekb-state.md` first to check staleness. If SHA doesn't match `HEAD`, note it but still use as approximate context.
+
+**1b. Load per-track RE (track-specific detail)**:
+- `aidlc-docs/tracks/<id>/inception/reverse-engineering/architecture.md`
+- `aidlc-docs/tracks/<id>/inception/reverse-engineering/component-inventory.md`
+- `aidlc-docs/tracks/<id>/inception/reverse-engineering/technology-stack.md`
+
+CodeKB provides the global architectural understanding; per-track RE provides detailed code-level awareness of the files and areas this specific track touches. Use both together when analyzing the request.
 
 ### Step 2: Analyze User Request (Intent Analysis)
 

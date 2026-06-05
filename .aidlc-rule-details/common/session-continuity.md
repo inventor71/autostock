@@ -33,8 +33,8 @@ B) Review a previous stage ([Show available stages])
    - **Per-Unit Design**: Read functional-design.md, nfr-requirements.md, nfr-design.md, infrastructure-design.md
    - **Code Stages**: Read all code files, plans, AND all previous artifacts
 4. **Smart Context Loading by Stage**:
-   - **Early Stages (Workspace Detection, Reverse Engineering)**: Load workspace analysis
-   - **Requirements/Stories**: Load reverse engineering + requirements artifacts
+   - **Early Stages (Workspace Detection, Reverse Engineering)**: Load CodeKB (summary.md, architecture.md, codekb-state.md) if it exists + workspace analysis
+   - **Requirements/Stories**: Load CodeKB full set + per-track reverse engineering + requirements artifacts
    - **Design Stages**: Load requirements + stories + architecture + design artifacts
    - **Code Stages**: Load ALL artifacts + existing code files
 5. **Adapt options** based on architectural choice and current phase

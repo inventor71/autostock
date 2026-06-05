@@ -1,0 +1,68 @@
+name: CodeKB Refresh
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      # Don't trigger on CodeKB-only commits (prevents infinite loops)
+      - 'aidlc-docs/codekb/**'
+
+jobs:
+  refresh-codekb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Reverse Engineering
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          model: sonnet
+          prompt: |
+            Run the full Reverse Engineering phase on this codebase.
+
+            Follow the procedure in `.aidlc-rule-details/inception/reverse-engineering.md`
+            Steps 1 through 10, but write ALL output artifacts to `aidlc-docs/codekb/`
+            instead of a per-track directory:
+
+            - `aidlc-docs/codekb/summary.md` (distill from business-overview.md format)
+            - `aidlc-docs/codekb/architecture.md` (system-level architecture)
+            - `aidlc-docs/codekb/integration-map.md` (external integrations)
+            - `aidlc-docs/codekb/domain-entities.md` (key domain models)
+            - `aidlc-docs/codekb/business-rules.md` (business logic rules)
+            - `aidlc-docs/codekb/nfr-design.md` (NFR patterns)
+            - `aidlc-docs/codekb/infrastructure-design.md` (deployment architecture)
+
+            Follow the schema defined in `.aidlc-rule-details/common/codekb.md` for each file.
+
+            Then create/update `aidlc-docs/codekb/codekb-state.md`:
+            - Last Commit SHA: the current HEAD
+            - Last Refresh: current ISO 8601 timestamp
+            - Refreshed By: ci
+            - Schema Version: 1
+
+            This is a CI job — no user interaction. Do not ask questions or wait for approval.
+
+      - name: Commit and push CodeKB refresh
+        run: |
+          git config user.name "codekb-ci[bot]"
+          git config user.email "codekb-ci[bot]@users.noreply.github.com"
+
+          git add aidlc-docs/codekb/
+
+          if git diff --cached --quiet; then
+            echo "No CodeKB changes to commit."
+            exit 0
+          fi
+
+          SHA=$(git rev-parse --short HEAD)
+          git commit -m "docs: codekb refresh (${SHA})"
+          git push

@@ -26,6 +26,13 @@ Consult the root Track Registry (`aidlc-docs/aidlc-state.md`) and `aidlc-docs/tr
 - **Build System**: [Maven/Gradle/npm/etc. if found]
 - **Project Structure**: [Monolith/Microservices/Library/Empty]
 - **Workspace Root**: [Absolute path]
+
+## CodeKB Status
+- **CodeKB exists**: [Yes/No]
+- **CodeKB current**: [Yes/No (SHA match/mismatch) / N/A]
+- **CodeKB last SHA**: [sha or "N/A"]
+- **Current HEAD SHA**: [sha]
+- **Bootstrap needed**: [Yes/No]
 ```
 
 ## Step 3: Determine Next Phase
@@ -36,7 +43,12 @@ Consult the root Track Registry (`aidlc-docs/aidlc-state.md`) and `aidlc-docs/tr
 
 **IF workspace has existing code**:
 - Set flag: `brownfield = true`
-- Check for existing reverse engineering artifacts in `aidlc-docs/inception/reverse-engineering/`
+- **Check CodeKB freshness** (see `common/codekb.md`):
+  - If `aidlc-docs/codekb/codekb-state.md` exists, read it and compare the stored SHA against `git rev-parse HEAD`.
+  - SHA match → CodeKB is current. Load it as baseline context for the entire inception phase.
+  - SHA mismatch → CodeKB is stale (another track merged since last CI refresh). Still load as approximate context; per-track RE will verify areas this track touches.
+  - CodeKB absent → first track on this repo. RE will bootstrap it.
+- Check for existing reverse engineering artifacts in `aidlc-docs/tracks/<id>/inception/reverse-engineering/`
 - **IF reverse engineering artifacts exist**:
     - Check if artifacts are stale (compare artifact timestamps against codebase's last significant modification)
     - **IF artifacts are current**: Load them, skip to Requirements Analysis

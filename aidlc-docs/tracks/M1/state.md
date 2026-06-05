@@ -41,3 +41,14 @@ F7/F8, and again during this very session on `audit.md`).
       recurring "can't tsgo in the worktree" (root cause: bun not on PATH + node_modules absent;
       install is cheap with warm bun cache + hardlinks, not a network op).
 - [ ] Optional follow-up: also wire refactor/deprecate commands + a track-merge helper (deferred)
+- [x] CodeKB (`common/codekb.md`): shared codebase knowledge cache, single-writer = CI, ported
+      from upstream `aidlc-workflows-concurrent`. Rule files updated (workspace-detection,
+      reverse-engineering Step 0/12a, requirements-analysis Step 1, session-continuity,
+      concurrent-tracks) + `.github/workflows/codekb-refresh.yml` (CI, `CLAUDE_CODE_OAUTH_TOKEN`).
+
+## CodeKB Bootstrap
+- [x] CodeKB bootstrapped by this track (seed under `aidlc-docs/codekb/`, 8 files)
+- **Bootstrap SHA**: `58ca6a7dbbc3195fa5ca5f966b96a84bc2fd500a`
+- **Bootstrap Date**: `2026-06-06`
+- **Note**: seed reflects current HEAD (not the older M1 RE snapshot). After next push to `main`,
+  CI (`codekb-refresh.yml`) becomes the sole writer.
