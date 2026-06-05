@@ -104,6 +104,11 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         # price provider), so cache it per session-day and reuse across turns.
         self._efficacy_cache: dict | None = None
         self._efficacy_cache_day: date | None = None
+        # F64: constitution-bounded self-rewritten guidance, loaded lazily from
+        # the Python-managed store. ``rewrite_fn`` stays None in v1 (inert) — the
+        # machinery ships safe; providing a rewrite_fn activates self-rewriting.
+        self._guidance = None  # GuidanceHistory | None
+        self._rewrite_fn = None
 
     # ------------------------------------------------------------------ #
     def held_symbols(self) -> list[str]:
@@ -132,6 +137,11 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         if self._on_turn_start:
             self._on_turn_start(turn_id, turn_type)
 
+        # F64: prepend the constitution + evolvable guidance on guidance-bearing
+        # turns only (not eod/reconcile).
+        if turn_type in ("research", "intraday", "wake"):
+            prompt = self._guidance_preamble() + "\n\n" + prompt
+
         before = len(self.journal.read_decisions())
         result = None
         error = False
@@ -141,7 +151,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             error = True
             raise
         finally:
-            self.last_new_decisions = self.journal.read_decisions()[before:]
+            self.last_new_decisions = self._stamp_new(before)
             for d in self.last_new_decisions:
                 d.turn_id = turn_id
             self.last_kept, self.last_rejected = filter_in_universe(
@@ -211,6 +221,36 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         )
 
     # -- F23: multi-agent research ----------------------------------------- #
+
+    # -- F64: constitution-bounded guidance --------------------------------- #
+    def _guidance_history(self):
+        if self._guidance is None:
+            from src.agent.self_rewrite import load_history
+            self._guidance = load_history(self.journal.root)
+        return self._guidance
+
+    def _guidance_version(self) -> str:
+        return self._guidance_history().current_version
+
+    def _guidance_preamble(self) -> str:
+        """Constitution + current evolvable guidance, prepended to guidance-bearing
+        turns (morning/intraday/wake/research). Eval turns and EOD are excluded."""
+        from src.agent.self_rewrite import build_guidance
+        return build_guidance(self._guidance_history())
+
+    def _stamp_new(self, before: int) -> list[Decision]:
+        """Read decisions the LLM just wrote, stamp the active guidance
+        ``prompt_version`` onto them (the LLM can't know it), and re-persist the
+        file atomically (F62). Runs between turns, so no race with the appender."""
+        all_d = self.journal.read_decisions()
+        new = all_d[before:]
+        if new:
+            ver = self._guidance_version()
+            if any(d.prompt_version != ver for d in new):
+                for d in new:
+                    d.prompt_version = ver
+                self.journal.restamp_decisions(all_d)
+        return new
 
     def _lesson_efficacy(self) -> dict:
         """Per-lesson efficacy (F62), cached per day. Fail-safe: any error
@@ -288,7 +328,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         error = False
         try:
             r0 = self.session.run_turn(
-                prompts.multi_research_initial_prompt(
+                self._guidance_preamble() + "\n\n" + prompts.multi_research_initial_prompt(
                     self.universe, held, self._research_signals, lessons, n_rounds,
                     max_lessons=self._reflection_max_lessons,
                     shorting_enabled=self._shorting_enabled,
@@ -325,7 +365,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             self.session.reset_session()
             raise
         finally:
-            self.last_new_decisions = self.journal.read_decisions()[before:]
+            self.last_new_decisions = self._stamp_new(before)
             for d in self.last_new_decisions:
                 d.turn_id = turn_id
             self.last_kept, self.last_rejected = filter_in_universe(
@@ -494,7 +534,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             error = True
             raise
         finally:
-            self.last_new_decisions = self.journal.read_decisions()[before:]
+            self.last_new_decisions = self._stamp_new(before)
             for d in self.last_new_decisions:
                 d.turn_id = turn_id
             self.last_kept, self.last_rejected = filter_in_universe(
@@ -572,7 +612,52 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         # them from the broker; otherwise fall back to a plain decision list.
         if outcomes is None:
             outcomes = [f"{d.symbol} {d.action}" for d in self.journal.read_decisions()[-20:]]
-        return self._run(prompts.eod_review_prompt(outcomes, surge_count=surge_count), "eod")
+        result = self._run(prompts.eod_review_prompt(outcomes, surge_count=surge_count), "eod")
+        self._run_self_rewrite()
+        return result
+
+    def _run_self_rewrite(self) -> None:
+        """F64 EOD step: propose a guidance rewrite (inert unless ``_rewrite_fn``
+        is set), then auto-rollback a degraded version. Fully guarded; any error
+        is swallowed so it can never break the EOD turn."""
+        try:
+            from src.agent.self_rewrite import (
+                maybe_rollback,
+                propose_rewrite,
+                save_history,
+                should_rewrite,
+            )
+
+            hist = self._guidance_history()
+            eff = self._lesson_efficacy()
+            ver_eff = self._prompt_version_excess()
+            changed = maybe_rollback(hist, ver_eff)
+            cur = hist.current()
+            sample = ver_eff.get(f"_n_{cur.version}", 0)
+            if self._rewrite_fn is not None and should_rewrite(hist, sample):
+                res = propose_rewrite(hist, eff, rewrite_fn=self._rewrite_fn)
+                changed = changed or res.action in ("adopted", "rejected")
+            if changed:
+                save_history(self.journal.root, hist)
+        except Exception as exc:  # never let self-rewrite sink the EOD turn
+            logger.warning(f"self-rewrite step skipped: {exc}")
+
+    def _prompt_version_excess(self) -> dict:
+        """Per-prompt_version avg_excess (+ sample counts under ``_n_<ver>``) for
+        rollback. Fail-safe to {} (no rollback) on any error."""
+        try:
+            from src.agent.efficacy import prompt_version_efficacy
+            from src.agent.quality.collector import collect_outcomes
+
+            eff = prompt_version_efficacy(collect_outcomes(self.journal))
+            out: dict = {}
+            for ver, ve in eff.items():
+                out[ver] = ve.avg_excess
+                out[f"_n_{ver}"] = ve.applied_n
+            return out
+        except Exception as exc:
+            logger.warning(f"prompt_version excess unavailable: {exc}")
+            return {}
 
     def run_reconcile(self, context: str = "") -> AgentTurnResult:
         """Out-of-band turn after a human intervention (F4 FR-6): the agent
