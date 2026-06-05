@@ -72,7 +72,7 @@ thesis or decision.
  "confidence": 0.0-1.0, "sell_pct": 0.0-1.0, "limit": <entry or null>,
  "stop": <stop or null>, "target": <take-profit or null>,
  "thesis_ref": "positions/AAPL.md", "valid_until": "<ISO8601 or null>",
- "reason": "one-line rationale"}
+ "lessons_cited": ["L007", "L012"], "reason": "one-line rationale"}
 ```
 
 - `BUY`: supply `stop` (required for sizing) and ideally `target`; `limit` null = enter at market.
@@ -87,6 +87,9 @@ thesis or decision.
   goes BELOW entry. Run `short_data <SYM>` first — skip/size-down if squeeze_risk
   is HIGH/ELEVATED.
 - `BUY_TO_COVER`: close a short; `sell_pct` for partial covers (1.0 = full).
+- `lessons_cited`: list the `lesson_id`s (from the lessons shown to you, e.g.
+  `["L007"]`) whose guidance you actually relied on for this call; `[]` if none.
+  This is how the system measures which lessons help — cite honestly, don't pad.
 - **Reversing direction**: to flip a long into a short (or vice versa) emit just
   the new-direction entry (`SELL_SHORT` over a long, `BUY` over a short) — the
   executor closes the existing side first, then opens the new one. No separate

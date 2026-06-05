@@ -43,3 +43,7 @@ class DecisionOutcome(BaseModel):
     round_trip: RoundTrip | None = None
     price_path: list[OHLC] = []
     match_method: Literal["execution_log", "heuristic", "unmatched"] = "unmatched"
+    # F62: benchmark-relative (SPY/QQQ) excess return, DIRECTION-AWARE, computed by
+    # the collector. Defined only for entry decisions (BUY -> base, SELL_SHORT ->
+    # -base); None for exits/HOLD/missing-benchmark. F62 efficacy aggregates on it.
+    excess: float | None = None

@@ -273,9 +273,12 @@ def collect_outcomes(
         benchmark paths from _extract_benchmark_paths if needed.
     """
     decisions = journal.read_decisions()
+    # F62: include shorts (SELL_SHORT/BUY_TO_COVER) — the match/price-path logic
+    # below is direction-agnostic. Excess (attached after the loop) is the part
+    # that is direction-aware. HOLD/ADJUST_STOP carry no tradeable outcome.
     buy_sell = [
         (i, d) for i, d in enumerate(decisions)
-        if d.action in ("BUY", "SELL")
+        if d.action in ("BUY", "SELL", "SELL_SHORT", "BUY_TO_COVER")
     ]
     if not buy_sell:
         return []
@@ -343,4 +346,30 @@ def collect_outcomes(
             match_method=method,
         ))
 
+    # F62: attach direction-aware benchmark excess so the efficacy layer can
+    # aggregate it per lesson / prompt_version (collect_outcomes previously
+    # dropped the benchmark paths entirely).
+    _attach_excess(outcomes, ohlc_cache)
     return outcomes
+
+
+def _attach_excess(
+    outcomes: list[DecisionOutcome],
+    ohlc_cache: dict[str, pd.DataFrame],
+) -> None:
+    """Set ``outcome.excess`` in place: mean of available SPY/QQQ excess, made
+    direction-aware. Entry decisions only — BUY keeps the long-direction excess,
+    SELL_SHORT inverts it (a short profits as price falls); exits/HOLD stay None.
+    """
+    from src.agent.quality.metrics import benchmark_excess
+
+    spy_path, qqq_path = _extract_benchmark_paths(ohlc_cache, outcomes)
+    for o in outcomes:
+        if o.decision.action not in ("BUY", "SELL_SHORT"):
+            continue  # excess is an entry-decision metric
+        be = benchmark_excess(o, spy_path, qqq_path)
+        vals = [v for v in (be.get("vs_spy"), be.get("vs_qqq")) if v is not None]
+        if not vals:
+            continue
+        base = sum(vals) / len(vals)
+        o.excess = -base if o.decision.action == "SELL_SHORT" else base
