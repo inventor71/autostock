@@ -276,6 +276,51 @@ intraday:
 surge:
   threshold_pct: 7.0      # absolute daily return to qualify as surge/dive (%)
 
+# F61: research-turn market-signal collection. Scans universe + bellwether
+# watchlist for movers, propagates big moves to related names via a static peer
+# map (read-through), and surfaces imminent earnings. Pushed into the research
+# prompt + exposed via the movers / readthrough / earnings_calendar tools.
+signals:
+  enabled: true
+  # Mover thresholds (R1): a name qualifies if |chg| >= price_pct OR vol >= vol_ratio.
+  price_pct: 5.0
+  vol_ratio: 2.0
+  require: any            # any | both
+  max_movers: 12
+  # Read-through (R2): only moves >= readthrough_min_pct propagate to peers.
+  readthrough_min_pct: 7.0
+  max_peers: 8
+  # Earnings (R3): surface universe/held earnings within this many days.
+  earnings_horizon_days: 2
+  # Source toggles (R8).
+  sources:
+    news_primary: alpaca       # alpaca | yfinance
+    news_fallback: yfinance    # yfinance | none
+    earnings_provider: finnhub # finnhub | none
+  cache_ttl_seconds: 300
+  http_connect_timeout: 3.0
+  http_read_timeout: 5.0
+  # Bellwether watchlist (R7): signal-only sources, never tradeable. SPY/QQQ/IWM/
+  # DIA/VTI are already in the universe; these add sector ETFs.
+  bellwether_watchlist: [SMH, SOXX, XLK, XLF, XLE, XLV, XLY, XLP, XLI]
+  # Static peer map (R6): group -> members. A symbol may belong to several groups;
+  # peers_of(sym) = union of co-members across its groups, minus itself.
+  peer_groups:
+    semiconductors:    [NVDA, AMD, AVGO, QCOM, TXN, INTC, MU, MRVL, ARM, TSM, ADI, MPWR, RMBS]
+    semicap_equipment: [AMAT, LRCX, KLAC, ASML, TER]
+    memory_storage:    [MU, SNDK, WDC, STX, RMBS]
+    ai_networking:     [ANET, CIEN, COHR, LITE, MRVL, AVGO]
+    ai_servers_odm:    [DELL, SMCI]
+    ai_hyperscalers:   [MSFT, GOOGL, GOOG, AMZN, META, ORCL]
+    datacenter_power:  [VRT, ETN, PWR, GEV, NVT, MOD, VST, CEG]
+    datacenter_reit:   [DLR, EQIX, AMT, CCI, PLD]
+    software_infra:    [NOW, CRM, ADBE, INTU, ORCL]
+    megacap_tech:      [AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA]
+    banks:             [JPM, BAC, WFC, C, USB, PNC, TFC, COF, GS, MS]
+    payments:          [V, MA, AXP]
+    energy:            [XOM, CVX, COP, SLB, EOG, MPC, PSX, VLO, OXY]
+    ai_infra_broad:    [NVDA, AMD, AVGO, MRVL, ARM, AMAT, LRCX, KLAC, ANET, VRT, DELL, SMCI, MU]
+
 early_session:
   enabled: true                       # master switch
   threshold_pct: 5.0                  # ±% trigger (Q1=D)

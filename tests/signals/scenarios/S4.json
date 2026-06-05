@@ -1,0 +1,21 @@
+{
+  "id": "S4",
+  "type": "idiosyncratic_no_readthrough",
+  "description": "A single name craters on a company-specific event (recall) with no peer group — it is a mover but must NOT generate a read-through (false-positive guard).",
+  "universe": ["ZZZ", "NVDA", "AMD"],
+  "held": [],
+  "peer_groups": {
+    "semiconductors": ["NVDA", "AMD"]
+  },
+  "rows": [
+    {"symbol": "ZZZ", "change_pct": -12.4, "volume_ratio": 4.1, "close": 22.0},
+    {"symbol": "NVDA", "change_pct": 0.4, "volume_ratio": 0.9, "close": 120.0},
+    {"symbol": "AMD", "change_pct": -0.2, "volume_ratio": 1.0, "close": 150.0}
+  ],
+  "news": {"ZZZ": "Company issues product recall after safety probe"},
+  "expect": {
+    "mover_symbols": ["ZZZ"],
+    "readthrough_triggers": [],
+    "no_readthrough": true
+  }
+}

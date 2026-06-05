@@ -56,3 +56,9 @@ target-version = "py311"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# F61 NFR-7: tests marked `manual` call the real LLM (token cost) and are
+# DESELECTED by default. Run them explicitly with `pytest -m manual`.
+addopts = "-m 'not manual'"
+markers = [
+    "manual: opt-in test that calls the real LLM (token cost) — deselected by default (F61 Tier 2)",
+]

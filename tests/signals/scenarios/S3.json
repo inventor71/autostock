@@ -1,0 +1,24 @@
+{
+  "id": "S3",
+  "type": "macro_shock_bellwether",
+  "description": "A bellwether ETF (XLE, not tradeable) spikes on oil; reads through to energy names. The trigger is flagged out-of-universe and is not itself an actionable peer.",
+  "universe": ["XOM", "CVX", "COP", "SLB"],
+  "held": [],
+  "peer_groups": {
+    "energy": ["XOM", "CVX", "COP", "SLB", "XLE"]
+  },
+  "rows": [
+    {"symbol": "XLE", "change_pct": 9.2, "volume_ratio": 3.0, "close": 95.0},
+    {"symbol": "XOM", "change_pct": 5.4, "volume_ratio": 2.1, "close": 118.0},
+    {"symbol": "CVX", "change_pct": 4.0, "volume_ratio": 1.6, "close": 160.0}
+  ],
+  "news": {"XLE": "Energy sector jumps as crude spikes on supply shock"},
+  "expect": {
+    "mover_symbols": ["XLE", "XOM"],
+    "mover_out_of_universe": ["XLE"],
+    "readthrough_triggers": ["XLE"],
+    "readthrough_peers_include": {"XLE": ["XOM", "CVX", "COP", "SLB"]},
+    "readthrough_peers_exclude": {"XLE": ["XLE"]},
+    "no_readthrough": false
+  }
+}

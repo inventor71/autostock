@@ -127,9 +127,11 @@ class Settings(BaseSettings):
     multi_agent: MultiAgentConfig = MultiAgentConfig()
     intraday: dict = {}
     research: dict = {}
+    signals: dict = {}  # F61 market-signal collection (parsed by SignalsConfig)
 
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
+    finnhub_api_key: str = ""  # F61 earnings calendar (free Finnhub tier)
     # Broker API sandbox keys (Legacy, Basic-auth) + target account (F16).
     broker_api_key: str = ""
     broker_api_secret: str = ""

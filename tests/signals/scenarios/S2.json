@@ -1,0 +1,27 @@
+{
+  "id": "S2",
+  "type": "sector_co_drop",
+  "description": "A bank-wide selloff: multiple movers, read-through within the banks group.",
+  "universe": ["JPM", "BAC", "WFC", "C", "USB", "NVDA"],
+  "held": [],
+  "peer_groups": {
+    "banks": ["JPM", "BAC", "WFC", "C", "USB"]
+  },
+  "rows": [
+    {"symbol": "JPM", "change_pct": -8.1, "volume_ratio": 2.6, "close": 190.0},
+    {"symbol": "BAC", "change_pct": -7.6, "volume_ratio": 2.4, "close": 38.0},
+    {"symbol": "WFC", "change_pct": -7.0, "volume_ratio": 2.2, "close": 55.0},
+    {"symbol": "C", "change_pct": -6.0, "volume_ratio": 1.9, "close": 60.0},
+    {"symbol": "USB", "change_pct": -5.4, "volume_ratio": 1.7, "close": 40.0},
+    {"symbol": "NVDA", "change_pct": 0.5, "volume_ratio": 0.9, "close": 120.0}
+  ],
+  "news": {},
+  "earnings": [],
+  "expect": {
+    "mover_symbols": ["JPM", "BAC", "WFC", "C", "USB"],
+    "readthrough_triggers": ["JPM", "BAC", "WFC"],
+    "readthrough_peers_include": {"JPM": ["BAC", "WFC", "C", "USB"]},
+    "readthrough_peers_exclude": {"JPM": ["NVDA", "JPM"]},
+    "no_readthrough": false
+  }
+}
