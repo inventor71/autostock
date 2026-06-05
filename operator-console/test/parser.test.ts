@@ -33,6 +33,21 @@ test("buy only allows $ or sh (not %)", () => {
   expect(() => ok("/buy AAPL 50%")).toThrow(ParseError); // % not allowed on buy
 });
 
+test("F59 /short opens a short ($ or sh, not %, like buy); confirm-required", () => {
+  const d = ok("/short tsla 1000$");
+  expect(d.verb).toBe("short");
+  expect(d.args).toEqual({ symbol: "TSLA", size: 1000, unit: "$" });
+  expect(d.confirmRequired).toBe(true);
+  expect(ok("/short TSLA 5sh").args).toEqual({ symbol: "TSLA", size: 5, unit: "sh" });
+  expect(() => ok("/short TSLA 50%")).toThrow(ParseError); // % not allowed on short open
+});
+
+test("F59 /cover closes a short (% / sh / $, like sell)", () => {
+  expect(ok("/cover TSLA 100%").args).toEqual({ symbol: "TSLA", size: 100, unit: "%" });
+  expect(ok("/cover TSLA 5sh").args).toEqual({ symbol: "TSLA", size: 5, unit: "sh" });
+  expect(ok("/cover TSLA 200$")).toMatchObject({ verb: "cover", confirmRequired: true });
+});
+
 test("flatten all is destructive; flatten <sym> is not", () => {
   expect(ok("/flatten all")).toMatchObject({ verb: "flatten_all", destructive: true });
   expect(ok("/flatten AAPL")).toMatchObject({ verb: "flatten", destructive: false, args: { symbol: "AAPL" } });

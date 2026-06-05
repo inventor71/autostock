@@ -6,6 +6,8 @@
 
 export type SteeringVerb =
   | "buy" | "sell" | "flatten" | "flatten_all" | "stop"
+  // F59: short shorthands — symmetric with buy/sell (short=open, cover=close)
+  | "short" | "cover"
   | "pause" | "resume" | "halt_entries" | "allow_entries" | "kill"
   | "approve" | "reject" | "unlock" | "cancel"
   | "note" | "directive" | "directive_clear" | "answer"
@@ -19,7 +21,7 @@ export type SteeringVerb =
   | "thesis" | "theses";
 
 // verbs that mutate the book/lifecycle → require human confirm before write (BR-B1)
-export const TRADE_VERBS = new Set<SteeringVerb>(["buy", "sell", "flatten", "flatten_all", "stop"]);
+export const TRADE_VERBS = new Set<SteeringVerb>(["buy", "sell", "short", "cover", "flatten", "flatten_all", "stop"]);
 export const LIFECYCLE_VERBS = new Set<SteeringVerb>([
   "pause", "resume", "halt_entries", "allow_entries", "kill", "research",
 ]);
@@ -52,7 +54,7 @@ export const TOKEN_ENV = "STEERING_OPERATOR_TOKEN";
 // MISSING one — together they pin each runtime list to its type both ways, so a verb/
 // kind/field added to a type but not here (or vice versa) fails to compile.
 export const ALL_VERBS = [
-  "buy", "sell", "flatten", "flatten_all", "stop",
+  "buy", "sell", "short", "cover", "flatten", "flatten_all", "stop",
   "pause", "resume", "halt_entries", "allow_entries", "kill",
   "approve", "reject", "unlock", "cancel",
   "note", "directive", "directive_clear", "answer",

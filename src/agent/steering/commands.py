@@ -26,7 +26,8 @@ from src.core.models import Order
 from src.core.types import OrderClass, OrderSide, OrderType
 
 _KIND = {
-    "buy": "trade", "sell": "trade", "flatten": "trade", "flatten_all": "trade", "stop": "lock",
+    "buy": "trade", "sell": "trade", "short": "trade", "cover": "trade",
+    "flatten": "trade", "flatten_all": "trade", "stop": "lock",
     "pause": "lifecycle", "resume": "lifecycle", "halt_entries": "lifecycle",
     "allow_entries": "lifecycle", "kill": "lifecycle",
     "approve": "approval", "reject": "approval", "unlock": "lock", "cancel": "lifecycle",
@@ -61,6 +62,41 @@ def build_human_buy(symbol: str, size: float, unit: str, price: float | None,
     target = price + risk_manager.default_risk_reward * (price - stop)
     return Order(
         symbol=symbol, side=OrderSide.BUY, qty=float(qty),
+        order_type=OrderType.MARKET, order_class=OrderClass.BRACKET,
+        take_profit_price=round(target, 2), stop_loss_price=round(stop, 2),
+        time_in_force="gtc",
+    )
+
+
+def build_human_short(symbol: str, size: float, unit: str, price: float | None,
+                      atr: float | None, risk_manager) -> Order | None:
+    """F59: build a human SELL_SHORT order at the explicit size, with a resting
+    bracket (ATR-derived stop ABOVE entry, target BELOW). Mirror of
+    ``build_human_buy`` with inverted geometry. Returns None when the size rounds
+    to 0 OR no stop can be resolved — a short with no stop is rejected downstream
+    anyway (F54 mandatory-stop guard), and a plain unprotected market short is
+    never built here. Shares floored to whole units (Alpaca fractional bracket)."""
+    if price is None or price <= 0:
+        return None
+    if unit == "$":
+        qty = math.floor(size / price)
+    elif unit == "sh":
+        qty = math.floor(size)
+    else:
+        return None
+    if qty <= 0:
+        return None
+    stop = risk_manager._resolve_short_stop(price, None, atr)
+    if stop is None:
+        # No ATR/level → can't anchor the mandatory short stop. Emit a bare
+        # SELL_SHORT; the human-order gate rejects it with a clear NO_STOP reason
+        # (better than silently dropping the command here).
+        return Order(symbol=symbol, side=OrderSide.SELL_SHORT, qty=float(qty))
+    target = price - risk_manager.default_risk_reward * (stop - price)
+    if target <= 0:
+        target = round(price * 0.01, 2) or 0.01
+    return Order(
+        symbol=symbol, side=OrderSide.SELL_SHORT, qty=float(qty),
         order_type=OrderType.MARKET, order_class=OrderClass.BRACKET,
         take_profit_price=round(target, 2), stop_loss_price=round(stop, 2),
         time_in_force="gtc",
@@ -173,6 +209,24 @@ class CommandHandler:
             return
         # F9 (critic fix): the shorthand BUY now passes the SAME human-order gate
         # as place_order — budget/pool/breaker were previously bypassed here.
+        self._submit_gated(cmd, sym, order, price, atr, bool(cmd.args.get("force", False)))
+
+    def _v_short(self, cmd: SteeringCommand) -> None:
+        """F59: open a short (= sell_short). Symmetric with /buy; routes through the
+        SAME human-order gate (mandatory stop, squeeze/breaker checks applied in
+        RiskManager.receive_human_order)."""
+        sym = str(cmd.args["symbol"]).upper()
+        if not self._market_open():
+            self.channel.queue_offhours(cmd)
+            self._emit(cmd, "deferred", "market closed; queued for next open")
+            return
+        price = self.data_provider.get_latest_price(sym)
+        atr = self.executor._atr(sym)
+        order = build_human_short(sym, float(cmd.args["size"]), str(cmd.args["unit"]),
+                                  price, atr, self.risk_manager)
+        if order is None:
+            self._emit(cmd, "no_order", "size rounds to 0 shares or no price")
+            return
         self._submit_gated(cmd, sym, order, price, atr, bool(cmd.args.get("force", False)))
 
     # ---- F9 structured order verbs --------------------------------------- #
@@ -370,6 +424,28 @@ class CommandHandler:
             Decision(symbol=sym, action="SELL", source="human", sell_pct=frac))
         self.state.lock_symbol(sym)
         self._emit(cmd, outcome.status, outcome.detail or f"SELL {frac:.0%} {sym}")
+        self._reconcile()
+
+    def _v_cover(self, cmd: SteeringCommand) -> None:
+        """F59: close (cover) a short (= buy_to_cover). Symmetric with /sell, but
+        requires an existing SHORT position."""
+        sym = str(cmd.args["symbol"]).upper()
+        if not self._market_open():
+            self.channel.queue_offhours(cmd)
+            self._emit(cmd, "deferred", "market closed; queued for next open")
+            return
+        pos = self.broker.get_position(sym)
+        if pos is None or pos.qty <= 0 or getattr(getattr(pos, "side", None), "value", "long") != "short":
+            self._emit(cmd, "no_order", f"no short position in {sym}")
+            return
+        frac = self._sell_fraction(float(cmd.args["size"]), str(cmd.args["unit"]), pos.qty, sym)
+        if frac <= 0:
+            self._emit(cmd, "no_order", "cover size rounds to 0")
+            return
+        outcome = self.executor.execute_decision(
+            Decision(symbol=sym, action="BUY_TO_COVER", source="human", sell_pct=frac))
+        self.state.lock_symbol(sym)
+        self._emit(cmd, outcome.status, outcome.detail or f"BUY_TO_COVER {frac:.0%} {sym}")
         self._reconcile()
 
     def _v_flatten(self, cmd: SteeringCommand) -> None:
