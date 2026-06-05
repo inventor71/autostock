@@ -49,6 +49,11 @@
   - Python full suite 801 green (+7 ETB tests); buy/place_order 경로 무영향(77 green)
   - 라이브 read-only: AAPL/TSLA/SPY is_shortable=True 확인; fail-closed False 경로 단위테스트
   - 0 new deps. Status → merge-awaiting.
+- [x] /code-review F59+F60 — 6 fixes (commit 991fd81), 2026-06-05
+  - #1 BrokerApiBroker.side parity, #2 BrokerApiBroker.is_shortable, #3 SELL-on-SHORT guard,
+    #4 transient-cache no-poison, #5 runtime _TRADE_VERBS, #6 TUI verbs/color
+  - #7 (ETB gate duplication) deferred — note in Merge Risk
+  - +3 tests; full suite 804 green
 
 ### Build & Test 산출물
 - `construction/build-and-test/build-and-test-summary.md`
