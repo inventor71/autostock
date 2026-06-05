@@ -13,7 +13,8 @@ from src.execution.brokers.kis_broker import KisBroker, KisPaperBroker, _OcoStor
 class FakeKis:
     """Records calls; returns canned KIS responses."""
 
-    def __init__(self, positions=None, open_orders=None, ccld=None, holidays=None):
+    def __init__(self, positions=None, open_orders=None, ccld=None, holidays=None,
+                 reject_odnos: set | None = None):
         self.posts = []
         self.gets = []
         self._seq = 0
@@ -23,9 +24,14 @@ class FakeKis:
         self.open_orders = open_orders or []  # rows for inquire-psbl-rvsecncl
         self.ccld = ccld or {}                # odno -> {tot_ccld_qty, avg_prvs, pdno, sll_buy_dvsn_cd}
         self.holidays = holidays or {}        # YYYYMMDD -> opnd_yn ("Y"/"N")
+        self.reject_odnos = reject_odnos or set()  # odnos whose cancel/rvsecncl POST must fail
 
     def post(self, path, tr, body):
         self.posts.append((path, tr, body))
+        if path.endswith("order-rvsecncl"):
+            if body.get("ORGN_ODNO") in self.reject_odnos:
+                return {"rt_cd": "1", "msg_cd": "EGW00999", "msg1": "test rejection"}
+            return {"rt_cd": "0"}
         if path.endswith("order-cash"):
             self._seq += 1
             return {"rt_cd": "0", "output": {"ODNO": f"O{self._seq}", "KRX_FWDG_ORD_ORGNO": "012"}}
@@ -50,7 +56,9 @@ class FakeKis:
 def make_broker(tmp_path, **kw):
     b = KisPaperBroker("ak", "sk", "12345678-01",
                        oco_journal=tmp_path / "oco.json", fill_poll_timeout=0.0, **kw)
-    b._c = FakeKis(kw.pop("positions", None))
+    b._c = FakeKis(positions=kw.pop("positions", None),
+                   open_orders=kw.pop("open_orders", None),
+                   reject_odnos=kw.pop("reject_odnos", None))
     return b
 
 
@@ -206,3 +214,91 @@ def test_is_trading_day_respects_krx_holiday_and_caches(tmp_path):
     assert b._is_trading_day("20260102") is True
     b._c.holidays["20260102"] = "N"               # change underneath
     assert b._is_trading_day("20260102") is True  # served from the per-day cache
+
+
+# ── OCO store thread-safety ─────────────────────────────────────────────
+
+def test_oco_store_no_duplicate_ids_under_concurrency(tmp_path):
+    """new_group is serialised by the store lock — concurrent calls never
+    produce the same group_id, even when many threads race."""
+    import threading, queue
+    store = _OcoStore(tmp_path / "journal.json")
+    results: queue.Queue[tuple[int, str]] = queue.Queue()
+
+    def add_one(seed: int):
+        for _ in range(20):
+            g = store.new_group(f"{seed:06d}", 1)
+            results.put((seed, g.group_id))
+
+    threads = [threading.Thread(target=add_one, args=(i,)) for i in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    ids = set()
+    while not results.empty():
+        _, gid = results.get()
+        assert gid not in ids, f"duplicate group_id {gid}"
+        ids.add(gid)
+    assert len(ids) == 100  # 5 threads × 20
+
+
+# ── _cancel_group_legs return value ─────────────────────────────────────
+
+def test_cancel_group_legs_returns_true_on_success(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis()  # all calls succeed (rt_cd=0)
+    g = b._oco.new_group("005930", 1)
+    g.tp_odno = "TP01"
+    g.sl_odno = None
+    assert b._cancel_group_legs(g) is True
+
+
+def test_cancel_group_legs_returns_false_when_one_leg_fails(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis(reject_odnos={"TP01"})  # TP01 will fail
+    g = b._oco.new_group("005930", 1)
+    g.tp_odno = "TP01"
+    g.sl_odno = "SL01"
+    assert b._cancel_group_legs(g) is False
+
+
+def test_reconcile_keeps_group_when_cancel_fails(tmp_path):
+    b = make_broker(tmp_path)
+    b._c = FakeKis(reject_odnos={"TP01"})
+    g = b._oco.new_group("005930", 1)
+    g.tp_odno = "TP01"
+    g.state = "ARMED"
+    gid = g.group_id
+    b._oco.save()
+    # reconcile_oco: held=0 → try cancel → TP01 fails → group stays
+    b.reconcile_oco()
+    assert gid in b._oco.groups
+    assert b._oco.groups[gid].state == "ARMED"
+
+
+# ── get_oco_armed_symbols ───────────────────────────────────────────────
+
+def test_get_oco_armed_symbols(tmp_path):
+    b = make_broker(tmp_path)
+    g = b._oco.new_group("005930", 1)
+    g.state = "ARMED"
+    g.tp_odno = "TP01"
+    assert b.get_oco_armed_symbols() == {"005930"}
+
+
+def test_get_oco_armed_symbols_excludes_pending_entry(tmp_path):
+    b = make_broker(tmp_path)
+    g = b._oco.new_group("035720", 1)
+    g.state = "PENDING_ENTRY"
+    g.tp_odno = None
+    assert b.get_oco_armed_symbols() == set()
+
+
+def test_get_oco_armed_symbols_excludes_no_tp_odno(tmp_path):
+    b = make_broker(tmp_path)
+    g = b._oco.new_group("005930", 1)
+    g.state = "ARMED"
+    g.tp_odno = None  # TP not yet placed
+    assert b.get_oco_armed_symbols() == set()

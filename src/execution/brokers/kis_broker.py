@@ -15,6 +15,7 @@ restart can re-bind the resting legs (OpenOrder carries no group id).
 from __future__ import annotations
 
 import json
+import threading
 import time
 from abc import abstractmethod
 from dataclasses import asdict, dataclass, field
@@ -77,10 +78,16 @@ class OcoGroup:
 
 
 class _OcoStore:
-    """Write-through JSON journal of OcoGroups (survives daemon restart)."""
+    """Write-through JSON journal of OcoGroups (survives daemon restart).
+
+    All mutations are serialised through ``_lock`` so concurrent calls from the
+    scheduler thread (reconcile_oco / get_protective_stops) and the turn thread
+    (submit_order) never corrupt the groups dict or the id counter.
+    """
 
     def __init__(self, path: Path):
         self._path = path
+        self._lock = threading.Lock()
         self.groups: dict[str, OcoGroup] = {}
         self._counter = 0
         self._load()
@@ -96,25 +103,30 @@ class _OcoStore:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"KIS OCO journal load failed ({e}); starting empty")
 
+    def _snapshot(self) -> dict:
+        """Return a consistent snapshot for serialisation (must be called under lock)."""
+        return {"counter": self._counter,
+                "groups": [asdict(g) for g in self.groups.values()]}
+
     def save(self) -> None:
+        with self._lock:
+            payload = self._snapshot()
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(
-            {"counter": self._counter, "groups": [asdict(g) for g in self.groups.values()]},
-            ensure_ascii=False, indent=2,
-        ))
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
         tmp.replace(self._path)
 
     def new_group(self, symbol: str, qty: int) -> OcoGroup:
-        self._counter += 1
-        g = OcoGroup(group_id=f"oco_{self._counter}", symbol=symbol, qty=qty)
-        self.groups[g.group_id] = g
-        return g
+        with self._lock:
+            self._counter += 1
+            g = OcoGroup(group_id=f"oco_{self._counter}", symbol=symbol, qty=qty)
+            self.groups[g.group_id] = g
+            return g
 
     def resolve(self, group_id: str) -> None:
-        if group_id in self.groups:
-            self.groups[group_id].state = "RESOLVED"
-            del self.groups[group_id]
+        with self._lock:
+            if group_id in self.groups:
+                del self.groups[group_id]
 
 
 class KisBroker(BaseBroker):
@@ -326,6 +338,7 @@ class KisBroker(BaseBroker):
         try:
             res = self._c.get(_OPENORD_PATH, self._tr("TTTC0084R", "VTTC0084R"), params)
         except BrokerError:
+            logger.debug("KIS get_open_orders: endpoint unavailable (expected on 모의); returning []")
             return []
         if res.get("rt_cd") != "0":
             return []
@@ -360,6 +373,7 @@ class KisBroker(BaseBroker):
         try:
             res = self._c.get(_CCLD_PATH, self._tr("TTTC0081R", "VTTC0081R"), params)
         except BrokerError:
+            logger.debug("KIS get_order_status: daily-ccld unavailable (expected on 모의)")
             return None
         if res.get("rt_cd") != "0":
             return None
@@ -415,6 +429,7 @@ class KisBroker(BaseBroker):
             res = self._c.get(_OPENORD_PATH, self._tr("TTTC0084R", "VTTC0084R"), params)
             return res.get("output") or [] if res.get("rt_cd") == "0" else []
         except BrokerError:
+            logger.debug("KIS _open_rows: endpoint unavailable (expected on 모의); returning []")
             return []
 
     def close_position(self, symbol: str) -> FilledOrder | None:
@@ -423,9 +438,14 @@ class KisBroker(BaseBroker):
             return None
         pdno = self._pdno(symbol)
         odno, _ = self._raw_order(OrderSide.SELL, pdno, int(pos.qty), _DVSN_MARKET, 0)
-        # Drop any OCO group on this symbol (its legs are now obsolete).
+        # Drop any OCO group on this symbol (its legs are now obsolete — the
+        # market-sell exit was just submitted; a lingering TP/SL would be naked).
         for gid in [g.group_id for g in self._oco.groups.values() if g.symbol == pdno]:
-            self._cancel_group_legs(self._oco.groups[gid])
+            if not self._cancel_group_legs(self._oco.groups[gid]):
+                logger.warning(
+                    f"KIS close_position({symbol}): OCO {gid} leg cancel failed; "
+                    f"resolving anyway (position already exited)"
+                )
             self._oco.resolve(gid)
         self._oco.save()
         return self._confirm_fill(odno, pdno, OrderSide.SELL, int(pos.qty))
@@ -453,8 +473,11 @@ class KisBroker(BaseBroker):
                     self._oco.resolve(gid)  # entry gone, no position → rejected
                 # else: entry still resting — wait
             elif g.state == "ARMED" and h <= 0:
-                self._cancel_group_legs(g)
-                self._oco.resolve(gid)
+                if self._cancel_group_legs(g):
+                    self._oco.resolve(gid)
+                # else: a cancel failed — keep the group in ARMED so retry runs
+                # next tick; the legs may already be gone (exchange-side), but
+                # the resolve can only happen once cancellation is observed.
         self._oco.save()
 
     def get_protective_stops(self) -> dict[str, float]:
@@ -467,13 +490,36 @@ class KisBroker(BaseBroker):
             if g.stop_price > 0 and g.state in ("PENDING_ENTRY", "ARMED")
         }
 
-    def _cancel_group_legs(self, g: OcoGroup) -> None:
+    def get_oco_armed_symbols(self) -> set[str]:
+        """Symbols whose OCO group is ARMED (both a resting TP LIMIT and a
+        polled SL). The TP leg is exchange-side — the polled ``check_take_profit``
+        must skip these so a market sell at the flat pct doesn't undercut the
+        resting LIMIT at the agent's intended price."""
+        return {
+            g.symbol.upper()
+            for g in self._oco.groups.values()
+            if g.state == "ARMED" and g.tp_odno
+        }
+
+    def _cancel_group_legs(self, g: OcoGroup) -> bool:
+        """Cancel both OCO legs. Returns True when all legs were cancelled (or
+        there were none to cancel); False when at least one cancel failed — the
+        caller should NOT resolve the group so the legs can be retried."""
+        ok = True
         for odno in (g.tp_odno, g.sl_odno):
             if odno:
                 try:
-                    self.cancel_order(odno)
+                    if not self.cancel_order(odno):
+                        logger.warning(
+                            f"KIS cancel rejected for OCO {g.group_id} leg {odno}; will retry"
+                        )
+                        ok = False
                 except BrokerError:
-                    pass
+                    logger.warning(
+                        f"KIS cancel failed for OCO {g.group_id} leg {odno}; will retry"
+                    )
+                    ok = False
+        return ok
 
     # -- market hours --------------------------------------------------- #
     def is_market_open(self) -> bool:

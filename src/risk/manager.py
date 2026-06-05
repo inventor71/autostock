@@ -999,10 +999,18 @@ class RiskManager:
         self,
         portfolio: PortfolioState,
         protected_symbols: set[str] | None = None,
+        tp_protected: set[str] | None = None,
     ) -> list[Order]:
-        """Check positions for take-profit triggers (skips ``protected_symbols``
-        already covered by a resting exchange-side take-profit)."""
-        protected = protected_symbols or set()
+        """Check positions for take-profit triggers.
+
+        ``protected_symbols`` are symbols already covered by a resting
+        exchange-side stop (bracket OCO) — skipped so the polled backup never
+        double-exits.
+
+        ``tp_protected`` is an additional set of symbols whose take-profit leg
+        is already resting at the exchange (e.g. KIS emulated-OCO LIMIT sell).
+        Merged with ``protected_symbols`` for the TP check only."""
+        protected = (protected_symbols or set()) | (tp_protected or set())
         orders = []
         for symbol, position in portfolio.positions.items():
             if symbol in protected:
