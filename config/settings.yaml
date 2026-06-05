@@ -300,13 +300,19 @@ signals:
   cache_ttl_seconds: 300
   http_connect_timeout: 3.0
   http_read_timeout: 5.0
+  scan_timeout_seconds: 30.0   # aggregate cap on the price scan (NFR-2)
   # Bellwether watchlist (R7): signal-only sources, never tradeable. SPY/QQQ/IWM/
   # DIA/VTI are already in the universe; these add sector ETFs.
   bellwether_watchlist: [SMH, SOXX, XLK, XLF, XLE, XLV, XLY, XLP, XLI]
   # Static peer map (R6): group -> members. A symbol may belong to several groups;
   # peers_of(sym) = union of co-members across its groups, minus itself.
+  # Bellwether ETFs are listed as members of their sector group so a move in the
+  # ETF reads through to that sector's tradeable names (the ETF itself is dropped
+  # from affected_peers — not in the universe). EVERY bellwether_watchlist entry
+  # must appear in some group, else it can never trigger read-through
+  # (guarded by tests/signals/test_config_seed.py).
   peer_groups:
-    semiconductors:    [NVDA, AMD, AVGO, QCOM, TXN, INTC, MU, MRVL, ARM, TSM, ADI, MPWR, RMBS]
+    semiconductors:    [NVDA, AMD, AVGO, QCOM, TXN, INTC, MU, MRVL, ARM, TSM, ADI, MPWR, RMBS, SMH, SOXX]
     semicap_equipment: [AMAT, LRCX, KLAC, ASML, TER]
     memory_storage:    [MU, SNDK, WDC, STX, RMBS]
     ai_networking:     [ANET, CIEN, COHR, LITE, MRVL, AVGO]
@@ -315,10 +321,14 @@ signals:
     datacenter_power:  [VRT, ETN, PWR, GEV, NVT, MOD, VST, CEG]
     datacenter_reit:   [DLR, EQIX, AMT, CCI, PLD]
     software_infra:    [NOW, CRM, ADBE, INTU, ORCL]
-    megacap_tech:      [AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA]
-    banks:             [JPM, BAC, WFC, C, USB, PNC, TFC, COF, GS, MS]
+    megacap_tech:      [AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA, XLK]
+    banks:             [JPM, BAC, WFC, C, USB, PNC, TFC, COF, GS, MS, XLF]
     payments:          [V, MA, AXP]
-    energy:            [XOM, CVX, COP, SLB, EOG, MPC, PSX, VLO, OXY]
+    energy:            [XOM, CVX, COP, SLB, EOG, MPC, PSX, VLO, OXY, XLE]
+    healthcare:        [UNH, JNJ, LLY, PFE, ABBV, MRK, TMO, ABT, DHR, BMY, AMGN, MDT, GILD, ISRG, CVS, XLV]
+    consumer_disc:     [AMZN, TSLA, MCD, NKE, SBUX, TGT, LOW, HD, DIS, NFLX, XLY]
+    consumer_staples:  [WMT, PG, KO, PEP, COST, XLP]
+    industrials:       [CAT, DE, UPS, BA, HON, UNP, RTX, LMT, GE, MMM, XLI]
     ai_infra_broad:    [NVDA, AMD, AVGO, MRVL, ARM, AMAT, LRCX, KLAC, ANET, VRT, DELL, SMCI, MU]
 
 early_session:

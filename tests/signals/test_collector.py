@@ -38,8 +38,10 @@ class _FakeEarnings:
     def __init__(self, rows=None, raises=False):
         self.rows = rows or []
         self.raises = raises
+        self.last_range = None
 
     def get_calendar(self, from_date, to_date):
+        self.last_range = (from_date, to_date)
         if self.raises:
             raise RuntimeError("finnhub boom")
         return self.rows
@@ -116,3 +118,47 @@ def test_cache_returns_same_object(patch_scoreboard):
     b1 = collector.collect(today=_TODAY)
     b2 = collector.collect(today=_TODAY)
     assert b1 is b2
+
+
+def test_horizon_override_passthrough_not_mutating_config(patch_scoreboard):
+    from datetime import timedelta
+
+    patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0)))
+    earnings = _FakeEarnings()
+    collector = _collector(news=_FakeNews(), earnings=earnings)
+    collector.collect(today=_TODAY, horizon_days=5)
+    # the override widened the calendar query window for this call only...
+    assert earnings.last_range == (_TODAY, _TODAY + timedelta(days=5))
+    # ...without mutating the collector's config (footgun fix #4)
+    assert collector.config.earnings_horizon_days == _CONFIG.earnings_horizon_days
+
+
+def test_horizon_override_is_part_of_cache_key(patch_scoreboard):
+    patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0)))
+    collector = _collector(news=_FakeNews(), earnings=_FakeEarnings())
+    b_default = collector.collect(today=_TODAY)
+    b_override = collector.collect(today=_TODAY, horizon_days=7)
+    assert b_default is not b_override  # different horizon → not a cache hit
+
+
+def test_scan_timeout_degrades_without_blocking(monkeypatch):
+    import time as _time
+
+    def slow_scoreboard(syms, prov):
+        _time.sleep(0.5)
+        return _scoreboard_rows(("AVGO", -15.0, 3.0))
+
+    monkeypatch.setattr("src.agent.tools.market.scoreboard", slow_scoreboard)
+    fast_cfg = _CONFIG.model_copy(update={"scan_timeout_seconds": 0.05})
+    collector = SignalCollector(
+        config=fast_cfg, universe=_UNIVERSE, price_provider=object(),
+        news_provider=_FakeNews(), earnings_source=_FakeEarnings(),
+    )
+    started = _time.monotonic()
+    brief = collector.collect(today=_TODAY)
+    elapsed = _time.monotonic() - started
+
+    assert "prices:timeout" in brief.degraded_sources
+    assert brief.movers == []
+    # we returned promptly (did not block on the 0.5s scan)
+    assert elapsed < 0.4

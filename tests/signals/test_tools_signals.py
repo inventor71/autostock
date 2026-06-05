@@ -18,8 +18,10 @@ class _FakeCollector:
     def __init__(self, brief):
         self._brief = brief
         self.config = type("C", (), {"earnings_horizon_days": 2})()
+        self.last_horizon_days = "unset"
 
-    def collect(self):
+    def collect(self, *, horizon_days=None):
+        self.last_horizon_days = horizon_days
         return self._brief
 
 
@@ -58,7 +60,15 @@ def test_earnings_calendar_tool():
     assert [e["symbol"] for e in out["imminent_earnings"]] == ["NVDA"]
 
 
-def test_earnings_calendar_days_override():
+def test_earnings_calendar_days_override_passed_through_not_mutated():
     collector = _FakeCollector(_brief())
     market.earnings_calendar(collector, days=5)
-    assert collector.config.earnings_horizon_days == 5
+    # days is passed to collect(), NOT written onto the shared config
+    assert collector.last_horizon_days == 5
+    assert collector.config.earnings_horizon_days == 2
+
+
+def test_movers_does_not_override_horizon():
+    collector = _FakeCollector(_brief())
+    market.movers(collector)
+    assert collector.last_horizon_days is None

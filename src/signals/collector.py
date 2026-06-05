@@ -58,9 +58,18 @@ class SignalCollector:
 
     # -- public ----------------------------------------------------------- #
     def collect(
-        self, *, today: date | None = None, held: list[str] | None = None
+        self,
+        *,
+        today: date | None = None,
+        held: list[str] | None = None,
+        horizon_days: int | None = None,
     ) -> MarketSignalBrief:
-        """Assemble the brief (TTL-cached). Never raises for source failures."""
+        """Assemble the brief (TTL-cached). Never raises for source failures.
+
+        ``horizon_days`` overrides the earnings horizon for this call only — it
+        does NOT mutate ``self.config`` — and is part of the cache key so an
+        override never returns a brief built for a different horizon.
+        """
         today = today or date.today()
         if held is None and self.held_provider is not None:
             try:
@@ -69,8 +78,12 @@ class SignalCollector:
                 logger.warning("signals: held_provider failed: {}", exc)
                 held = []
         held = held or []
+        horizon = horizon_days if horizon_days is not None else self.config.earnings_horizon_days
 
-        cache_key = f"{today.isoformat()}|{','.join(sorted(_norm(h) for h in held))}"
+        cache_key = (
+            f"{today.isoformat()}|{horizon}|"
+            f"{','.join(sorted(_norm(h) for h in held))}"
+        )
         if self._cache is not None:
             cached_at, key, brief = self._cache
             if key == cache_key and (time.monotonic() - cached_at) < self.config.cache_ttl_seconds:
@@ -102,7 +115,7 @@ class SignalCollector:
         self._attach_cause_hints(alerts, degraded)
 
         # 4. imminent earnings (best-effort source + pure selection)
-        imminent = self._imminent_earnings(today, held, universe_set, degraded)
+        imminent = self._imminent_earnings(today, held, universe_set, degraded, horizon)
 
         brief = assemble_brief(movers, alerts, imminent, degraded)
         self._cache = (time.monotonic(), cache_key, brief)
@@ -120,14 +133,33 @@ class SignalCollector:
         return out
 
     def _scan_rows(self, symbols: list[str], degraded: list[str]) -> list[MoverRow]:
-        try:
-            from src.agent.tools import market
+        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import TimeoutError as FutureTimeout
 
-            raw = market.scoreboard(symbols, self.price_provider)
+        from src.agent.tools import market
+
+        # yfinance has no per-call timeout, so bound the WHOLE scan: a slow/hung
+        # backend must not stall the research turn (NFR-2). Run it off-thread and
+        # abandon it on timeout — note we do NOT use `with`, whose __exit__ would
+        # join the hung worker and defeat the bound; shutdown(wait=False) lets the
+        # worker drain in the background while we degrade immediately.
+        ex = ThreadPoolExecutor(max_workers=1)
+        try:
+            future = ex.submit(market.scoreboard, symbols, self.price_provider)
+            raw = future.result(timeout=self.config.scan_timeout_seconds)
+        except FutureTimeout:
+            logger.warning(
+                "signals: price scan exceeded {}s budget — degrading",
+                self.config.scan_timeout_seconds,
+            )
+            degraded.append("prices:timeout")
+            return []
         except Exception as exc:
             logger.warning("signals: scoreboard scan failed: {}", exc)
             degraded.append("prices:scoreboard")
             return []
+        finally:
+            ex.shutdown(wait=False)
         rows: list[MoverRow] = []
         for r in raw:
             if r.get("error"):
@@ -160,23 +192,21 @@ class SignalCollector:
         if failed:
             degraded.append("news")
 
-    def _imminent_earnings(self, today, held, universe_set, degraded: list[str]):
+    def _imminent_earnings(self, today, held, universe_set, degraded: list[str], horizon: int):
         if self.earnings_source is None:
             degraded.append("earnings:disabled")
             return []
         from datetime import timedelta
 
         try:
-            cal = self.earnings_source.get_calendar(
-                today, today + timedelta(days=self.config.earnings_horizon_days)
-            )
+            cal = self.earnings_source.get_calendar(today, today + timedelta(days=horizon))
         except Exception as exc:
             logger.warning("signals: earnings calendar failed: {}", exc)
             degraded.append("earnings:finnhub")
             return []
         return select_imminent_earnings(
             cal, universe_set, {_norm(h) for h in held}, self.peer_map,
-            horizon_days=self.config.earnings_horizon_days, today=today,
+            horizon_days=horizon, today=today,
         )
 
     # -- wiring ----------------------------------------------------------- #

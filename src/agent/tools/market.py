@@ -639,10 +639,11 @@ def readthrough(symbol: str, peer_map, universe) -> dict:
 
 
 def earnings_calendar(collector, days: int | None = None) -> dict:
-    """Imminent earnings for universe / held names within the horizon (FR-4)."""
-    if days is not None:
-        collector.config.earnings_horizon_days = days
-    brief = collector.collect()
+    """Imminent earnings for universe / held names within the horizon (FR-4).
+
+    ``days`` overrides the horizon for this call only (passed through to
+    ``collect`` — it does not mutate the collector's config)."""
+    brief = collector.collect(horizon_days=days)
     return {
         "as_of": brief.as_of.isoformat(),
         "imminent_earnings": [e.model_dump(mode="json") for e in brief.imminent_earnings],

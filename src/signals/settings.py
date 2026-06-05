@@ -44,10 +44,13 @@ class SignalsConfig(BaseModel):
     # Source toggles (R8)
     sources: SignalSources = Field(default_factory=SignalSources)
 
-    # Caching / latency (NFR-3)
+    # Caching / latency (NFR-2/3)
     cache_ttl_seconds: float = Field(default=300.0, ge=0.0)
     http_connect_timeout: float = Field(default=3.0, gt=0.0)
     http_read_timeout: float = Field(default=5.0, gt=0.0)
+    # Aggregate budget for the price scan (yfinance has no per-call bound, so cap
+    # the whole scoreboard scan so a slow backend can't stall the research turn).
+    scan_timeout_seconds: float = Field(default=30.0, gt=0.0)
 
     @classmethod
     def from_settings(cls, signals_block: dict | None) -> "SignalsConfig":

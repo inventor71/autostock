@@ -37,7 +37,15 @@ def _universe() -> list[str]:
 
 def _signal_collector():
     from src.signals.collector import SignalCollector
-    return SignalCollector.from_settings(price_provider=_provider())
+
+    # Wire held positions so the tools surface imminent earnings for held names
+    # that sit OUTSIDE the tradeable universe too (matches the daemon push path).
+    # The broker is built lazily inside the callable; collect()'s held lookup is
+    # best-effort, so a missing-key/broker failure degrades to held=[].
+    def _held() -> list[str]:
+        return sorted(_broker().get_portfolio_state().positions.keys())
+
+    return SignalCollector.from_settings(price_provider=_provider(), held_provider=_held)
 
 
 def main(argv: list[str] | None = None) -> int:
