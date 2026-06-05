@@ -11,9 +11,7 @@ from hypothesis import strategies as st
 from src.agent.efficacy import (
     LessonEfficacy,
     applied_counts,
-    is_meaningful,
     lesson_efficacy,
-    persists,
     prompt_version_efficacy,
 )
 from src.agent.journal import Decision, Journal, LessonRecord
@@ -120,29 +118,6 @@ def test_prompt_version_efficacy_groups_by_version():
 def test_efficacy_order_invariant():
     outcomes = [_outcome("BUY", ["L1"], 0.05), _outcome("BUY", ["L1"], -0.01)]
     assert lesson_efficacy(outcomes) == lesson_efficacy(list(reversed(outcomes)))
-
-
-# --------------------------------------------------------------------------- #
-# statistical guards
-# --------------------------------------------------------------------------- #
-def test_is_meaningful_requires_sample_and_effect():
-    assert is_meaningful(25, 0.03, min_sample=20, min_effect=0.01) is True
-    assert is_meaningful(5, 0.03, min_sample=20) is False  # too few
-    assert is_meaningful(25, 0.005, min_effect=0.01) is False  # too small
-    assert is_meaningful(25, None) is False  # no measurable effect
-
-
-@given(st.integers(min_value=0, max_value=100), st.floats(-1, 1))
-def test_is_meaningful_monotone_in_sample(n, eff):
-    if is_meaningful(n, eff, min_sample=20, min_effect=0.0):
-        assert n >= 20  # never true below min_sample
-
-
-def test_persists_needs_consistent_sign_over_window():
-    assert persists([0.1, 0.2, 0.3], window=3) is True
-    assert persists([-0.1, -0.2, -0.3], window=3) is True
-    assert persists([0.1, -0.2, 0.3], window=3) is False
-    assert persists([0.1, 0.2], window=3) is False  # too short
 
 
 # --------------------------------------------------------------------------- #

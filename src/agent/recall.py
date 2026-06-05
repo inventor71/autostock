@@ -24,7 +24,7 @@ from datetime import date
 
 from loguru import logger
 
-from src.agent.efficacy import LessonEfficacy
+from src.agent.efficacy import MIN_EFFICACY_SAMPLE, LessonEfficacy
 from src.agent.journal import LessonRecord
 
 
@@ -35,8 +35,8 @@ class RecallWeights:
     relevance: float = 0.75
     # A lesson is "verified" (its efficacy is trusted) only above this sample
     # size; below it, the efficacy term is capped to 0 so a lucky single hit
-    # can't rocket an unproven lesson to the top.
-    min_verified: int = 20
+    # can't rocket an unproven lesson to the top. Single-sourced from efficacy.
+    min_verified: int = MIN_EFFICACY_SAMPLE
 
 
 @dataclass(frozen=True)
@@ -189,7 +189,7 @@ def mark_retirements(
     lessons: list[LessonRecord],
     efficacy: dict[str, LessonEfficacy],
     *,
-    min_sample: int = 20,
+    min_sample: int = MIN_EFFICACY_SAMPLE,
     today: date | None = None,
     idle_days: int = 180,
 ) -> list[str]:

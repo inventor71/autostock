@@ -102,34 +102,6 @@ def prompt_version_efficacy(
     return out
 
 
-# --------------------------------------------------------------------------- #
-# Lightweight statistical guards (F72 will promote these to real significance
-# tests). Conservative gates so F65 ranking trust and F64 evolution decisions
-# don't chase small-sample noise.
-# --------------------------------------------------------------------------- #
-def is_meaningful(
-    applied_n: int,
-    effect: float | None,
-    *,
-    min_sample: int = 20,
-    min_effect: float = 0.0,
-) -> bool:
-    """True only when the sample is large enough AND the effect is big enough.
-
-    ``effect`` None (no measurable outcome) is never meaningful.
-    """
-    if effect is None:
-        return False
-    return applied_n >= min_sample and abs(effect) >= min_effect
-
-
-def persists(history: list[float], window: int = 3) -> bool:
-    """True when the last ``window`` effects share one sign — a sustained signal,
-    not a single-period flip. Fewer than ``window`` points is not yet persistent.
-    """
-    if window <= 0:
-        return False
-    tail = history[-window:]
-    if len(tail) < window:
-        return False
-    return all(x > 0 for x in tail) or all(x < 0 for x in tail)
+# Minimum applied-count for an efficacy reading to be trusted (not small-sample
+# noise). Single source so F65 recall trust and F64 evolution gating never drift.
+MIN_EFFICACY_SAMPLE = 20
