@@ -14,7 +14,6 @@ class ResourceChecker(BaseChecker):
 
     def __init__(self, settings):
         self._settings = settings
-        self._root = Path(__file__).parent.parent.parent.parent.parent
 
     def check(self) -> list[CheckResult]:
         results: list[CheckResult] = []
@@ -32,7 +31,7 @@ class ResourceChecker(BaseChecker):
     def _check_disk_space(self) -> CheckResult:
         """Check free disk space on the project volume."""
         try:
-            usage = shutil.disk_usage(str(self._root))
+            usage = shutil.disk_usage(str(self.root))
             free_gb = usage.free / (1024 ** 3)
             total_gb = usage.total / (1024 ** 3)
             if free_gb < 0.5:
@@ -59,7 +58,7 @@ class ResourceChecker(BaseChecker):
 
     def _check_log_size(self) -> CheckResult:
         """Check total size of logs directory."""
-        logs_dir = self._root / "logs"
+        logs_dir = self.root / "logs"
         if not logs_dir.exists():
             return CheckResult(
                 name="log_size",
@@ -98,7 +97,7 @@ class ResourceChecker(BaseChecker):
 
     def _check_venv(self) -> CheckResult:
         """Check that the venv interpreter is functional."""
-        venv_python = self._root / "venv" / "bin" / "python"
+        venv_python = self.root / "venv" / "bin" / "python"
         if not venv_python.exists():
             return CheckResult(
                 name="venv",

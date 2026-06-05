@@ -15,7 +15,6 @@ class RiskChecker(BaseChecker):
 
     def __init__(self, settings):
         self._settings = settings
-        self._root = Path(__file__).parent.parent.parent.parent.parent
 
     def check(self) -> list[CheckResult]:
         results: list[CheckResult] = []
@@ -112,7 +111,7 @@ class RiskChecker(BaseChecker):
 
     def _check_pending_approvals(self) -> CheckResult:
         """Count pending human approvals in workspace."""
-        pa = self._root / "workspace" / "pending_approvals.json"
+        pa = self.root / "workspace" / "pending_approvals.json"
         if not pa.exists():
             return CheckResult(
                 name="pending_approvals",

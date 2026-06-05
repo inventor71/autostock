@@ -42,16 +42,22 @@ __all__ = [
 ]
 
 
-def run_all_checks(settings) -> HealthReport:
+from pathlib import Path
+
+
+def run_all_checks(settings, project_root: Path | str | None = None) -> HealthReport:
     """Run all health checks and return a unified report.
 
     Args:
         settings: autostock Settings object (from config.config.get_settings()).
+        project_root: Override project root directory (default: auto-detect from
+            module path).  Use when running from a worktree to point at the main
+            checkout's steering/ workspace/ logs/ artifacts.
 
     Returns:
         HealthReport with status per dimension and an overall verdict.
     """
-    dispatcher = CheckerDispatcher(settings)
+    dispatcher = CheckerDispatcher(settings, project_root=project_root)
     dispatcher.register_all([
         ProcessChecker(settings),
         BrokerChecker(settings),

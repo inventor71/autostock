@@ -27,7 +27,6 @@ class ConfigEnvChecker(BaseChecker):
 
     def __init__(self, settings):
         self._settings = settings
-        self._root = Path(__file__).parent.parent.parent.parent.parent
 
     def check(self) -> list[CheckResult]:
         results: list[CheckResult] = []
@@ -93,7 +92,7 @@ class ConfigEnvChecker(BaseChecker):
 
     def _check_settings_yaml(self) -> CheckResult:
         """Verify settings.yaml parses correctly."""
-        settings_path = self._root / "config" / "settings.yaml"
+        settings_path = self.root / "config" / "settings.yaml"
         if not settings_path.exists():
             return CheckResult(
                 name="settings_yaml",
@@ -139,7 +138,7 @@ class ConfigEnvChecker(BaseChecker):
 
     def _check_dotenv(self) -> CheckResult:
         """Check .env file exists and is readable."""
-        env_path = os.environ.get("AUTOSTOCK_ENV_FILE") or str(self._root / ".env")
+        env_path = os.environ.get("AUTOSTOCK_ENV_FILE") or str(self.root / ".env")
         p = Path(env_path)
         if not p.exists():
             return CheckResult(

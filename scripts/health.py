@@ -47,6 +47,10 @@ def main() -> int:
         "--dimension", "-d", type=str, nargs="*",
         help="Run only the named dimension(s), e.g. --dimension broker process",
     )
+    parser.add_argument(
+        "--root", type=str, default=None,
+        help="Override project root path (for running from worktree against main checkout)",
+    )
     args = parser.parse_args()
 
     # Load settings (validates config/env at parse time)
@@ -56,10 +60,13 @@ def main() -> int:
         _emit_fatal(f"Config load failed: {exc}")
         return 3
 
+    # Resolve project root for artifact paths (steering/, workspace/, logs/)
+    project_root = Path(args.root) if args.root else None
+
     # Run all (or selected) health checks
     t0 = time.monotonic()
     try:
-        report = run_all_checks(settings)
+        report = run_all_checks(settings, project_root=project_root)
     except Exception as exc:
         _emit_fatal(f"Health check crashed: {exc}")
         return 3

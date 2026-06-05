@@ -16,7 +16,6 @@ class ProcessChecker(BaseChecker):
 
     def __init__(self, settings):
         self._settings = settings
-        self._root = Path(__file__).parent.parent.parent.parent.parent
 
     def check(self) -> list[CheckResult]:
         results: list[CheckResult] = []
@@ -96,7 +95,7 @@ class ProcessChecker(BaseChecker):
 
     def _check_snapshot_freshness(self) -> CheckResult:
         """steering/snapshot.json published_at within 45s."""
-        snap = self._root / "steering" / "snapshot.json"
+        snap = self.root / "steering" / "snapshot.json"
         if not snap.exists():
             return CheckResult(
                 name="snapshot_freshness",
@@ -156,7 +155,7 @@ class ProcessChecker(BaseChecker):
 
     def _check_monitor_freshness(self) -> CheckResult:
         """steering/monitor.json updated within 60s."""
-        mon = self._root / "steering" / "monitor.json"
+        mon = self.root / "steering" / "monitor.json"
         if not mon.exists():
             return CheckResult(
                 name="monitor_freshness",
@@ -190,7 +189,7 @@ class ProcessChecker(BaseChecker):
 
     def _check_run_state(self) -> CheckResult:
         """workspace/run_state.json — paused or entries_halted?"""
-        rs = self._root / "workspace" / "run_state.json"
+        rs = self.root / "workspace" / "run_state.json"
         if not rs.exists():
             return CheckResult(
                 name="run_state",
@@ -229,7 +228,7 @@ class ProcessChecker(BaseChecker):
 
     def _check_code_version(self) -> CheckResult:
         """Compare snapshot code_version vs git rev-parse HEAD."""
-        snap = self._root / "steering" / "snapshot.json"
+        snap = self.root / "steering" / "snapshot.json"
         if not snap.exists():
             return CheckResult(
                 name="code_version",
@@ -250,7 +249,7 @@ class ProcessChecker(BaseChecker):
             r = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
                 capture_output=True, text=True, timeout=5,
-                cwd=str(self._root),
+                cwd=str(self.root),
             )
             head_sha = r.stdout.strip()[:8] if r.returncode == 0 else None
             if head_sha and snap_sha[:8] != head_sha:

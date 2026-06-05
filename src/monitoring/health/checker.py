@@ -4,6 +4,7 @@ from __future__ import annotations
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -26,9 +27,22 @@ class BaseChecker(ABC):
     Each subclass implements ``check()`` which returns a list of ``CheckResult``
     objects.  The dispatcher calls ``check()`` inside a try/except so one failing
     checker never brings down the whole report.
+
+    ``project_root`` can be injected by the dispatcher (e.g. to point at the
+    main checkout when running from a worktree).  When not set, it is derived
+    from the checker module's file location.
     """
 
     dimension: str = "unknown"
+    _project_root: Path | None = None
+
+    @property
+    def root(self) -> Path:
+        """Project root directory — injected or derived from this file's location."""
+        if self._project_root is not None:
+            return self._project_root
+        # Derive from module path: .../src/monitoring/health/dimensions/foo.py → 6 levels up
+        return Path(__file__).resolve().parent.parent.parent.parent.parent
 
     def run_safe(self) -> DimensionResult:
         """Run ``check()`` wrapped with timing, error capture, and a per-check
@@ -65,10 +79,11 @@ class CheckerDispatcher:
     """Runs all registered checkers in parallel (ThreadPoolExecutor) and assembles
     a unified ``HealthReport``."""
 
-    def __init__(self, settings, max_workers: int = 6):
+    def __init__(self, settings, max_workers: int = 6, project_root: Path | str | None = None):
         self._settings = settings
         self._checkers: list[BaseChecker] = []
         self._max_workers = max_workers
+        self._project_root = Path(project_root) if project_root else None
 
     def register(self, checker: BaseChecker) -> None:
         self._checkers.append(checker)
@@ -84,6 +99,11 @@ class CheckerDispatcher:
             report.overall = CheckStatus.OK
             report.summary = "No health checkers registered."
             return report
+
+        # Inject project_root into all checkers before running
+        if self._project_root is not None:
+            for ch in self._checkers:
+                ch._project_root = self._project_root
 
         futures: dict = {}
         with ThreadPoolExecutor(max_workers=self._max_workers) as pool:

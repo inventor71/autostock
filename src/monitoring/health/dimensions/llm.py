@@ -16,7 +16,6 @@ class LLMChecker(BaseChecker):
 
     def __init__(self, settings):
         self._settings = settings
-        self._root = Path(__file__).parent.parent.parent.parent.parent
 
     def check(self) -> list[CheckResult]:
         results: list[CheckResult] = []
@@ -172,7 +171,7 @@ class LLMChecker(BaseChecker):
 
     def _check_cost(self) -> CheckResult:
         """Read today's turn cost from steering/monitor.json."""
-        mon = self._root / "steering" / "monitor.json"
+        mon = self.root / "steering" / "monitor.json"
         if not mon.exists():
             return CheckResult(
                 name="turn_cost",

@@ -17,8 +17,11 @@ class LogChecker(BaseChecker):
 
     def __init__(self, settings):
         self._settings = settings
-        self._root = Path(__file__).parent.parent.parent.parent.parent
-        self._log_path = self._root / "logs" / "autostock.log"
+
+    @property
+    def _log_path(self) -> Path:
+        """Resolved lazily so --root injection works from the dispatcher."""
+        return self.root / "logs" / "autostock.log"
 
     def check(self) -> list[CheckResult]:
         results: list[CheckResult] = []
@@ -194,7 +197,7 @@ class LogChecker(BaseChecker):
             )
         try:
             size_mb = self._log_path.stat().st_size / (1024 * 1024)
-            logs_dir = self._root / "logs"
+            logs_dir = self.root / "logs"
             rotated = list(logs_dir.glob("autostock.log.*"))
             if size_mb > 15 and not rotated:
                 return CheckResult(
