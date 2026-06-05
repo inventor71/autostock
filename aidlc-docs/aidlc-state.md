@@ -77,7 +77,7 @@
 | F61 | 리서치 턴 주식 시그널 강화 — 시장 무버/뉴스 catalyst 포착 + 종목 간 read-through 전파 | merged | feat/F61 → main 1437d44 | .claude/worktrees/F61 (제거됨) | — (parent-repo Python) | e8b112b→1437d44 | 2026-06-05 |
 | F62 | 귀속/효능 기반 — 레슨/프롬프트버전→결정→결과 링크 + 효능 스코어 (자가학습 에픽 U0) | merged | feat/F62 → main 9342691 | — | — (monorepo) | 43b26d7→9342691 | 2026-06-06 |
 | F63 | Health Check Loop — AI-driven 시스템 모니터링 (9차원) | active | feat/F63 | .claude/worktrees/F63 | — (monorepo) | b89735d | 2026-06-06 |
-| F65 | 하이브리드 회상 — 상황 기반 레슨 회상 (태그 사전필터+LLM 재랭크), F62 위 분기 | active (paused) | feat/F65 (TBD) | .claude/worktrees/F65 (TBD) | — (monorepo) | F62 merge (TBD) | 2026-06-05 |
+| F65 | 하이브리드 회상 — 상황 기반 레슨 회상 (태그 사전필터+LLM 재랭크), F62 위 분기 | merged | feat/F65 → main 89927c7 | — | — (monorepo) | 43b26d7→89927c7 | 2026-06-06 |
 | F64 | 헌장 경계 자가재작성 — 불변 헌장 안에서 가이던스 프롬프트 자동 진화, F65 위 분기 | active (paused) | feat/F64 (TBD) | .claude/worktrees/F64 (TBD) | — (monorepo) | F65 merge (TBD) | 2026-06-05 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
