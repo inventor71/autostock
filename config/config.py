@@ -37,7 +37,6 @@ class DataConfig(BaseModel):
 
 
 class TradingConfig(BaseModel):
-    symbols: list[str] = ["AAPL", "SPY"]
     mode: str = "batch"
     batch_interval_minutes: int = 60
 
@@ -128,6 +127,7 @@ class Settings(BaseSettings):
     intraday: dict = {}
     research: dict = {}
     signals: dict = {}  # F61 market-signal collection (parsed by SignalsConfig)
+    universe: dict = {}
 
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
@@ -138,6 +138,15 @@ class Settings(BaseSettings):
     broker_account_id: str = ""
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+
+    # KIS (한국투자증권) — paper(모의) and live(실전) kept separate (NFR-6 safety).
+    # ``account`` is "CANO-PRDT" e.g. "12345678-01".
+    kis_paper_api_key: str = ""
+    kis_paper_api_secret: str = ""
+    kis_paper_account: str = ""
+    kis_live_api_key: str = ""
+    kis_live_api_secret: str = ""
+    kis_live_account: str = ""
 
     model_config = {
         "env_prefix": "",

@@ -933,55 +933,84 @@ class RiskManager:
         self,
         portfolio: PortfolioState,
         protected_symbols: set[str] | None = None,
+        stop_overrides: dict[str, float] | None = None,
     ) -> list[Order]:
         """Check positions for stop-loss triggers.
 
         ``protected_symbols`` are positions already covered by a resting
         exchange-side stop; they are skipped so this polled check acts only as
         a backup for positions without resting protection.
+
+        ``stop_overrides`` maps symbol → an explicit stop *price* (the agent's
+        per-decision level — e.g. KIS paper, where no exchange stop rests). When a
+        symbol has one, it triggers at ``current_price <= price`` instead of the
+        flat ``stop_loss_pct``, so the agent's intended stop is honoured.
         """
         protected = protected_symbols or set()
+        overrides = stop_overrides or {}
         orders = []
         for symbol, position in portfolio.positions.items():
             if symbol in protected:
                 continue
             if position.avg_entry_price <= 0:
                 continue
-            if position.side == PositionSide.SHORT:
-                # A short loses as price rises; exit by covering.
-                loss_pct = (
-                    (position.current_price - position.avg_entry_price)
-                    / position.avg_entry_price
+            stop_price = overrides.get(symbol)
+            if stop_price and stop_price > 0:
+                # Explicit journalled stop (KIS paper: no exchange stop rests).
+                # Trigger at price, not the flat pct. Overrides come only from a
+                # long OCO group, so the exit is a SELL.
+                if position.current_price > stop_price:
+                    continue
+                logger.warning(
+                    f"Stop-loss triggered for {symbol}: "
+                    f"price={position.current_price:.2f} <= stop={stop_price:.2f}"
                 )
-                threshold = self.short_stop_loss_pct
-                exit_side = OrderSide.BUY_TO_COVER
-            else:
-                loss_pct = (
-                    (position.avg_entry_price - position.current_price)
-                    / position.avg_entry_price
-                )
-                threshold = self.stop_loss_pct
                 exit_side = OrderSide.SELL
-            if loss_pct >= threshold:
+            else:
+                if position.side == PositionSide.SHORT:
+                    # A short loses as price rises; exit by covering.
+                    loss_pct = (
+                        (position.current_price - position.avg_entry_price)
+                        / position.avg_entry_price
+                    )
+                    threshold = self.short_stop_loss_pct
+                    exit_side = OrderSide.BUY_TO_COVER
+                else:
+                    loss_pct = (
+                        (position.avg_entry_price - position.current_price)
+                        / position.avg_entry_price
+                    )
+                    threshold = self.stop_loss_pct
+                    exit_side = OrderSide.SELL
+                if loss_pct < threshold:
+                    continue
                 logger.warning(
                     f"Stop-loss triggered for {symbol} ({position.side.value}): "
                     f"loss={loss_pct:.1%} >= {threshold:.1%}"
                 )
-                orders.append(Order(
-                    symbol=symbol,
-                    side=exit_side,
-                    qty=position.qty,
-                ))
+            orders.append(Order(
+                symbol=symbol,
+                side=exit_side,
+                qty=position.qty,
+            ))
         return orders
 
     def check_take_profit(
         self,
         portfolio: PortfolioState,
         protected_symbols: set[str] | None = None,
+        tp_protected: set[str] | None = None,
     ) -> list[Order]:
-        """Check positions for take-profit triggers (skips ``protected_symbols``
-        already covered by a resting exchange-side take-profit)."""
-        protected = protected_symbols or set()
+        """Check positions for take-profit triggers.
+
+        ``protected_symbols`` are symbols already covered by a resting
+        exchange-side stop (bracket OCO) — skipped so the polled backup never
+        double-exits.
+
+        ``tp_protected`` is an additional set of symbols whose take-profit leg
+        is already resting at the exchange (e.g. KIS emulated-OCO LIMIT sell).
+        Merged with ``protected_symbols`` for the TP check only."""
+        protected = (protected_symbols or set()) | (tp_protected or set())
         orders = []
         for symbol, position in portfolio.positions.items():
             if symbol in protected:

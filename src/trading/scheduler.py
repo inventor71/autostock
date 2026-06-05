@@ -81,37 +81,53 @@ class TradingScheduler:
         )
         logger.info(f"Scheduled daily job '{job_id}' at {hour:02d}:{minute:02d} {timezone}")
 
-    def add_market_open_job(self, func, job_id: str = "market_open") -> None:
-        """Run a job at US market open (9:30 AM ET, Mon-Fri)."""
+    def add_market_open_job(
+        self,
+        func,
+        job_id: str = "market_open",
+        timezone: str = "US/Eastern",
+        hour: int = 9,
+        minute: int = 30,
+    ) -> None:
+        """Run a job at market open. Defaults to US open (9:30 AM ET, Mon-Fri);
+        a KR broker passes timezone="Asia/Seoul", hour=9, minute=0."""
         self._scheduler.add_job(
             func,
             trigger=CronTrigger(
                 day_of_week="mon-fri",
-                hour=9,
-                minute=30,
-                timezone="US/Eastern",
+                hour=hour,
+                minute=minute,
+                timezone=timezone,
             ),
             id=job_id,
             replace_existing=True,
             **_JOB_DEFAULTS,
         )
-        logger.info(f"Scheduled market open job '{job_id}'")
+        logger.info(f"Scheduled market open job '{job_id}' at {hour:02d}:{minute:02d} {timezone}")
 
-    def add_market_close_job(self, func, job_id: str = "market_close") -> None:
-        """Run a job near US market close (3:55 PM ET, Mon-Fri)."""
+    def add_market_close_job(
+        self,
+        func,
+        job_id: str = "market_close",
+        timezone: str = "US/Eastern",
+        hour: int = 15,
+        minute: int = 55,
+    ) -> None:
+        """Run a job near market close. Defaults to US close (3:55 PM ET, Mon-Fri);
+        a KR broker passes timezone="Asia/Seoul", hour=15, minute=20."""
         self._scheduler.add_job(
             func,
             trigger=CronTrigger(
                 day_of_week="mon-fri",
-                hour=15,
-                minute=55,
-                timezone="US/Eastern",
+                hour=hour,
+                minute=minute,
+                timezone=timezone,
             ),
             id=job_id,
             replace_existing=True,
             **_JOB_DEFAULTS,
         )
-        logger.info(f"Scheduled market close job '{job_id}'")
+        logger.info(f"Scheduled market close job '{job_id}' at {hour:02d}:{minute:02d} {timezone}")
 
     def start(self) -> None:
         if not self._running:

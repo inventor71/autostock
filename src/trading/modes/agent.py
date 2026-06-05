@@ -394,6 +394,14 @@ class AgentTradingMode:
             return cfg.research_timeout
         return auto
 
+    def _oco_reconcile_tick(self) -> None:
+        """Cancel the dangling OCO leg after a position exits (KIS emulated OCO).
+        Always-on so a standalone (no-steering) KIS run still reconciles."""
+        try:
+            self.executor.broker.reconcile_oco()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"OCO reconcile tick skipped: {e}")
+
     def start(self, fresh: bool = False) -> None:
         rh, rm = self._resolve_research_schedule()
         resolved_timeout = self._resolve_research_timeout()
@@ -405,15 +413,38 @@ class AgentTradingMode:
         if self.steering is not None:
             self.steering.start()
 
-        self.scheduler.add_daily_job(
-            self._premarket_research, hour=rh, minute=rm, job_id="agent_research",
-        )
-        self.scheduler.add_market_open_job(self._open_execute, job_id="agent_open")
+        # Broker-driven trading calendar: a KR broker (KIS) carries a KST schedule;
+        # others fall back to the US/Eastern defaults.
+        broker = self.executor.broker
+        sched = getattr(broker, "market_schedule", None)
+        if sched:
+            tz = sched["timezone"]
+            self.scheduler.add_daily_job(
+                self._premarket_research, hour=sched["research"][0],
+                minute=sched["research"][1], job_id="agent_research", timezone=tz,
+            )
+            self.scheduler.add_market_open_job(
+                self._open_execute, "agent_open", timezone=tz,
+                hour=sched["open"][0], minute=sched["open"][1])
+            self.scheduler.add_market_close_job(
+                self._eod, "agent_eod", timezone=tz,
+                hour=sched["close"][0], minute=sched["close"][1])
+        else:
+            self.scheduler.add_daily_job(
+                self._premarket_research, hour=rh, minute=rm, job_id="agent_research",
+            )
+            self.scheduler.add_market_open_job(self._open_execute, job_id="agent_open")
+            self.scheduler.add_market_close_job(self._eod, job_id="agent_eod")
         self.scheduler.add_batch_job(
             self._intraday, interval_minutes=self.intraday_minutes, job_id="agent_intraday"
         )
-        self.scheduler.add_market_close_job(self._eod, job_id="agent_eod")
         self._setup_early_session()
+        # Always-on (steering-independent) OCO reconcile for brokers that emulate
+        # OCO at the exchange (KIS): cancels the dangling leg once a position exits.
+        # The steering seconds-jobs below are gated on steering, so a standalone KIS
+        # run would otherwise never reconcile (F30 HIGH-1).
+        if hasattr(broker, "reconcile_oco"):
+            self.scheduler.add_seconds_job(self._oco_reconcile_tick, 5, "kis_reconcile")
         if self.steering is not None:
             self.scheduler.add_seconds_job(self.steering.poll_commands, 2, "steering_poll")
             self.scheduler.add_seconds_job(self.steering.publish_snapshot, 5, "steering_snapshot")

@@ -28,6 +28,7 @@ dependencies = [
     "numpy>=1.25.0",
     "anthropic>=0.18.0",
     "openai>=1.12.0",
+    "python-kis==2.1.6",  # KIS OpenAPI SDK (import: pykis) — Korean-equity broker/data
 ]
 
 [project.optional-dependencies]

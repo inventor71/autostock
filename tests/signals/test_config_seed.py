@@ -14,6 +14,7 @@ import pytest
 from config.config import get_settings
 from src.signals.peer_map import PeerMap
 from src.signals.settings import SignalsConfig
+from src.universe.factory import resolve_universe
 
 
 @pytest.fixture(scope="module")
@@ -28,7 +29,10 @@ def peer_map(cfg) -> PeerMap:
 
 @pytest.fixture(scope="module")
 def universe() -> set[str]:
-    return {s.upper() for s in get_settings().trading.symbols}
+    # F30 replaced the static trading.symbols list with a provider-resolved
+    # universe (US S&P 100 base ∪ themes, snapshot-backed). The read-through
+    # guard checks against that resolved tradeable set.
+    return {s.upper() for s in resolve_universe(get_settings(), market="us")}
 
 
 def test_every_bellwether_reads_through_to_a_universe_name(cfg, peer_map, universe):

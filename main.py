@@ -8,10 +8,20 @@ from loguru import logger
 
 from config.config import get_settings, load_strategies_config
 from src.monitoring.logger import setup_logging
+from src.universe.factory import resolve_universe
 
 
-def create_data_provider(settings):
-    """Create data provider based on config."""
+def create_data_provider(settings, broker=None):
+    """Create data provider based on config. A KIS broker shares its REST client
+    (so both honour one token, respecting KIS's 1-issuance/min cap)."""
+    if (settings.broker.name or "").lower() == "kis" or settings.data.provider == "kis":
+        from src.data.providers.kis_provider import KisDataProvider
+        client = getattr(broker, "client", None)
+        if client is not None:
+            return KisDataProvider("", "", client=client)
+        return KisDataProvider(
+            settings.kis_paper_api_key, settings.kis_paper_api_secret,
+            paper=settings.broker.paper)
     if settings.data.provider == "alpaca":
         from src.data.providers.alpaca_provider import AlpacaDataProvider
         return AlpacaDataProvider(
@@ -24,7 +34,15 @@ def create_data_provider(settings):
 
 
 def create_broker(settings):
-    """Create broker based on config."""
+    """Create broker based on config (alpaca | kis | broker_api)."""
+    if (settings.broker.name or "").lower() == "kis":
+        if not settings.broker.paper:
+            raise NotImplementedError("KIS live broker not yet implemented (paper only)")
+        from src.execution.brokers.kis_broker import KisPaperBroker
+        return KisPaperBroker(
+            settings.kis_paper_api_key, settings.kis_paper_api_secret,
+            settings.kis_paper_account, paper=True,
+        )
     provider = settings.broker.provider
     if provider == "broker_api":
         from src.execution.brokers.broker_api_broker import BrokerApiBroker
@@ -34,14 +52,13 @@ def create_broker(settings):
             account_id=settings.broker_account_id,
             sandbox=True,
         )
-    else:
-        # default: alpaca (Trading API)
-        from src.execution.brokers.alpaca_broker import AlpacaBroker
-        return AlpacaBroker(
-            api_key=settings.alpaca_api_key,
-            secret_key=settings.alpaca_api_secret,
-            paper=settings.broker.paper,
-        )
+    # default: alpaca (Trading API)
+    from src.execution.brokers.alpaca_broker import AlpacaBroker
+    return AlpacaBroker(
+        api_key=settings.alpaca_api_key,
+        secret_key=settings.alpaca_api_secret,
+        paper=settings.broker.paper,
+    )
 
 
 def _resolve_api_key(settings, provider: str) -> str:
@@ -132,7 +149,7 @@ def run_backtest(
     risk_config = settings.risk.model_dump()
 
     # Load market data for entire universe
-    universe = settings.trading.symbols
+    universe = resolve_universe(settings)
     logger.info(f"Loading market data for {len(universe)} symbols...")
     bars_dict = {}
     for symbol in universe:
@@ -263,8 +280,8 @@ def run_paper(settings, strategies_config: dict) -> None:
         logger.error("No strategies configured")
         return
 
-    data_provider = create_data_provider(settings)
     broker = create_broker(settings)
+    data_provider = create_data_provider(settings, broker=broker)
     risk_manager = RiskManager(
         max_position_pct=settings.risk.max_position_pct,
         max_portfolio_risk=settings.risk.max_portfolio_risk,
@@ -308,7 +325,7 @@ def run_paper(settings, strategies_config: dict) -> None:
         broker=broker,
         strategies=strategies,
         risk_manager=risk_manager,
-        universe=settings.trading.symbols,
+        universe=resolve_universe(settings, client=getattr(broker, "client", None)),
         timeframe=timeframe,
     )
 
@@ -372,8 +389,8 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
     from src.risk.manager import RiskManager
     from src.trading.modes.agent import AgentTradingMode
 
-    data_provider = create_data_provider(settings)
     broker = create_broker(settings)
+    data_provider = create_data_provider(settings, broker=broker)
     risk_manager = RiskManager(
         max_position_pct=settings.risk.max_position_pct,
         max_portfolio_risk=settings.risk.max_portfolio_risk,
@@ -393,7 +410,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         use_bracket_orders=True,
     )
 
-    universe = list(settings.trading.symbols)
+    universe = resolve_universe(settings, client=getattr(broker, "client", None))
     session = AgentSession(model=settings.agent.model, timeout=settings.agent.turn_timeout)
     research_signals = settings.research.get("signals") if settings.research else None
     reflection_cfg = settings.research.get("reflection", {}) if settings.research else {}
@@ -501,7 +518,8 @@ def main():
     mode = args.mode or settings.app.mode
     log_level = args.log_level or settings.app.log_level
     if args.symbols:
-        settings.trading.symbols = args.symbols
+        # --symbols overrides the resolved universe for every run mode.
+        settings.universe = {**(settings.universe or {}), "override": args.symbols}
 
     setup_logging(level=log_level, log_file="logs/autostock.log")
     logger.info(f"Autostock starting in {mode} mode")

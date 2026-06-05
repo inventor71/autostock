@@ -77,9 +77,32 @@ def run_polled_exits(
         if price is not None:
             position.update_price(price)
 
+    # Per-symbol stop levels for brokers that emulate the stop off-exchange (KIS
+    # paper): the polled exit then fires at the agent's level, not the flat pct.
+    stop_overrides: dict[str, float] = {}
+    getter = getattr(broker, "get_protective_stops", None)
+    if getter is not None:
+        try:
+            stop_overrides = getter()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"get_protective_stops failed: {e}")
+
+    # Symbols whose take-profit leg is already resting at the exchange (KIS
+    # emulated-OCO LIMIT sell). They are skipped by the polled TP check so a
+    # market sell at the flat pct doesn't undercut the agent's intended price.
+    tp_protected: set[str] | None = None
+    oco_getter = getattr(broker, "get_oco_armed_symbols", None)
+    if oco_getter is not None:
+        try:
+            armed = oco_getter()
+            if armed:
+                tp_protected = armed
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"get_oco_armed_symbols failed: {e}")
+
     exit_orders = (
-        risk_manager.check_stop_loss(portfolio, protected_symbols)
-        + risk_manager.check_take_profit(portfolio, protected_symbols)
+        risk_manager.check_stop_loss(portfolio, protected_symbols, stop_overrides)
+        + risk_manager.check_take_profit(portfolio, protected_symbols, tp_protected)
     )
 
     filled: list[FilledOrder] = []

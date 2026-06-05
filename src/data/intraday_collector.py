@@ -165,7 +165,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     settings = get_settings()
-    symbols = args.symbols or list(settings.trading.symbols)
+    from src.universe.factory import resolve_universe
+    symbols = list(args.symbols) if args.symbols else resolve_universe(settings)
     timeframe = TimeFrame(args.timeframe)
     store = IntradayFeatureStore()
 

@@ -10,6 +10,17 @@ from src.core.models import FilledOrder, OpenOrder, Order, Position, PortfolioSt
 class BaseBroker(ABC):
     """Abstract base class for all brokers."""
 
+    # Benchmark symbol whose day-change feeds the market-wide circuit breaker.
+    # US brokers track the S&P 500 proxy; a KR broker overrides this to a Korean
+    # index proxy (e.g. KODEX 200, "069500").
+    halt_reference_symbol: str = "SPY"
+
+    # How long to wait for a cancel to release held qty before re-submitting a
+    # replacement (the executor polls open orders for this long). Alpaca cancels
+    # asynchronously and needs the wait; brokers that cancel synchronously
+    # override this to 0 to avoid a throttled polling stall.
+    cancel_settle_wait: float = 6.0
+
     def get_open_orders(self, symbol: str | None = None) -> list[OpenOrder]:
         """List resting (open) orders, optionally for one symbol.
 
