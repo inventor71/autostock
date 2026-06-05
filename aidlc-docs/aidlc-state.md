@@ -79,6 +79,8 @@
 | F63 | Health Check Loop — AI-driven 시스템 모니터링 (9차원) | active | feat/F63 | .claude/worktrees/F63 | — (monorepo) | b89735d | 2026-06-06 |
 | F65 | 하이브리드 회상 — 상황 기반 레슨 회상 (태그 사전필터+LLM 재랭크), F62 위 분기 | merged | feat/F65 → main 89927c7 | — | — (monorepo) | 43b26d7→89927c7 | 2026-06-06 |
 | F64 | 헌장 경계 자가재작성 — 불변 헌장 안에서 가이던스 프롬프트 자동 진화, F65 위 분기 | merged | feat/F64 → main a383f8d | — | — (monorepo) | 43b26d7→a383f8d | 2026-06-06 |
+| F66 | Health Check 발견 이슈 수정 — LLM provider 정합성 + circuit breaker 키 | merged | feat/F66 → main fff3d9e | — | — (monorepo) | f17d595→fff3d9e | 2026-06-06 |
+| F67 | 자가학습 스택 code-review 핫픽스 — efficacy ts AttributeError + stamp 인덱스 + 캐시 원자성 + regime 매칭 + 프롬프트 조립 일반화 | active | feat/F67 | .claude/worktrees/F67 | — (monorepo) | f17d595 | 2026-06-06 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
