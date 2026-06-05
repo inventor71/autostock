@@ -1,5 +1,18 @@
 name: CodeKB Refresh
 
+# Re-runs Reverse Engineering on every push to main and overwrites aidlc-docs/codekb/.
+# Single writer of CodeKB = this CI job (see .aidlc-rule-details/common/codekb.md).
+#
+# NOTE: anthropics/claude-code-action does NOT support the `push` event (it is built for
+# @claude mentions on PR/issue events). So we run the Claude Code CLI directly in headless
+# (`-p`) mode instead, which works on any event.
+#
+# Auth: CLAUDE_CODE_OAUTH_TOKEN (subscription token). We deliberately do NOT pass `--bare`,
+# because bare mode skips OAuth/keychain and only honors ANTHROPIC_API_KEY.
+#
+# Billing: from 2026-06-15, `claude -p` on subscription plans draws from a separate monthly
+# Agent SDK credit (distinct from interactive usage). This job consumes that credit.
+
 on:
   push:
     branches:
@@ -7,6 +20,7 @@ on:
     paths-ignore:
       # Don't trigger on CodeKB-only commits (prevents infinite loops)
       - 'aidlc-docs/codekb/**'
+  workflow_dispatch:        # allow manual trigger from the Actions tab (test runs)
 
 jobs:
   refresh-codekb:
@@ -21,35 +35,49 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run Reverse Engineering
-        uses: anthropics/claude-code-action@v1
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          model: sonnet
-          prompt: |
-            Run the full Reverse Engineering phase on this codebase.
+          node-version: '20'
 
-            Follow the procedure in `.aidlc-rule-details/inception/reverse-engineering.md`
-            Steps 1 through 10, but write ALL output artifacts to `aidlc-docs/codekb/`
-            instead of a per-track directory:
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
 
-            - `aidlc-docs/codekb/summary.md` (distill from business-overview.md format)
-            - `aidlc-docs/codekb/architecture.md` (system-level architecture)
-            - `aidlc-docs/codekb/integration-map.md` (external integrations)
-            - `aidlc-docs/codekb/domain-entities.md` (key domain models)
-            - `aidlc-docs/codekb/business-rules.md` (business logic rules)
-            - `aidlc-docs/codekb/nfr-design.md` (NFR patterns)
-            - `aidlc-docs/codekb/infrastructure-design.md` (deployment architecture)
+      - name: Run Reverse Engineering -> CodeKB
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          PROMPT=$(cat <<'PROMPT_EOF'
+          Run the full Reverse Engineering phase on this codebase.
 
-            Follow the schema defined in `.aidlc-rule-details/common/codekb.md` for each file.
+          Follow the procedure in `.aidlc-rule-details/inception/reverse-engineering.md`
+          Steps 1 through 10, but write ALL output artifacts to `aidlc-docs/codekb/`
+          instead of a per-track directory. Write ONLY under `aidlc-docs/codekb/` — do not
+          modify any other files.
 
-            Then create/update `aidlc-docs/codekb/codekb-state.md`:
-            - Last Commit SHA: the current HEAD
-            - Last Refresh: current ISO 8601 timestamp
-            - Refreshed By: ci
-            - Schema Version: 1
+          - `aidlc-docs/codekb/summary.md` (distill from business-overview.md format)
+          - `aidlc-docs/codekb/architecture.md` (system-level architecture)
+          - `aidlc-docs/codekb/integration-map.md` (external integrations)
+          - `aidlc-docs/codekb/domain-entities.md` (key domain models)
+          - `aidlc-docs/codekb/business-rules.md` (business logic rules)
+          - `aidlc-docs/codekb/nfr-design.md` (NFR patterns)
+          - `aidlc-docs/codekb/infrastructure-design.md` (deployment architecture)
 
-            This is a CI job — no user interaction. Do not ask questions or wait for approval.
+          Follow the schema defined in `.aidlc-rule-details/common/codekb.md` for each file.
+
+          Then create/update `aidlc-docs/codekb/codekb-state.md`:
+          - Last Commit SHA: the current HEAD (run `git rev-parse HEAD`)
+          - Last Refresh: current ISO 8601 timestamp
+          - Refreshed By: ci
+          - Schema Version: 1
+
+          This is a CI job — no user interaction. Do not ask questions or wait for approval.
+          PROMPT_EOF
+          )
+          claude -p "$PROMPT" \
+            --model sonnet \
+            --permission-mode acceptEdits \
+            --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
 
       - name: Commit and push CodeKB refresh
         run: |
