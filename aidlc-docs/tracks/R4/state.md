@@ -7,12 +7,12 @@
 - **Track ID**: R4
 - **Title**: Consolidate JSONL record read/write into `src/core/jsonl.py`
 - **Type**: refactor
-- **Status**: backlog  <!-- not started; pick up via /ai-dlc-resume or /ai-dlc-refactor -->
-- **Branch**: refactor/R4 (TBD)
-- **Worktree**: .claude/worktrees/R4 (TBD)
+- **Status**: active  <!-- picked up 2026-06-06 via /ai-dlc-refactor R4 -->
+- **Branch**: refactor/R4
+- **Worktree**: .claude/worktrees/R4
 - **Submodule branch**: — (Python only)
-- **Base commit**: ec2875c (survey point; rebase when picked up)
-- **Start Date**: TBD
+- **Base commit**: 9e9aec2 (main HEAD at pick-up)
+- **Start Date**: 2026-06-06
 
 ## Extension Configuration
 - **Security Baseline**: N/A (no new I/O surface, no secrets).
@@ -33,9 +33,11 @@ See `inception/refactor/jsonl-helper/guide.md`.
   Wide light touch → do this when those areas are quiet (no active F-track editing them).
 - **API/시그니처 변경**: none public; internal helper introduction only.
 
-## Stage Progress (skill: ai-dlc-refactor) — NOT STARTED
-- [ ] Stage 1 — Baseline + characterization (lean on existing per-log round-trip tests)
-- [ ] Stage 2 — Tier ledger (expect all-T1)
-- [ ] Stage 3 — Redesign (`read_records`/`append_record` signature; corruption/empty-line policy)
-- [ ] Stage 4 — Implementation (migrate call sites incrementally, green per file)
-- [ ] Build & Test
+## Stage Progress (skill: ai-dlc-refactor)
+- [x] Stage 1 — Baseline (`1-baseline.md`) + characterization (`tests/test_jsonl.py`, 10 tests)
+- [x] Stage 2 — Tier ledger (`2-tier-ledger.md`) — all-T1, no T3 gate
+- [x] Stage 3 — Redesign (`3-redesign.md`) — `core/jsonl.py` API + shim + migration order
+- [x] Stage 4 — Implementation (`4-implementation.md`) — promoted primitives + 3 helpers; migrated
+      equity/trades/turn/surge; steering→shim
+- [x] Build & Test — full suite **984 passed, 0 failed**; py_compile clean
+- Status: **merge-awaiting** (docs on main; code on refactor/R4)
