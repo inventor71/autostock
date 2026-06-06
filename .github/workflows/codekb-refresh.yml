@@ -1,17 +1,28 @@
 name: CodeKB Refresh
 
-# Re-runs Reverse Engineering on every push to main and overwrites aidlc-docs/codekb/.
+# Re-runs Reverse Engineering on push to main and overwrites aidlc-docs/codekb/.
 # Single writer of CodeKB = this CI job (see .aidlc-rule-details/common/codekb.md).
 #
-# NOTE: anthropics/claude-code-action does NOT support the `push` event (it is built for
-# @claude mentions on PR/issue events). So we run the Claude Code CLI directly in headless
-# (`-p`) mode instead, which works on any event.
+# NOTE: anthropics/claude-code-action does NOT support the `push` event (it targets
+# @claude mentions on PR/issue events). So we run the Claude Code CLI directly in
+# headless (`-p`) mode, which works on any event.
 #
-# Auth: CLAUDE_CODE_OAUTH_TOKEN (subscription token). We deliberately do NOT pass `--bare`,
-# because bare mode skips OAuth/keychain and only honors ANTHROPIC_API_KEY.
+# Auth: CLAUDE_CODE_OAUTH_TOKEN (subscription token). Do NOT pass `--bare` — bare mode
+# skips OAuth/keychain and only honors ANTHROPIC_API_KEY.
 #
-# Billing: from 2026-06-15, `claude -p` on subscription plans draws from a separate monthly
-# Agent SDK credit (distinct from interactive usage). This job consumes that credit.
+# COOLDOWN + MAJOR-CHANGE OVERRIDE (token saving):
+#   - A refresh runs at most once per COOLDOWN_SECONDS (4h), measured from the git
+#     commit time of the last bot-authored `codekb refresh` commit.
+#   - EXCEPTION: if code changed since that baseline exceeds MAJOR_CHANGE_BP (3.00%)
+#     of total src lines, the cooldown is bypassed (a major change refreshes immediately).
+#   - `workflow_dispatch` always bypasses the cooldown (manual test runs).
+#   The last-refresh commit is identified by author `codekb-ci` (the bot) AND message,
+#   so ordinary commits that merely mention "codekb refresh" don't get mistaken for it.
+#   Trade-off: within the window CodeKB lags HEAD; tracks detect this via SHA mismatch
+#   (stale-but-approximate) per common/codekb.md.
+#
+# Billing: from 2026-06-15, `claude -p` on subscription plans draws from a separate
+# monthly Agent SDK credit (distinct from interactive usage). This job consumes that.
 
 on:
   push:
@@ -20,7 +31,7 @@ on:
     paths-ignore:
       # Don't trigger on CodeKB-only commits (prevents infinite loops)
       - 'aidlc-docs/codekb/**'
-  workflow_dispatch:        # allow manual trigger from the Actions tab (test runs)
+  workflow_dispatch:        # manual trigger from the Actions tab (bypasses cooldown)
 
 jobs:
   refresh-codekb:
@@ -35,15 +46,57 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Cooldown gate (skip if < 4h since last refresh, unless major change)
+        id: cooldown
+        run: |
+          COOLDOWN_SECONDS=14400      # 4h minimum interval between refreshes
+          MAJOR_CHANGE_BP=300         # >=3.00% of src changed bypasses cooldown
+          CODE_PATHSPEC='src/*.py'    # what counts as "code" for the change ratio
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — bypassing cooldown."
+            echo "skip=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # Baseline = last refresh, identified by the bot author (not just message text).
+          BASELINE=$(git log -1 --format=%H --author='codekb-ci' --grep='codekb refresh' 2>/dev/null || true)
+          if [ -z "$BASELINE" ]; then
+            echo "No prior bot refresh commit — proceeding."
+            echo "skip=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          LAST_EPOCH=$(git log -1 --format=%ct "$BASELINE")
+          AGE=$(( $(date +%s) - LAST_EPOCH ))
+          echo "Last codekb refresh ${AGE}s ago (cooldown ${COOLDOWN_SECONDS}s)."
+          if [ "$AGE" -ge "$COOLDOWN_SECONDS" ]; then
+            echo "Cooldown elapsed — proceeding."
+            echo "skip=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # Within cooldown — override only if a MAJOR code change landed since baseline.
+          CHANGED=$(git diff --numstat "$BASELINE"..HEAD -- "$CODE_PATHSPEC" | awk '{a+=$1; d+=$2} END{print a+d+0}')
+          TOTAL=$(git ls-files -z "$CODE_PATHSPEC" | xargs -0 cat 2>/dev/null | wc -l)
+          if [ "$TOTAL" -gt 0 ]; then BP=$(( CHANGED * 10000 / TOTAL )); else BP=0; fi
+          echo "Code change since baseline: ${CHANGED}/${TOTAL} lines = ${BP}bp (threshold ${MAJOR_CHANGE_BP}bp)."
+          if [ "$BP" -ge "$MAJOR_CHANGE_BP" ]; then
+            echo "Major change — bypassing cooldown."
+            echo "skip=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "Within cooldown and change below threshold — skipping refresh."
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+
       - name: Setup Node
+        if: steps.cooldown.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install Claude Code CLI
+        if: steps.cooldown.outputs.skip != 'true'
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Run Reverse Engineering -> CodeKB
+        if: steps.cooldown.outputs.skip != 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
@@ -67,7 +120,7 @@ jobs:
 
           Then create/update `aidlc-docs/codekb/codekb-state.md`:
           - Last Commit SHA: the current HEAD (run `git rev-parse HEAD`)
-          - Last Refresh: current ISO 8601 timestamp
+          - Last Refresh: the current UTC time (run `date -u +%Y-%m-%dT%H:%M:%SZ`)
           - Refreshed By: ci
           - Schema Version: 1
 
@@ -80,6 +133,7 @@ jobs:
             --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
 
       - name: Commit and push CodeKB refresh
+        if: steps.cooldown.outputs.skip != 'true'
         run: |
           git config user.name "codekb-ci[bot]"
           git config user.email "codekb-ci[bot]@users.noreply.github.com"
