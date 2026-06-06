@@ -43,6 +43,20 @@ def _fresh_impl(mock_broker=None, **overrides):
     impl._fill_poll_timeout = kwargs.get("fill_poll_timeout", 5.0)
     impl._fill_poll_interval = kwargs.get("fill_poll_interval", 0.2)
     impl._data_client = None
+    impl._etb_cache = {}
+    impl._etb_ttl = 1800.0
+    # Mirror __init__: SDK request-envelope classes + open-orders query (R3 dedup
+    # moved the shared algorithm to AlpacaShapedBroker, which reads these attrs).
+    from alpaca.broker.requests import (
+        MarketOrderRequest, LimitOrderRequest, StopOrderRequest, StopLimitOrderRequest,
+    )
+    from alpaca.trading.enums import QueryOrderStatus
+    impl._req_market = MarketOrderRequest
+    impl._req_limit = LimitOrderRequest
+    impl._req_stop = StopOrderRequest
+    impl._req_stop_limit = StopLimitOrderRequest
+    impl._req_trailing = None
+    impl._open_orders_status = QueryOrderStatus.ALL
     acct = MagicMock()
     acct.account_number = "PA000001"
     impl._c.get_trade_account_by_id.return_value = acct
@@ -483,3 +497,57 @@ class TestLedgerShimUnit:
         req = GetOrdersRequest()
         result = shim.get_orders(filter=req)
         c.get_orders_for_account.assert_called_once_with("acc-1", filter=req)
+
+
+# ── preserved divergences (R3 T3-1 / T3-2) ────────────────────────────────
+# These lock BrokerApiBroker's CURRENT (deliberately preserved) side/TIF behavior
+# so the shared base extraction can't silently change it and so track R7 (which
+# FIXES these) has to consciously update the asserted values. Without these, the
+# overrides could be dropped and CI would stay green while behavior flips.
+
+class TestPreservedSideMapping:
+    def test_buy_maps_to_buy(self):
+        from alpaca.trading.enums import OrderSide as AS
+        assert _fresh_impl()._alpaca_side(OrderSide.BUY) == AS.BUY
+
+    def test_sell_maps_to_sell(self):
+        from alpaca.trading.enums import OrderSide as AS
+        assert _fresh_impl()._alpaca_side(OrderSide.SELL) == AS.SELL
+
+    def test_sell_short_maps_to_sell(self):
+        from alpaca.trading.enums import OrderSide as AS
+        assert _fresh_impl()._alpaca_side(OrderSide.SELL_SHORT) == AS.SELL
+
+    def test_buy_to_cover_maps_to_SELL_quirk(self):
+        # PRESERVED BUG (T3-1): correct would be BUY; broker_api currently → SELL.
+        # R7 will flip this assertion to AS.BUY when it adopts the shared mapping.
+        from alpaca.trading.enums import OrderSide as AS
+        assert _fresh_impl()._alpaca_side(OrderSide.BUY_TO_COVER) == AS.SELL
+
+
+class TestPreservedTimeInForce:
+    def _o(self, tif, order_class=OrderClass.SIMPLE):
+        return Order(symbol="AAPL", side=OrderSide.BUY, qty=1, order_type=OrderType.MARKET,
+                     time_in_force=tif, order_class=order_class)
+
+    def test_gtc_maps_to_gtc(self):
+        from alpaca.trading.enums import TimeInForce
+        assert _fresh_impl()._time_in_force(self._o("gtc")) == TimeInForce.GTC
+
+    def test_day_maps_to_day(self):
+        from alpaca.trading.enums import TimeInForce
+        assert _fresh_impl()._time_in_force(self._o("day")) == TimeInForce.DAY
+
+    def test_unsupported_tif_silently_downgrades_to_DAY_not_raise(self):
+        # PRESERVED leniency (T3-2): Alpaca fail-closes here; broker_api → DAY.
+        # R7 will tighten this to raise BrokerError.
+        from alpaca.trading.enums import TimeInForce
+        assert _fresh_impl()._time_in_force(self._o("opg")) == TimeInForce.DAY
+        assert _fresh_impl()._time_in_force(self._o("ioc")) == TimeInForce.DAY
+
+    def test_bracket_forces_gtc(self):
+        from alpaca.trading.enums import TimeInForce
+        o = Order(symbol="AAPL", side=OrderSide.BUY, qty=1, order_class=OrderClass.BRACKET,
+                  order_type=OrderType.MARKET, take_profit_price=11, stop_loss_price=9,
+                  time_in_force="day")
+        assert _fresh_impl()._time_in_force(o) == TimeInForce.GTC
