@@ -5,51 +5,26 @@ agent both produces (analyses) and consumes (pattern reference), same class
 as ``decisions.jsonl`` / ``lessons.jsonl``.
 """
 
-import json
-import os
-import uuid
 from datetime import date as _date
 from pathlib import Path
 
 from loguru import logger
 
+from src.core.jsonl import atomic_write_text, read_records as _read_records
 from src.surge.records import SurgeAnalysis, SurgeRecord
 
 _HISTORY_FILE = "history.jsonl"
 _ANALYSES_FILE = "analyses.jsonl"
 
 
-def _is_valid_json(line: str) -> bool:
-    try:
-        json.loads(line)
-        return True
-    except json.JSONDecodeError:
-        return False
-
-
-def _read_complete_lines(path: Path) -> list[str]:
-    """Read all complete JSON lines, dropping a torn trailing line."""
-    if not path.exists():
-        return []
-    text = path.read_text()
-    lines = text.splitlines()
-    if lines and not _is_valid_json(lines[-1]):
-        logger.warning(f"surge store: torn last line in {path}, dropping")
-        lines.pop()
-    return lines
-
-
 def _atomic_append(path: Path, lines: list[str]) -> None:
-    """Append lines atomically via temp file + os.replace."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
-    try:
-        existing = path.read_text() if path.exists() else ""
-        tmp_path.write_text(existing + "\n".join(lines) + "\n")
-        os.replace(tmp_path, path)
-    finally:
-        if tmp_path.exists():
-            tmp_path.unlink(missing_ok=True)
+    """Append lines atomically (read existing + rewrite via temp + os.replace).
+
+    UTF-8 throughout (read + write) — consistent with the rest of the codebase and
+    with pydantic's UTF-8 ``model_dump_json``; ``atomic_write_text`` writes UTF-8.
+    """
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    atomic_write_text(path, existing + "\n".join(lines) + "\n")
 
 
 class SurgeStore:
@@ -95,17 +70,8 @@ class SurgeStore:
 
     def read_records(self, d: _date | None = None) -> list[SurgeRecord]:
         """Read surge records, optionally filtered by date."""
-        records: list[SurgeRecord] = []
-        for line in _read_complete_lines(self._history_path):
-            try:
-                r = SurgeRecord.model_validate_json(line)
-                if d is None or r.trading_date == d:
-                    records.append(r)
-            except Exception:
-                logger.warning(
-                    f"surge store: skipping unparseable line in {self._history_path}"
-                )
-        return records
+        records = _read_records(self._history_path, SurgeRecord, warn_skip=True)
+        return [r for r in records if d is None or r.trading_date == d]
 
     # ---- SurgeAnalysis ------------------------------------------------
 
@@ -135,14 +101,5 @@ class SurgeStore:
 
     def read_analyses(self, d: _date | None = None) -> list[SurgeAnalysis]:
         """Read analyses, optionally filtered by date."""
-        analyses: list[SurgeAnalysis] = []
-        for line in _read_complete_lines(self._analyses_path):
-            try:
-                a = SurgeAnalysis.model_validate_json(line)
-                if d is None or a.trading_date == d:
-                    analyses.append(a)
-            except Exception:
-                logger.warning(
-                    f"surge store: skipping unparseable line in {self._analyses_path}"
-                )
-        return analyses
+        analyses = _read_records(self._analyses_path, SurgeAnalysis, warn_skip=True)
+        return [a for a in analyses if d is None or a.trading_date == d]

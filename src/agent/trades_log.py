@@ -8,11 +8,12 @@ attribution are TODO (need the originating stop and the exit order type).
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
+
+from src.core.jsonl import append_records, read_records
 
 # match_round_trips moved to src/core/trades.py so the backtest engine can share
 # the exact same FIFO matching; re-exported here for existing callers/tests.
@@ -75,25 +76,11 @@ def record_trades(client, path: str | Path, since: str | None = None, min_notion
     new = [t for t in match_round_trips(fills) if _trade_key(t) not in existing]
     if not new:
         return []
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        for t in new:
-            fh.write(json.dumps(t) + "\n")
+    append_records(path, new)
     realized = sum(t["realized_pnl"] for t in new)
     logger.info("Trade ledger: +{} closed round-trip(s), realized {:+.2f}", len(new), realized)
     return new
 
 
 def read_trades(path: str | Path) -> list[dict]:
-    path = Path(path)
-    if not path.exists():
-        return []
-    out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return out
+    return read_records(path)
