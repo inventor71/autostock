@@ -220,6 +220,15 @@ class AlpacaBroker(BaseBroker):
             # Protection over an existing position: a take-profit LIMIT leg + a
             # stop-loss STOP leg. Alpaca requires an explicit take_profit leg
             # (not just the base limit_price).
+            #
+            # NOTE: extended_hours is intentionally NOT set here (it would be
+            # rejected). Alpaca only allows extended_hours on DAY+LIMIT orders;
+            # this OCO is GTC and carries a STOP leg, so enabling it fails the
+            # order outright and removes protection. Coverage works by the GTC
+            # STOP liquidating overnight/extended-hours gaps as market-on-touch
+            # at the next regular-session open (opening auction) -- not during
+            # the extended session itself. Intra-extended-hours exit would need
+            # a separate DAY+LIMIT order, which a STOP cannot provide.
             take_profit = TakeProfitRequest(limit_price=order.take_profit_price)
             stop_loss = StopLossRequest(stop_price=order.stop_loss_price)
             return LimitOrderRequest(
