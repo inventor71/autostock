@@ -2,6 +2,10 @@ active_strategies:
   - llm
 
 strategies:
+  buy_and_hold:
+    class: BuyAndHoldStrategy
+    params: {}
+
   ma_crossover:
     class: MovingAverageCrossover
     params:

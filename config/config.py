@@ -128,6 +128,7 @@ class Settings(BaseSettings):
     research: dict = {}
     signals: dict = {}  # F61 market-signal collection (parsed by SignalsConfig)
     universe: dict = {}
+    benchmark: dict = {}  # F70 shadow benchmark (parsed by BenchmarkConfig)
 
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
