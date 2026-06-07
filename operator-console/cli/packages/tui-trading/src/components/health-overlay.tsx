@@ -6,6 +6,10 @@ import { healthGlyph, healthColor } from "../utils/format"
 export interface HealthOverlayProps {
   report: HealthReport
   stale?: boolean
+  // Latest publish time for the "age" line. Defaults to report.ts, but the caller
+  // passes the live publish ts so age reflects the last publish, not the last verdict
+  // change (which would inflate while a healthy daemon republishes the same verdict).
+  ts?: string | null
   anchorX: number
   anchorY: number
   termWidth: number
@@ -23,8 +27,9 @@ export function HealthOverlay(props: HealthOverlayProps) {
   )
 
   const age = createMemo(() => {
-    const ms = Date.parse(report().ts)
-    if (Number.isNaN(ms)) return report().ts ?? ""
+    const tsStr = props.ts ?? report().ts
+    const ms = Date.parse(tsStr)
+    if (Number.isNaN(ms)) return tsStr ?? ""
     const secs = Math.max(0, Math.round((Date.now() - ms) / 1000))
     if (secs < 90) return `${secs}s ago`
     return `${Math.round(secs / 60)}m ago`

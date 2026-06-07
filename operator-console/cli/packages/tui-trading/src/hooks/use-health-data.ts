@@ -29,13 +29,22 @@ function contentSig(h: HealthReport): string {
 // Fallback stale window when the daemon didn't stamp publish_interval_seconds.
 const DEFAULT_STALE_MS = 20 * 60 * 1000
 
+// How often stale()/age re-evaluate against the wall clock. The verdict signal only
+// changes on a verdict change, so without this tick a daemon that stopped publishing
+// would never flip the glyph to STALE (nothing else re-renders the binding).
+const FRESHNESS_TICK_MS = 30 * 1000
+
 export function useHealthData(steeringDir: string, intervalMs = 5000) {
   const [health, setHealth] = createSignal<HealthReport | null>(null)
   let lastSig: string | null = null
-  // Freshness is tracked OUTSIDE the signal so a same-verdict republish doesn't
-  // churn the glyph/overlay, while stale() still sees the newest publish time.
-  let lastTs: string | null = null
-  let lastIntervalSec: number | null = null
+  // Freshness (publish time + cadence) is tracked in SIGNALS — separate from the
+  // verdict-gated `health` signal — so a same-verdict republish doesn't churn the
+  // glyph/overlay content, yet stale()/age stay reactive to the newest publish time.
+  const [lastTs, setLastTs] = createSignal<string | null>(null)
+  const [lastIntervalSec, setLastIntervalSec] = createSignal<number | null>(null)
+  // Wall-clock tick so stale()/age re-evaluate over time even with NO new publish
+  // (the dead-daemon case: nothing else would ever re-render the glyph).
+  const [now, setNow] = createSignal(Date.now())
 
   function poll(): void {
     let raw: string
@@ -52,31 +61,39 @@ export function useHealthData(steeringDir: string, intervalMs = 5000) {
     } catch {
       return // torn/partial — keep last good
     }
-    // Track freshness every poll regardless of verdict change.
-    lastTs = data.ts ?? lastTs
-    lastIntervalSec = data.publish_interval_seconds ?? lastIntervalSec
+    // Track freshness every poll regardless of verdict change. setSignal is a no-op
+    // when the value is unchanged, so a same-ts re-read won't trigger a re-render.
+    if (data.ts) setLastTs(data.ts)
+    if (data.publish_interval_seconds != null) setLastIntervalSec(data.publish_interval_seconds)
     const sig = contentSig(data)
-    if (sig === lastSig) return // verdict unchanged → no re-render
+    if (sig === lastSig) return // verdict unchanged → don't churn the report signal
     lastSig = sig
     setHealth(data)
   }
 
-  // Time-based; recomputed by callers via the accessor (not a signal).
+  // Reactive: reads the freshness signals + the wall-clock tick, so callers that
+  // render stale() re-evaluate both on a new publish and as time passes.
   function stale(): boolean {
-    if (!lastTs) return false
-    const ms = Date.parse(lastTs)
+    const ts = lastTs()
+    if (!ts) return false
+    const ms = Date.parse(ts)
     if (Number.isNaN(ms)) return false
-    const windowMs = lastIntervalSec ? lastIntervalSec * 3 * 1000 : DEFAULT_STALE_MS
-    return Date.now() - ms > windowMs
+    const win = lastIntervalSec()
+    const windowMs = win ? win * 3 * 1000 : DEFAULT_STALE_MS
+    return now() - ms > windowMs
   }
 
   poll()
   const timer = setInterval(poll, intervalMs)
-  onCleanup(() => clearInterval(timer))
+  const tick = setInterval(() => setNow(Date.now()), FRESHNESS_TICK_MS)
+  onCleanup(() => { clearInterval(timer); clearInterval(tick) })
 
   return {
     health,
     stale,
     overall: () => health()?.overall ?? null,
+    // Latest publish time (reactive) — the overlay uses this for "age" instead of the
+    // verdict-gated report.ts, which would inflate while a healthy daemon republishes.
+    lastTs,
   }
 }

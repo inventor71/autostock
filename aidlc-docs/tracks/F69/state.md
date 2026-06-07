@@ -8,7 +8,7 @@
 - **Track ID**: F69
 - **Title**: Health Check TUI 통합 — 데몬 발행 + TUI 글리프/오버레이 (F63 후속)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
+- **Status**: merge-awaiting  <!-- /code-review high fixes applied + re-verified (pytest 188, tsgo 19/19) 2026-06-07 -->
 - **Branch**: feat/F69
 - **Worktree**: .claude/worktrees/F69
 - **Submodule branch**: — (monorepo; operator-console/cli/packages/tui-trading 변경 포함)

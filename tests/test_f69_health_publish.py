@@ -118,6 +118,22 @@ def test_negative_cash_flags_warning(tmp_path):
     assert payload["overall"] in {"WARNING", "ERROR", "CRITICAL"}
 
 
+def test_account_partial_fields_no_crash(tmp_path):
+    """A snapshot with equity present but cash missing must not crash the f-string
+    (the formatted branch needs BOTH fields); the dimension falls back to a plain
+    'fields missing' detail and stays OK rather than being dropped from health.json."""
+    rt = _runtime(tmp_path)
+    rt.last_snapshot = {
+        "account": {"equity": 100_000.0, "position_count": 1},  # no cash
+        "market_open": True,
+    }
+    rt.publish_health()
+    payload = json.loads((tmp_path / "steering" / "health.json").read_text())
+    acct = payload["dimensions"]["account"]
+    assert acct["status"] == "OK"
+    assert "missing" in acct["checks"][0]["detail"].lower()
+
+
 def test_publish_health_never_raises(tmp_path, monkeypatch):
     """Best-effort: an unexpected failure must not propagate (it would crash the
     scheduler job); the previous health.json is simply left in place."""

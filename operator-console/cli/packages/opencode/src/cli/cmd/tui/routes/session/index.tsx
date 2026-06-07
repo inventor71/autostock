@@ -229,7 +229,7 @@ export function Session() {
   // F69: lightweight system-health glyph + overlay (reads steering/health.json).
   const healthHooks = steeringDir
     ? useHealthData(steeringDir)
-    : { health: () => null, stale: () => false, overall: () => null }
+    : { health: () => null, stale: () => false, overall: () => null, lastTs: () => null }
   const overlay = createOverlayStore()
 
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
@@ -1376,6 +1376,7 @@ export function Session() {
           <HealthOverlay
             report={overlay.state().health!}
             stale={healthHooks.stale()}
+            ts={healthHooks.lastTs()}
             anchorX={overlay.state().anchorX}
             anchorY={overlay.state().anchorY}
             termWidth={dimensions().width}
