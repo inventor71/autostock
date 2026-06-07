@@ -259,3 +259,7 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-07 — **F70 merged** → main e4676fc (feat/F70, ↑1, rebased onto post-R6 main, 충돌 없음). 섀도우 벤치마크(결정론 baseline 측정자) — src/benchmark/* + buy_and_hold; full suite 1063 passed. Worktree+branch cleaned.
 
 - 2026-06-07 — **F69 merged** → main a0025b3 (feat/F69, ↑3, rebased onto post-R6+F70 main). Health Check TUI 통합 (daemon steering/health.json publish + TUI glyph/overlay). runtime.py R6와 자동병합(검증: ET 전환+health imports 공존, stragglers 0), config.py F70와 자동병합. verify green (pytest 1071 + tsgo 19/19). Worktree+branch cleaned. Post-merge guide 존재(user-facing TUI).
+
+- 2026-06-08 — **/ai-dlc-merge triage** — 작업트리 노이즈=공유 aidlc-state.md(R7 active 행)만, foreign 없음 → 통과. 큐: R7 단독(merge-awaiting, post-F35, 겹침 없음).
+- 2026-06-08 — **/ai-dlc-merge 승인** — 큐: R7 단독. rebase→verify→merge→close 자율 진행.
+- 2026-06-08 — **R7 merged** (3dde03c) — BrokerApiBroker side/TIF 교정: BUY_TO_COVER→BUY(short-cover 버그), 미지원 TIF fail-closed(opg→raise, ioc/fok 지원). Alpaca/Broker API 동작 통일. 전체 1073 passed.

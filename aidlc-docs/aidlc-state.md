@@ -87,7 +87,7 @@
 | R4 | JSONL record read/write helper (src/core/jsonl.py) de-dup | merged | refactor/R4 → main f43366f | — | — (monorepo) | 9e9aec2 | 2026-06-07 |
 | R5 | `claude -p` headless runner — investigate shared JSON-envelope parser | abandoned (won't-do, Stage 0) | (never branched) | — | — (monorepo) | ec2875c | 2026-06-07 |
 | R6 | ET (market timezone) helper consolidation into core | merged | refactor/R6 → main 230f74d | — | — (monorepo) | 5e5c2a9 | 2026-06-07 |
-| R7 | Broker behavior fixes (broker_api short-side bug + fail-closed TIF) — deferred from R3 T3 gate | backlog | refactor/R7 (TBD) | — | — (monorepo) | post-R3 | 2026-06-06 |
+| R7 | Broker behavior fixes (broker_api short-side bug + fail-closed TIF) — deferred from R3 T3 gate | merged | refactor/R7 → main 3dde03c | — | — (monorepo) | c9669ec→3dde03c | 2026-06-08 |
 | F70 | 섀도우 벤치마크 + alpha-vs-baseline — 결정론적 전략(기술적/buy&hold)을 LLM 경쟁자 아닌 측정자로 상시 가동 | merged | feat/F70 → main e4676fc | — | — (monorepo) | 5e786b0 | 2026-06-07 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**

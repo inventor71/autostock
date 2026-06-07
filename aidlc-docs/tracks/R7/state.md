@@ -7,7 +7,7 @@
 - **Track ID**: R7
 - **Title**: BrokerApiBroker behavior fixes deferred from R3 (short-side mapping bug + TIF policy)
 - **Type**: refactor (behavior change — NOT behavior-preserving)
-- **Status**: merge-awaiting  <!-- R3 landed (cfd34b0); R7 implemented + green 2026-06-07 -->
+- **Status**: merged → main 3dde03c (2026-06-08)
 - **Branch**: refactor/R7
 - **Worktree**: .claude/worktrees/R7
 - **Submodule branch**: — (Python only)
