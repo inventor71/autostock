@@ -15,10 +15,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
+from src.core.markettime import ET
 from src.core.types import TimeFrame
 from src.early_session.buffer import BufferManager
 from src.early_session.config import EarlySessionConfig
@@ -26,8 +26,6 @@ from src.early_session.detector import SignalDetector
 from src.early_session.dumper import WindowDumper
 from src.early_session.index_writer import IndexWriter
 from src.early_session.records import BarRecord, SignalEvent
-
-_ET = ZoneInfo("America/New_York")
 
 
 class EarlySessionMonitor:
@@ -81,7 +79,7 @@ class EarlySessionMonitor:
             logger.info("Early-session monitor disabled — skipping")
             return
 
-        now = datetime.now(_ET)
+        now = datetime.now(ET)
         self._detected_today = self._index_writer.read_detected(
             now.strftime("%Y-%m-%d")
         )
@@ -107,7 +105,7 @@ class EarlySessionMonitor:
         if not self._running:
             return
 
-        now = datetime.now(_ET)
+        now = datetime.now(ET)
 
         # --- 1. fetch -------------------------------------------------------
         symbols = self._symbols()

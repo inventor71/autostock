@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
-_ET = ZoneInfo("America/New_York")
+from src.core.markettime import ET
 
 
 def match_round_trips(fills: list[dict]) -> list[dict]:
@@ -62,7 +61,7 @@ def _to_et(ts: str) -> datetime | None:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(_ET)
+    return dt.astimezone(ET)
 
 
 def summarize_today_round_trips(fills: list[dict], *, now_et: datetime | None = None) -> dict:
@@ -77,7 +76,7 @@ def summarize_today_round_trips(fills: list[dict], *, now_et: datetime | None = 
     broker's ``FillEvent`` stream (F3 ``get_fills``) into this shape. Pure: ``now_et``
     is injectable for deterministic tests (UTC→ET boundary).
     """
-    now_et = now_et or datetime.now(_ET)
+    now_et = now_et or datetime.now(ET)
     today = now_et.date()
     todays = []
     for t in match_round_trips(fills):

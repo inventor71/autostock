@@ -17,10 +17,10 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
+from src.core.markettime import ET
 from src.agent.steering.bus import CommandBus
 from src.agent.steering.jsonl import atomic_write_text
 from src.agent.steering.channel import SteeringChannel
@@ -352,7 +352,7 @@ class SteeringRuntime:
         on the worker (NFR-2). Reuses F3's get_fills (FillEvent stream) — trades.jsonl
         is EOD-only, so a file read would be empty intraday. Slow cadence (one network
         call); publish_snapshot folds the cached result in at its own rate. Best-effort."""
-        from src.core.trades import _ET, summarize_today_round_trips
+        from src.core.trades import summarize_today_round_trips
 
         def _build():
             try:
@@ -362,7 +362,7 @@ class SteeringRuntime:
                      "price": f.price, "ts": f.ts.isoformat()}
                     for f in fills
                 ]
-                self._round_trip = summarize_today_round_trips(dicts, now_et=datetime.now(_ET))
+                self._round_trip = summarize_today_round_trips(dicts, now_et=datetime.now(ET))
             except Exception as e:
                 logger.warning("round-trip refresh failed (skipping): {}", e)
         self.bus.submit(_build)
@@ -635,16 +635,12 @@ def _iso(ts) -> str:
     return dt.isoformat(timespec="seconds")
 
 
-# F25: ET market timezone for session-date resolution (matches turn_log).
-_MARKET_TZ = ZoneInfo("America/New_York")
-
-
 def _resolve_session_et_date(rule: dict | None = None) -> str:
     """The ET trading date the timeline defaults to: the live session during
     extended hours on a weekday, otherwise the next weekday (Q8=A — holidays
     just render an empty bar, so a plain weekday roll is sufficient)."""
     rule = rule or _DEFAULT_MARKET_RULE
-    now_et = datetime.now(_MARKET_TZ)
+    now_et = datetime.now(ET)
     pre = _parse_hhmm(rule.get("pre_open", "04:00"))
     after = _parse_hhmm(rule.get("after_close", "20:00"))
     in_session = (now_et.weekday() < 5) and (pre <= (now_et.hour * 60 + now_et.minute) < after)

@@ -22,9 +22,9 @@ from pathlib import Path
 
 from loguru import logger
 
+from src.core.markettime import et_today
 from src.agent.steering.jsonl import atomic_write_text, read_complete_lines
 from src.agent.steering.records import SteeringCommand, SteeringEvent
-from src.agent.steering.state import today_et
 
 
 class SteeringChannel:
@@ -44,7 +44,7 @@ class SteeringChannel:
     def _load_processed(self) -> None:
         try:
             raw = json.loads(self._processed_file.read_text(encoding="utf-8"))
-            if raw.get("date") == today_et().isoformat():
+            if raw.get("date") == et_today().isoformat():
                 self._processed = set(raw.get("ids", []))
         except (FileNotFoundError, ValueError):
             self._processed = set()
@@ -52,7 +52,7 @@ class SteeringChannel:
     def _persist_processed(self) -> None:
         atomic_write_text(
             self._processed_file,
-            json.dumps({"date": today_et().isoformat(), "ids": sorted(self._processed)}),
+            json.dumps({"date": et_today().isoformat(), "ids": sorted(self._processed)}),
         )
 
     def mark_processed(self, command_id: str) -> None:
@@ -68,7 +68,7 @@ class SteeringChannel:
         self._persist_processed()
         if self.commands_file.exists() and self.commands_file.stat().st_size > 0:
             archive = self.commands_file.with_suffix(
-                f".jsonl.{today_et().isoformat()}.archived"
+                f".jsonl.{et_today().isoformat()}.archived"
             )
             try:
                 self.commands_file.replace(archive)  # atomic rename; operator appends create a fresh file

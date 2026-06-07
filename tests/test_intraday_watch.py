@@ -10,7 +10,7 @@ from src.agent.intraday.watch_store import WatchStore
 
 def _store(tmp_path, monkeypatch, et_date="2026-05-30"):
     # Pin the ET date so valid_until / fired rollover are deterministic.
-    monkeypatch.setattr(ws_mod, "today_et", lambda: _Date(et_date))
+    monkeypatch.setattr(ws_mod, "et_today", lambda: _Date(et_date))
     return WatchStore(tmp_path)
 
 

@@ -16,10 +16,9 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import date, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
+from src.core.markettime import et_today
 from src.agent.steering.jsonl import atomic_write_text
 from src.agent.steering.records import (
     Directive,
@@ -27,13 +26,6 @@ from src.agent.steering.records import (
     PendingApproval,
     RunState,
 )
-
-_ET = ZoneInfo("US/Eastern")
-
-
-def today_et() -> date:
-    """Live US/Eastern trading date (matches AgentSession.session_date)."""
-    return datetime.now(_ET).date()
 
 
 def _decision_fingerprint(d) -> tuple:
@@ -77,7 +69,7 @@ class SteeringState:
 
     # ---- load / persist --------------------------------------------------- #
     def _load(self) -> None:
-        today = today_et().isoformat()
+        today = et_today().isoformat()
         if self._run_file.exists():
             try:
                 rs = RunState.model_validate_json(self._run_file.read_text())
@@ -140,13 +132,13 @@ class SteeringState:
     def set_paused(self, value: bool) -> None:
         with self._lock:
             self._run.paused = value
-            self._run.et_date = today_et().isoformat()
+            self._run.et_date = et_today().isoformat()
             self._persist_run()
 
     def set_entries_halted(self, value: bool) -> None:
         with self._lock:
             self._run.entries_halted = value
-            self._run.et_date = today_et().isoformat()
+            self._run.et_date = et_today().isoformat()
             self._persist_run()
 
     # ---- HumanLock state machine (BR-4) ----------------------------------- #
@@ -155,7 +147,7 @@ class SteeringState:
         lock = self._locks.get(symbol)
         if lock is None:
             return None
-        if lock.et_date != today_et().isoformat():
+        if lock.et_date != et_today().isoformat():
             del self._locks[symbol]
             return None
         return lock
@@ -170,7 +162,7 @@ class SteeringState:
         symbol = symbol.upper()
         with self._lock:
             self._locks[symbol] = LockState(
-                status="locked", reject_count=0, et_date=today_et().isoformat()
+                status="locked", reject_count=0, et_date=et_today().isoformat()
             )
             self._persist_locks()
 
@@ -206,7 +198,7 @@ class SteeringState:
             pa = PendingApproval(
                 id=self._pending_counter,
                 decision=decision.model_dump() if hasattr(decision, "model_dump") else decision,
-                et_date=today_et().isoformat(),
+                et_date=et_today().isoformat(),
             )
             self._pending[pa.id] = pa
             self._persist_pending()
@@ -214,7 +206,7 @@ class SteeringState:
 
     def list_pending(self) -> list[PendingApproval]:
         with self._lock:
-            today = today_et().isoformat()
+            today = et_today().isoformat()
             return [
                 p for p in self._pending.values()
                 if p.status == "pending" and p.et_date == today
@@ -226,7 +218,7 @@ class SteeringState:
             pa = self._pending.get(pid)
             # date-scoped consistently with list_pending: a past-day pending is
             # treated as gone (critic #3) so the queue/lock map never disagree.
-            if pa is None or pa.status != "pending" or pa.et_date != today_et().isoformat():
+            if pa is None or pa.status != "pending" or pa.et_date != et_today().isoformat():
                 return None
             pa.status = "approved"
             self._locks.pop(pa.decision.symbol.upper(), None)  # unlock on approve
@@ -239,12 +231,12 @@ class SteeringState:
         Returns (pending, new_status) where new_status is 'locked'|'denied'|None."""
         with self._lock:
             pa = self._pending.get(pid)
-            if pa is None or pa.status != "pending" or pa.et_date != today_et().isoformat():
+            if pa is None or pa.status != "pending" or pa.et_date != et_today().isoformat():
                 return None, None
             pa.status = "rejected"
             pa.reason = reason
             sym = pa.decision.symbol.upper()
-            lock = self._live_lock(sym) or LockState(et_date=today_et().isoformat())
+            lock = self._live_lock(sym) or LockState(et_date=et_today().isoformat())
             lock.reject_count = min(lock.reject_count + 1, 2)
             lock.status = "denied" if lock.reject_count >= 2 else "locked"
             self._locks[sym] = lock
@@ -279,7 +271,7 @@ class SteeringState:
     # ---- daily sweep (P1.5) ---------------------------------------------- #
     def sweep_expired(self) -> None:
         """Drop past-ET-date scoped state and persist the cleanup (midnight job)."""
-        today = today_et().isoformat()
+        today = et_today().isoformat()
         with self._lock:
             self._locks = {s: l for s, l in self._locks.items() if l.et_date == today}
             self._pending = {i: p for i, p in self._pending.items() if p.et_date == today}
