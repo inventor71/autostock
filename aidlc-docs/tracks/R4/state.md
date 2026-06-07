@@ -7,7 +7,7 @@
 - **Track ID**: R4
 - **Title**: Consolidate JSONL record read/write into `src/core/jsonl.py`
 - **Type**: refactor
-- **Status**: active  <!-- picked up 2026-06-06 via /ai-dlc-refactor R4 -->
+- **Status**: merged → main f43366f (2026-06-07)  <!-- Build & Test green (1028 passed) -->
 - **Branch**: refactor/R4
 - **Worktree**: .claude/worktrees/R4
 - **Submodule branch**: — (Python only)
@@ -40,4 +40,4 @@ See `inception/refactor/jsonl-helper/guide.md`.
 - [x] Stage 4 — Implementation (`4-implementation.md`) — promoted primitives + 3 helpers; migrated
       equity/trades/turn/surge; steering→shim
 - [x] Build & Test — full suite **984 passed, 0 failed**; py_compile clean
-- Status: **merge-awaiting** (docs on main; code on refactor/R4)
+- Status: **merged** → main f43366f (2026-06-07)

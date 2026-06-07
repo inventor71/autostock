@@ -84,10 +84,11 @@
 | F68 | F67 follow-up — 자가학습 스택 정리: rollback-rewrite 순서(#7) + collect_outcomes EOD 캐시(#8) + is_meaningful 제거/임계 단일화(#10) | merged | feat/F68 → main 9eaf8a0 | — | — (monorepo) | 58ca6a7→9eaf8a0 | 2026-06-06 |
 | F69 | Health Check TUI 통합 — 데몬 발행(steering/health.json) + TUI 글리프/오버레이 (F63 후속) | active | feat/F69 (TBD) | .claude/worktrees/F69 (TBD) | — (monorepo) | ec2875c | 2026-06-06 |
 | R3 | Alpaca-shaped broker dedup — extract AlpacaShapedBroker base (alpaca_broker + broker_api_broker) | merged | feat/R3 → main cfd34b0 | — | — (monorepo) | ec2875c | 2026-06-07 |
-| R4 | JSONL record read/write helper (src/core/jsonl.py) de-dup | active | refactor/R4 | .claude/worktrees/R4 | — (monorepo) | 9e9aec2 | 2026-06-06 |
+| R4 | JSONL record read/write helper (src/core/jsonl.py) de-dup | merged | refactor/R4 → main f43366f | — | — (monorepo) | 9e9aec2 | 2026-06-07 |
 | R5 | `claude -p` headless runner — investigate shared JSON-envelope parser | backlog | refactor/R5 (TBD) | — | — (monorepo) | ec2875c | 2026-06-06 |
 | R6 | ET (market timezone) helper consolidation into core | backlog | refactor/R6 (TBD) | — | — (monorepo) | ec2875c | 2026-06-06 |
 | R7 | Broker behavior fixes (broker_api short-side bug + fail-closed TIF) — deferred from R3 T3 gate | backlog | refactor/R7 (TBD) | — | — (monorepo) | post-R3 | 2026-06-06 |
+| F70 | 섀도우 벤치마크 + alpha-vs-baseline — 결정론적 전략(기술적/buy&hold)을 LLM 경쟁자 아닌 측정자로 상시 가동 | active | feat/F70 (TBD) | .claude/worktrees/F70 (TBD) | — (monorepo) | 5e786b0 | 2026-06-07 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under

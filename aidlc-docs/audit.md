@@ -241,3 +241,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 **Queue**: 1. R3 (refactor/R3, ↑1, no overlap) → 2. R4 (refactor/R4, ↑1, no overlap). Excluded: none. Left as noise: R5 docs (active).
 
 - 2026-06-07 — **R3 merged** → main cfd34b0 (refactor/R3, ↑1). AlpacaShapedBroker base extracted; full suite 1022 passed. Worktree+branch cleaned.
+
+- 2026-06-07 — **R4 merged** → main f43366f (refactor/R4, ↑1, rebased onto post-R3 main). JSONL read/write consolidated into src/core/jsonl.py; full suite 1028 passed. Worktree+branch cleaned.
