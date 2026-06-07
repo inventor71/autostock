@@ -230,3 +230,14 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-06 — **F63 merged** (58e1dda) — Health Check Loop: 9차원 시스템 모니터링 모듈(account/broker/config_env/data_pipeline/llm/logs/process/resources/risk) + scripts/health.py CLI(--root cross-checkout). circuit breaker yfinance fast_info camelCase+info 폴백, env var는 settings 속성 기반. 14 files 신규, base 30e3609에서 최신 main 위 rebase 무충돌, 977 green + 모듈 import 클린.
 - 2026-06-06 — **/ai-dlc-merge triage (재확인)** — PASS. 직전 foreign(룰파일/.github/codekb)은 af2cbca M1 CodeKB 커밋으로 반영 완료 → 작업트리는 F68 문서 + aidlc-state.md(공유)만. 큐: F68 단독.
 - 2026-06-06 — **F68 merged** (9eaf8a0) — F67 follow-up 자가학습 정리: #10 is_meaningful/persists dead code 삭제 + MIN_EFFICACY_SAMPLE 상수 단일화(임계 3곳 drift 제거), #8 collect_outcomes per-day outcomes 캐시 공유(recall+EOD self-rewrite 1회/일), #7 롤백 시 같은 EOD rewrite 건너뛰기+cur/sample 롤백후 읽기. 6 files(+135/-92), +4 orchestrator 테스트, 978 green. base 58ca6a7→af2cbca(M1 CodeKB) rebase 무충돌.
+
+## /ai-dlc-merge — Stage 0a triage (scope: R3, R4)
+**Timestamp**: 2026-06-07
+**Result**: PASS. Working-tree noise = R5 docs only (tracks/R5/state.md modified + untracked 0-investigation.md); R5 per-track state.md = `active (Stage 0 investigation)` → normal noise, left untouched. No foreign/non-active changes. R3 & R4 both `merge-awaiting`, clean worktrees, 1 commit each, post-F35 base, zero file overlap.
+
+## /ai-dlc-merge — Stage 0b queue approval
+**Timestamp**: 2026-06-07
+**User Input**: "승인 (R3 → R4)"
+**Queue**: 1. R3 (refactor/R3, ↑1, no overlap) → 2. R4 (refactor/R4, ↑1, no overlap). Excluded: none. Left as noise: R5 docs (active).
+
+- 2026-06-07 — **R3 merged** → main cfd34b0 (refactor/R3, ↑1). AlpacaShapedBroker base extracted; full suite 1022 passed. Worktree+branch cleaned.

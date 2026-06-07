@@ -8,7 +8,7 @@
 - **Track ID**: R3
 - **Title**: Alpaca-shaped broker dedup — extract shared base from `alpaca_broker` + `broker_api_broker`
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- Build & Test green (1022 passed) + critic pass; committed on refactor/R3 -->
+- **Status**: merged → main cfd34b0 (2026-06-07)  <!-- Build & Test green (1022 passed) + critic pass -->
 - **Branch**: refactor/R3
 - **Worktree**: .claude/worktrees/R3
 - **Submodule branch**: — (parent repo only; `src/execution/brokers/` is Python)
