@@ -63,7 +63,7 @@ import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar, sidebarWidth } from "./sidebar"
-import { TimelineBar, useMonitorData, createOverlayStore, TurnOverlay, SymbolOverlay, InterventionOverlay } from "@tui-trading/core"
+import { TimelineBar, useMonitorData, useHealthData, createOverlayStore, TurnOverlay, SymbolOverlay, InterventionOverlay, HealthOverlay } from "@tui-trading/core"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import parsers from "../../../../../../parsers-config.ts"
@@ -226,6 +226,10 @@ export function Session() {
     ? useMonitorData(steeringDir)
     : { monitor: () => null, currentTurn: () => null, recentTurns: () => [] as any[], recentDecisions: () => [] as any[], todayCount: () => 0, todayCost: () => 0, workspaceRoot: () => "" }
   const { monitor, currentTurn, workspaceRoot } = monitorHooks
+  // F69: lightweight system-health glyph + overlay (reads steering/health.json).
+  const healthHooks = steeringDir
+    ? useHealthData(steeringDir)
+    : { health: () => null, stale: () => false, overall: () => null }
   const overlay = createOverlayStore()
 
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
@@ -1150,6 +1154,9 @@ export function Session() {
             currentTurn={currentTurn}
             onMarkerClick={(turn, decisions, x, y) => overlay.openTurn(turn, decisions, x, y)}
             onInterventionClick={(iv, x, y) => overlay.openIntervention(iv, x, y)}
+            health={healthHooks.health}
+            healthStale={healthHooks.stale}
+            onHealthClick={(report, x, y) => overlay.openHealth(report, x, y)}
           />
         </Show>
         <box flexDirection="row" flexGrow={1} minHeight={0}>
@@ -1357,6 +1364,18 @@ export function Session() {
         <Show when={overlay.state().type === "intervention" && overlay.state().intervention}>
           <InterventionOverlay
             intervention={overlay.state().intervention!}
+            anchorX={overlay.state().anchorX}
+            anchorY={overlay.state().anchorY}
+            termWidth={dimensions().width}
+            termHeight={dimensions().height}
+            onClose={() => overlay.close()}
+          />
+        </Show>
+        {/* F69: system-health detail overlay */}
+        <Show when={overlay.state().type === "health" && overlay.state().health}>
+          <HealthOverlay
+            report={overlay.state().health!}
+            stale={healthHooks.stale()}
             anchorX={overlay.state().anchorX}
             anchorY={overlay.state().anchorY}
             termWidth={dimensions().width}

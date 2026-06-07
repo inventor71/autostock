@@ -25,6 +25,22 @@ from src.agent.steering.bus import CommandBus
 from src.agent.steering.jsonl import atomic_write_text
 from src.agent.steering.channel import SteeringChannel
 from src.agent.steering.commands import CommandHandler
+# F69: lightweight system-health publish (steering/health.json) for the TUI. The
+# periodic daemon publish runs ONLY the cheap, no-external-call dimensions; the
+# full 9-dimension deep check (broker/llm/account/risk live) stays in
+# scripts/health.py for on-demand runs.
+from src.monitoring.health import CheckerDispatcher
+from src.monitoring.health.dimensions.config_env import ConfigEnvChecker
+from src.monitoring.health.dimensions.logs import LogChecker
+from src.monitoring.health.dimensions.process import ProcessChecker
+from src.monitoring.health.dimensions.resources import ResourceChecker
+from src.monitoring.health.report import (
+    CheckResult,
+    CheckStatus,
+    DimensionResult,
+    Severity,
+)
+from config.config import get_settings
 from src.agent.steering.records import EMERGENCY_VERBS
 from src.agent.steering.security import (
     TOKEN_ENV_VAR,
@@ -597,6 +613,83 @@ class SteeringRuntime:
             atomic_write_text(self.steering_dir / "monitor.json", json.dumps(payload, default=str))
         except Exception as e:
             logger.error("steering monitor publish failed (continuing): {}", e)
+
+    def publish_health(self) -> None:
+        """F69: publish a lightweight system-health report to steering/health.json.
+
+        Runs ONLY the cheap, no-external-call dimensions (process / logs / config_env
+        / resources) and derives an ``account`` dimension from the snapshot the daemon
+        already holds (``self.last_snapshot``) — so a 5-minute cadence costs no broker
+        creation, no LLM API ping, and no extra network I/O. The full 9-dimension deep
+        check (which DOES create brokers and ping the LLM) stays in scripts/health.py.
+
+        Runs on a scheduler thread-pool worker (NFR-1): does not block the 2s command
+        poll or the trade bus. Best-effort — a failure keeps the previous health.json.
+        """
+        try:
+            settings = get_settings()
+            dispatcher = CheckerDispatcher(settings)
+            dispatcher.register_all([
+                ProcessChecker(settings),
+                LogChecker(settings),
+                ConfigEnvChecker(settings),
+                ResourceChecker(settings),
+            ])
+            report = dispatcher.run()
+            self._augment_health_from_snapshot(report)
+            payload = report.model_dump(mode="json")
+            # F69: stamp the publish cadence so the TUI can compute "stale" without
+            # hardcoding an interval that drifts from health_publish_seconds.
+            payload["publish_interval_seconds"] = settings.monitoring.health_publish_seconds
+            atomic_write_text(self.steering_dir / "health.json", json.dumps(payload, default=str))
+        except Exception as e:
+            logger.warning("steering health publish failed (keeping last health.json): {}", e)
+
+    def _augment_health_from_snapshot(self, report) -> None:
+        """Add an ``account`` dimension derived from the last published snapshot,
+        reusing data the daemon already fetched (no broker call). Overall verdict is
+        recomputed to include it. Graceful: with no snapshot yet, the dimension is
+        SKIPPED rather than failing."""
+        snap = self.last_snapshot
+        if not snap:
+            dim = DimensionResult(
+                dimension="account",
+                checks=[CheckResult(
+                    name="account_snapshot",
+                    status=CheckStatus.SKIPPED,
+                    detail="No snapshot published yet (steering warming up)",
+                    severity=Severity.INFO,
+                )],
+            )
+        else:
+            acct = snap.get("account") or {}
+            market_open = snap.get("market_open")
+            equity = acct.get("equity")
+            cash = acct.get("cash")
+            pos_n = acct.get("position_count")
+            checks = [CheckResult(
+                name="account_snapshot",
+                status=CheckStatus.OK,
+                detail=(f"equity=${equity:,.0f} cash=${cash:,.0f} positions={pos_n} "
+                        f"market={'OPEN' if market_open else 'CLOSED'}")
+                if equity is not None else "snapshot present (account fields missing)",
+                severity=Severity.INFO,
+            )]
+            # Only an obviously broken account is a warning; this is a display check.
+            if isinstance(cash, (int, float)) and cash < 0:
+                checks.append(CheckResult(
+                    name="account_cash_negative",
+                    status=CheckStatus.WARNING,
+                    detail=f"cash is negative (${cash:,.0f})",
+                    severity=Severity.WARNING,
+                ))
+            dim = DimensionResult(dimension="account", checks=checks)
+        dim.status = dim.worst_status
+        report.dimensions["account"] = dim
+        # Recompute overall + summary to fold in the derived dimension, reusing the
+        # dispatcher's own worst-wins logic (no divergence).
+        report.overall = CheckerDispatcher._overall(report)
+        report.summary = CheckerDispatcher._build_summary(report)
 
 
 # ---- monitor.json helpers (F6 FR-4) ------------------------------------- #

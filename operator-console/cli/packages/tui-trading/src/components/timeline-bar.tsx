@@ -1,5 +1,5 @@
 import { createSignal, onCleanup, createMemo, Show, For } from "solid-js"
-import type { MonitorData, CurrentTurn, MonitorTurn, MonitorDecision, InterventionMarker } from "../types"
+import type { MonitorData, CurrentTurn, MonitorTurn, MonitorDecision, InterventionMarker, HealthReport } from "../types"
 import { DEFAULT_MARKET_RULE } from "../types"
 import { computeLayout, phaseAt, labelCells, etDateOf, WINDOW_MS, liveWindowStart } from "../utils/timeline-layout"
 import type { SessionData } from "../hooks/use-session-data"
@@ -7,6 +7,7 @@ import { readSessionData, readHistoricalSession } from "../hooks/use-session-dat
 import {
   markerGlyph, markerColor, interventionGlyph, interventionColor, fmtCost,
   phaseLabel, phaseShort, phaseColor, fmtWindowRange, fmtTurnLabel, windowedCost,
+  healthGlyph, healthColor,
 } from "../utils/format"
 
 export interface TimelineBarProps {
@@ -15,6 +16,10 @@ export interface TimelineBarProps {
   currentTurn: () => CurrentTurn | null
   onMarkerClick: (turn: MonitorTurn, decisions: MonitorDecision[], x: number, y: number) => void
   onInterventionClick?: (iv: InterventionMarker, x: number, y: number) => void
+  // F69: optional system-health glyph in the status row (click opens the overlay).
+  health?: () => HealthReport | null
+  healthStale?: () => boolean
+  onHealthClick?: (report: HealthReport, x: number, y: number) => void
 }
 
 // F25: ET date (America/New_York) for "today" — the default session.
@@ -120,6 +125,9 @@ export function TimelineBar(props: TimelineBarProps) {
           onPrev={goPrev}
           onNext={goNext}
           onToday={goToday}
+          health={props.health}
+          healthStale={props.healthStale}
+          onHealthClick={props.onHealthClick}
         />
         {/* Row 1: tick labels (local time) + now arrow */}
         <TickRow
@@ -155,8 +163,12 @@ function NavRow(props: {
   onPrev: () => void
   onNext: () => void
   onToday: () => void
+  health?: () => HealthReport | null
+  healthStale?: () => boolean
+  onHealthClick?: (report: HealthReport, x: number, y: number) => void
 }) {
   const displayLabel = () => props.isLive ? `${props.label} (Live)` : props.label
+  const healthReport = () => props.health?.() ?? null
   const turn = () => props.currentTurn
   return (
     <box width={props.width} flexDirection="row" gap={1} paddingLeft={1}>
@@ -200,6 +212,25 @@ function NavRow(props: {
       {/* F58: window cost — shown for ANY window (live or past), summed over the turns in the
           current view window. Was live-only (today_cost_usd); past windows showed nothing. */}
       <text fg="gray">{`· ${fmtCost(props.windowCost)}`}</text>
+      {/* F69: system-health glyph — click opens the 9-dimension overlay. Stale/no-data
+          shows a dim ○. Reuses the existing click-to-open overlay pattern. */}
+      <Show when={healthReport()}>
+        {(h) => {
+          const stale = () => props.healthStale?.() ?? false
+          return (
+            <box
+              onMouseUp={(e: any) => {
+                props.onHealthClick?.(h(), e.x ?? 0, e.y ?? 0)
+                e.stopPropagation?.()
+              }}
+            >
+              <text fg={healthColor(h().overall, stale())}>
+                {`· ${healthGlyph(h().overall, stale())} hp`}
+              </text>
+            </box>
+          )
+        }}
+      </Show>
     </box>
   )
 }

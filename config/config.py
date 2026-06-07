@@ -77,6 +77,9 @@ class MonitoringConfig(BaseModel):
     slack_webhook: str = ""
     telegram_token: str = ""
     telegram_chat_id: str = ""
+    # F69: how often the daemon publishes the lightweight system-health report to
+    # steering/health.json for the TUI (seconds). 0 disables the periodic publish.
+    health_publish_seconds: int = 300
 
 
 class AppConfig(BaseModel):

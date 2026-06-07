@@ -50,6 +50,23 @@ export function interventionColor(verb: string): string {
   return "red"
 }
 
+// F69: system-health status → glyph + color for the timeline status cell and the
+// health overlay. `stale`/no-data renders as a dim SKIPPED-style marker.
+const HEALTH_GLYPH: Record<string, string> = {
+  OK: "✓", WARNING: "⚠", ERROR: "✗", CRITICAL: "⊘", SKIPPED: "○",
+}
+const HEALTH_COLOR: Record<string, string> = {
+  OK: "#5fd38d", WARNING: "#d4b86a", ERROR: "#e06c75", CRITICAL: "#ff5f5f", SKIPPED: "gray",
+}
+export function healthGlyph(status: string, stale = false): string {
+  if (stale) return "○"
+  return HEALTH_GLYPH[status] ?? "○"
+}
+export function healthColor(status: string, stale = false): string {
+  if (stale) return "gray"
+  return HEALTH_COLOR[status] ?? "gray"
+}
+
 // F25: market-phase labels/colors for the timeline (region bands + now badge).
 const PHASE_LABEL: Record<string, string> = {
   pre: "PRE-MARKET", regular: "REGULAR", after: "AFTER-HRS", day: "DAY-MKT", closed: "CLOSED",
