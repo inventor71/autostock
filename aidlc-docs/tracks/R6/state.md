@@ -7,7 +7,8 @@
 - **Track ID**: R6
 - **Title**: Consolidate market-timezone (ET) constant + `et_now()`/`et_today()` into `core`
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- Build & Test green (1033 passed) + /code-review fixes applied; committed on refactor/R6. Post-merge guide skipped: pure internal behavior-preserving refactor. -->
+- **Status**: merged → main 230f74d (2026-06-07)  <!-- Build & Test green (1033 passed) + /code-review fixes; rebase no-op -->
+
 - **Branch**: refactor/R6
 - **Worktree**: .claude/worktrees/R6
 - **Submodule branch**: — (Python only)

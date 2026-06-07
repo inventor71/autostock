@@ -245,3 +245,13 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-07 — **R4 merged** → main f43366f (refactor/R4, ↑1, rebased onto post-R3 main). JSONL read/write consolidated into src/core/jsonl.py; full suite 1028 passed. Worktree+branch cleaned.
 
 - 2026-06-07 — **R5 closed (won't-do)** at Stage 0 investigation. Real overlap ~12 lines (claude -p JSON-envelope) in hot agent brain; agent retry couples to exact exception text → shared helper relocates not simplifies; strategy-only use = no dedup. No code change. Registry → abandoned (won't-do).
+
+## /ai-dlc-merge — Stage 0a triage + 0b approval (scope: all merge-awaiting)
+**Timestamp**: 2026-06-07
+**Triage**: PASS — working tree clean (no foreign/non-active changes).
+**Candidates**: R6 (refactor/R6 ↑2), F70 (feat/F70 ↑1), F69 (feat/F69 ↑3) — all merge-awaiting, post-F35 base.
+**Overlap**: R6∩F69=runtime.py (mechanical import block); F69∩F70=config/config.py (non-conflicting hunks); R6∩F70=none.
+**User Input**: "승인 (R6 → F70 → F69)"
+**Queue**: 1. R6 → 2. F70 → 3. F69 (independents first; F69 central → last, absorbs both overlaps on rebase). Excluded: none.
+
+- 2026-06-07 — **R6 merged** → main 230f74d (refactor/R6, ↑2, rebase no-op base=main). ET market-tz consolidated into src/core/markettime (ET/et_now/et_today); 7 dup constants + today_et→et_today + agent_trace.py folded in; full suite 1033 passed. Worktree+branch cleaned.
