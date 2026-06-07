@@ -458,14 +458,83 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
 
     from src.agent.intraday.settings import IntradayConfig
 
-    AgentTradingMode(
-        orchestrator, executor,
-        intraday_minutes=settings.trading.batch_interval_minutes,
-        experiment_start=settings.agent.experiment_start,
-        min_trade_notional=settings.agent.min_trade_notional,
-        steering=steering_runtime,
-        intraday_config=IntradayConfig.from_mapping(settings.intraday),
-    ).start(fresh=fresh)
+    # F70: shadow benchmark — deterministic baselines on dedicated sandbox accounts,
+    # recorded alongside the live account. Disabled by default; never blocks the
+    # agent loop (own thread) and never touches the live account (fail-closed).
+    benchmark_runner = _maybe_start_benchmark(
+        settings, data_provider=data_provider, universe=universe, broker=broker
+    )
+    try:
+        AgentTradingMode(
+            orchestrator, executor,
+            intraday_minutes=settings.trading.batch_interval_minutes,
+            experiment_start=settings.agent.experiment_start,
+            min_trade_notional=settings.agent.min_trade_notional,
+            steering=steering_runtime,
+            intraday_config=IntradayConfig.from_mapping(settings.intraday),
+        ).start(fresh=fresh)
+    finally:
+        if benchmark_runner is not None:
+            benchmark_runner.stop()
+
+
+def _build_risk_manager(settings, *, use_bracket_orders: bool):
+    """Build a RiskManager from settings.risk. ``use_bracket_orders`` is False for
+    deterministic benchmark baselines (they emit plain BUY/SELL, not bracket levels)."""
+    from src.risk.manager import RiskManager
+
+    r = settings.risk
+    return RiskManager(
+        max_position_pct=r.max_position_pct,
+        max_portfolio_risk=r.max_portfolio_risk,
+        stop_loss_pct=r.stop_loss_pct,
+        take_profit_pct=r.take_profit_pct,
+        max_open_positions=r.max_open_positions,
+        max_stop_distance_pct=r.max_stop_distance_pct,
+        atr_stop_multiple=r.atr_stop_multiple,
+        market_halt_threshold_pct=r.market_halt_threshold_pct,
+        default_risk_reward=r.default_risk_reward,
+        shorting_enabled=r.shorting_enabled,
+        short_market_halt_threshold_pct=r.short_market_halt_threshold_pct,
+        individual_stock_halt_pct=r.individual_stock_halt_pct,
+        short_stop_loss_pct=r.short_stop_loss_pct,
+        short_take_profit_pct=r.short_take_profit_pct,
+        short_max_stop_distance_pct=r.short_max_stop_distance_pct,
+        use_bracket_orders=use_bracket_orders,
+    )
+
+
+def _maybe_start_benchmark(settings, *, data_provider, universe, broker):
+    """Start the F70 benchmark runner if enabled in config; else return None.
+
+    Best-effort and fail-honest: any wiring failure leaves the agent unaffected."""
+    try:
+        from src.benchmark.config import BenchmarkConfig
+        from src.benchmark.runner import BenchmarkRunner
+
+        cfg = BenchmarkConfig.from_settings(settings)
+        if not cfg.enabled:
+            return None
+        strategies_config = load_strategies_config()
+        strategy_params = {
+            name: (d.get("params") or {})
+            for name, d in (strategies_config.get("strategies") or {}).items()
+        }
+        runner = BenchmarkRunner(
+            cfg,
+            data_provider=data_provider,
+            risk_manager=_build_risk_manager(settings, use_bracket_orders=False),
+            universe=universe,
+            broker_api_key=settings.broker_api_key,
+            broker_api_secret=settings.broker_api_secret,
+            live_account_id=settings.broker_account_id,
+            llm_portfolio_provider=broker.get_portfolio_state,
+            strategy_params=strategy_params,
+        )
+        return runner if runner.start() else None
+    except Exception as exc:  # never let the benchmark break the live agent
+        logger.error(f"benchmark: failed to start, continuing without it: {exc}")
+        return None
 
 
 def main():

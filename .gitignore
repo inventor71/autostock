@@ -30,6 +30,7 @@ env/
 data/*.csv
 data/*.parquet
 data/intraday/
+data/benchmark/
 models/*.pkl
 models/*.pt
 models/*.pth

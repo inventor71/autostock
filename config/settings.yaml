@@ -189,6 +189,20 @@ signals:
     industrials:       [CAT, DE, UPS, BA, HON, UNP, RTX, LMT, GE, MMM, XLI]
     ai_infra_broad:    [NVDA, AMD, AVGO, MRVL, ARM, AMAT, LRCX, KLAC, ANET, VRT, DELL, SMCI, MU]
 
+# F70 shadow benchmark — deterministic baselines as a measuring stick.
+# Runs each baseline on its own sandbox account and records equity alongside the
+# live LLM account, so you can later extract "is the LLM beating a dumb floor?".
+# Master toggle defaults OFF: with enabled=false nothing runs and the agent path
+# is unchanged. To turn on, map each baseline to a distinct sandbox account_id
+# (from scripts/broker_create_accounts.py) that is NOT the live broker_account_id.
+benchmark:
+  enabled: false
+  baselines: [buy_and_hold, ma_crossover, rsi, macd, bollinger]
+  accounts: {}                        # e.g. { buy_and_hold: "acct-id-1", rsi: "acct-id-2" }
+  interval: eod                       # "eod" (daily) or an integer minute interval
+  storage_dir: data/benchmark
+  retention_days: 365
+
 early_session:
   enabled: true                       # master switch
   threshold_pct: 5.0                  # ±% trigger (Q1=D)
