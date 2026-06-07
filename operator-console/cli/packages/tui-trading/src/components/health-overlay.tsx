@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js"
+import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import type { HealthReport, HealthDimension } from "../types"
 import { OverlayPanel } from "./overlay-panel"
 import { healthGlyph, healthColor } from "../utils/format"
@@ -26,11 +26,18 @@ export function HealthOverlay(props: HealthOverlayProps) {
     Object.values(report().dimensions ?? {}).sort((a, b) => a.dimension.localeCompare(b.dimension)),
   )
 
+  // Wall-clock tick so the relative age keeps counting up while the overlay is open
+  // even with no new publish (the stalled-daemon case — otherwise "age" freezes while
+  // the header already shows [STALE]).
+  const [nowMs, setNowMs] = createSignal(Date.now())
+  const ageTimer = setInterval(() => setNowMs(Date.now()), 30 * 1000)
+  onCleanup(() => clearInterval(ageTimer))
+
   const age = createMemo(() => {
     const tsStr = props.ts ?? report().ts
     const ms = Date.parse(tsStr)
     if (Number.isNaN(ms)) return tsStr ?? ""
-    const secs = Math.max(0, Math.round((Date.now() - ms) / 1000))
+    const secs = Math.max(0, Math.round((nowMs() - ms) / 1000))
     if (secs < 90) return `${secs}s ago`
     return `${Math.round(secs / 60)}m ago`
   })

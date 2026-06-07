@@ -118,6 +118,21 @@ def test_negative_cash_flags_warning(tmp_path):
     assert payload["overall"] in {"WARNING", "ERROR", "CRITICAL"}
 
 
+def test_publish_resolves_repo_root_not_above_it(tmp_path):
+    """Regression: publish_health must inject the repo root into the dispatcher.
+    Without it the checkers' fallback root resolves ABOVE the checkout (from the
+    health module's own path), so config_env can't find settings.yaml/.env and the
+    whole report goes false-CRITICAL. config_env is the env-robust signal here (the
+    config files live in the checkout; venv/live-snapshot may be absent under test)."""
+    rt = _runtime(tmp_path)
+    rt.publish_health()
+    payload = json.loads((tmp_path / "steering" / "health.json").read_text())
+    cfg = payload["dimensions"]["config_env"]["status"]
+    assert cfg not in {"ERROR", "CRITICAL"}, (
+        f"config_env={cfg}: dispatcher root mis-resolved (project_root not injected?)"
+    )
+
+
 def test_account_partial_fields_no_crash(tmp_path):
     """A snapshot with equity present but cash missing must not crash the f-string
     (the formatted branch needs BOTH fields); the dimension falls back to a plain

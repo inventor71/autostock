@@ -673,7 +673,11 @@ class SteeringRuntime:
         """
         try:
             settings = get_settings()
-            dispatcher = CheckerDispatcher(settings)
+            # Inject the repo root explicitly. Without it the checkers fall back to
+            # BaseChecker.root (derived from the health module's own path), which from a
+            # worktree resolves ABOVE the checkout — making config_env/process/resources
+            # all fail and the report a permanent false CRITICAL.
+            dispatcher = CheckerDispatcher(settings, project_root=_REPO_ROOT)
             dispatcher.register_all([
                 ProcessChecker(settings),
                 LogChecker(settings),
