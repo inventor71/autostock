@@ -10,16 +10,15 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
 from src.core.jsonl import append_record, read_records
+from src.core.markettime import ET
 
 # F25: US equity trading day is anchored to the exchange timezone. The local
 # (e.g. KST) calendar date splits one ET session across two local dates because
 # the regular session crosses local midnight, so we key sessions by ET date.
-_MARKET_TZ = ZoneInfo("America/New_York")
 
 _TYPE_PREFIX = {
     "research": "R", "intraday": "I", "wake": "W", "eod": "E", "reconcile": "C",
@@ -46,12 +45,12 @@ def compute_et_date(ts: datetime | str | None = None) -> str:
             dt = datetime.fromisoformat(ts)
         except ValueError:
             # Last resort: today's ET date.
-            return datetime.now(_MARKET_TZ).date().isoformat()
+            return datetime.now(ET).date().isoformat()
     else:
         dt = ts
     if dt.tzinfo is None:
         dt = dt.astimezone()  # attach local tz to a naive value
-    return dt.astimezone(_MARKET_TZ).date().isoformat()
+    return dt.astimezone(ET).date().isoformat()
 
 
 def generate_turn_id(path: str | Path, turn_type: str) -> str:

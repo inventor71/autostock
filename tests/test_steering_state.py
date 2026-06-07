@@ -31,7 +31,7 @@ def test_run_state_resets_next_trading_day(tmp_path, monkeypatch):
     s = SteeringState(tmp_path)
     s.set_paused(True)
     # advance ET date -> reload should auto-reset to running
-    monkeypatch.setattr(state_mod, "today_et", lambda: date(2099, 1, 2))
+    monkeypatch.setattr(state_mod, "et_today", lambda: date(2099, 1, 2))
     s2 = SteeringState(tmp_path)
     assert not s2.run_state().paused
 
@@ -92,7 +92,7 @@ def test_add_pending_is_idempotent_on_fingerprint(tmp_path):
 def test_lock_lazy_expiry_next_day(tmp_path, monkeypatch):
     s = SteeringState(tmp_path)
     s.lock_symbol("AAPL")
-    monkeypatch.setattr(state_mod, "today_et", lambda: date(2099, 6, 1))
+    monkeypatch.setattr(state_mod, "et_today", lambda: date(2099, 6, 1))
     assert s.lock_status("AAPL") is None  # lazy-expired
 
 
@@ -114,7 +114,7 @@ def test_approve_reject_ignore_past_day_pending(tmp_path, monkeypatch):
     s = SteeringState(tmp_path)
     s.lock_symbol("AAPL")
     pa = s.add_pending(_dec("AAPL", "BUY"))
-    monkeypatch.setattr(state_mod, "today_et", lambda: date(2099, 1, 2))
+    monkeypatch.setattr(state_mod, "et_today", lambda: date(2099, 1, 2))
     assert s.list_pending() == []          # hidden next day
     assert s.approve(pa.id) is None        # and not approvable
     assert s.reject(pa.id) == (None, None)  # nor rejectable

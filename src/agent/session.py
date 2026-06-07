@@ -26,17 +26,16 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
 from src.agent.journal import Journal
+from src.core.markettime import ET
 
 # Session day = the US/Eastern calendar date, so the daily session spans the
 # whole US trading day (pre-market through close) and rolls at ET midnight
 # (off-hours) — even in a long-running process. Using the local date instead
 # would split the session mid-session and never roll over while the daemon runs.
-_ET = ZoneInfo("US/Eastern")
 
 # Repo root: src/agent/session.py -> parents[2]. The agent runs with cwd set to
 # the workspace, so the repo must be on PYTHONPATH for `python -m src.agent.tools`.
@@ -141,7 +140,7 @@ class AgentSession:
     @property
     def session_date(self) -> date:
         """The session's trading day — live US/Eastern date unless pinned."""
-        return self._fixed_date or datetime.now(_ET).date()
+        return self._fixed_date or datetime.now(ET).date()
 
     def _state_file(self) -> Path:
         return self.workspace / ".sessions" / f"{self.session_date.isoformat()}.json"

@@ -16,9 +16,9 @@ from pathlib import Path
 
 from loguru import logger
 
+from src.core.markettime import et_today
 from src.agent.intraday.records import WatchCondition, WatchRecord, WatchTrigger
 from src.agent.steering.jsonl import atomic_write_text, read_complete_lines
-from src.agent.steering.state import today_et
 
 
 class WatchStore:
@@ -80,7 +80,7 @@ class WatchStore:
         Fired-today triggers are still 'active' here; the WakeDetector skips
         re-firing them via :meth:`is_fired` (so a clear/expiry is the only way a
         trigger leaves this list)."""
-        today = today_et().isoformat()
+        today = et_today().isoformat()
         cleared: set[str] = set()
         triggers: dict[str, WatchTrigger] = {}
         for rec in self._records():
@@ -103,7 +103,7 @@ class WatchStore:
     def _ensure_fired_loaded(self) -> str:
         """Load the fired-set for today on first use / ET-date rollover. Caller
         holds ``self._lock``. Returns today's ET date."""
-        today = today_et().isoformat()
+        today = et_today().isoformat()
         if self._fired_date == today:
             return today
         self._fired_date = today
@@ -132,7 +132,7 @@ class WatchStore:
     def sweep(self) -> None:
         """ET-midnight: reset the fired set to today's empty set (rollover)."""
         with self._lock:
-            today = today_et().isoformat()
+            today = et_today().isoformat()
             self._fired_date = today
             self._fired_ids = set()
             self._write_fired(today, self._fired_ids)

@@ -25,12 +25,13 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SESSIONS_DIR = _REPO_ROOT / "workspace" / ".sessions"
 _PROJECTS_DIR = Path.home() / ".claude" / "projects"
-_ET = ZoneInfo("US/Eastern")
+
+sys.path.insert(0, str(_REPO_ROOT))
+from src.core.markettime import ET, et_today  # noqa: E402
 
 # Prompt headers (see src/agent/prompts.py) that mark the start of each turn.
 _TURN_HEADERS = {
@@ -49,7 +50,7 @@ def _resolve_session_id(date_str: str | None, session: str | None) -> str:
             sys.exit(f"no session marker for {date_str} at {marker}")
         return json.loads(marker.read_text())["session_id"]
     # Default: today's ET trading-day session, else the newest marker.
-    today = _SESSIONS_DIR / f"{datetime.now(_ET).date().isoformat()}.json"
+    today = _SESSIONS_DIR / f"{et_today().isoformat()}.json"
     if today.exists():
         return json.loads(today.read_text())["session_id"]
     markers = sorted(_SESSIONS_DIR.glob("*.json"))
@@ -139,7 +140,7 @@ def _fmt_ts(ts: str | None) -> str:
     if not ts:
         return "?"
     try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(_ET)
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(ET)
         return dt.strftime("%Y-%m-%d %H:%M ET")
     except ValueError:
         return ts
