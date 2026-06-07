@@ -7,12 +7,12 @@ evaluating the agent over time. Lives under the gitignored workspace.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
 
+from src.core.jsonl import append_record, read_records
 from src.core.models import PortfolioState
 
 
@@ -79,10 +79,7 @@ def fetch_benchmark(data_provider, symbols: tuple[str, ...] = ("SPY", "QQQ", "^V
 def record_equity(portfolio: PortfolioState, path: str | Path, benchmark: dict | None = None) -> dict:
     """Append a snapshot of the account to the JSONL equity log; return it."""
     snap = snapshot(portfolio, benchmark=benchmark)
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(snap) + "\n")
+    append_record(path, snap)
     logger.info(
         "Equity snapshot: ${:,.0f} (cash ${:,.0f}, open P&L {:+.2f}, {} positions)",
         snap["equity"], snap["cash"], snap["open_pnl"], snap["position_count"],
@@ -92,19 +89,7 @@ def record_equity(portfolio: PortfolioState, path: str | Path, benchmark: dict |
 
 def read_equity(path: str | Path) -> list[dict]:
     """Read all equity snapshots (oldest first); [] if the log doesn't exist."""
-    path = Path(path)
-    if not path.exists():
-        return []
-    out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return out
+    return read_records(path)
 
 
 def default_path() -> Path:

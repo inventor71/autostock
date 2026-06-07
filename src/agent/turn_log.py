@@ -7,13 +7,14 @@ to compare aggressiveness profiles by activity).
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from loguru import logger
+
+from src.core.jsonl import append_record, read_records
 
 # F25: US equity trading day is anchored to the exchange timezone. The local
 # (e.g. KST) calendar date splits one ET session across two local dates because
@@ -168,10 +169,7 @@ def record_turn(
         "summary": summary,
         "health": "error" if error else "ok",
     }
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec) + "\n")
+    append_record(path, rec)
     cost = rec["cost_usd"]
     logger.info(
         "Turn telemetry: {} [{}] decisions={} cost={} dur={}ms",
@@ -183,15 +181,4 @@ def record_turn(
 
 
 def read_turns(path: str | Path) -> list[dict]:
-    path = Path(path)
-    if not path.exists():
-        return []
-    out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return out
+    return read_records(path)

@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 from src.surge.records import SurgeAnalysis, SurgeCause, SurgeRecord
-from src.surge.store import SurgeStore, _atomic_append, _is_valid_json, _read_complete_lines
+from src.surge.store import SurgeStore, _atomic_append
+# Torn-line / valid-json / empty-file reading moved to src.core.jsonl (R4); those
+# low-level cases are now covered by tests/test_jsonl.py. _atomic_append remains here.
 
 
 # ---------------------------------------------------------------------------
@@ -48,27 +50,6 @@ def _analysis(symbol: str = "AAPL", d: date | None = None) -> SurgeAnalysis:
 # ---------------------------------------------------------------------------
 
 class TestLowLevel:
-    def test_is_valid_json(self):
-        assert _is_valid_json('{"a":1}')
-        assert not _is_valid_json("{broken")
-
-    def test_read_complete_lines_drops_torn_trailing(self, tmp_path: Path):
-        f = tmp_path / "test.jsonl"
-        f.write_text('{"a":1}\n{"b":2}\n{"brok')
-        lines = _read_complete_lines(f)
-        assert len(lines) == 2
-        assert json.loads(lines[0]) == {"a": 1}
-
-    def test_read_complete_lines_clean(self, tmp_path: Path):
-        f = tmp_path / "test.jsonl"
-        f.write_text('{"a":1}\n{"b":2}\n')
-        lines = _read_complete_lines(f)
-        assert len(lines) == 2
-
-    def test_read_complete_lines_empty_file(self, tmp_path: Path):
-        f = tmp_path / "test.jsonl"
-        assert _read_complete_lines(f) == []
-
     def test_atomic_append(self, tmp_path: Path):
         f = tmp_path / "test.jsonl"
         _atomic_append(f, ['{"a":1}'])
