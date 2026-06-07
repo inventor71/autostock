@@ -499,13 +499,13 @@ class TestLedgerShimUnit:
         c.get_orders_for_account.assert_called_once_with("acc-1", filter=req)
 
 
-# ── preserved divergences (R3 T3-1 / T3-2) ────────────────────────────────
-# These lock BrokerApiBroker's CURRENT (deliberately preserved) side/TIF behavior
-# so the shared base extraction can't silently change it and so track R7 (which
-# FIXES these) has to consciously update the asserted values. Without these, the
-# overrides could be dropped and CI would stay green while behavior flips.
+# ── corrected behaviour (R7 — fixes R3 T3-1 / T3-2) ───────────────────────────
+# R3 preserved BrokerApiBroker's divergent side/TIF behaviour behind subclass
+# overrides; R7 dropped those overrides so broker_api now inherits the correct
+# shared AlpacaShapedBroker behaviour (same as AlpacaBroker). These tests assert
+# the corrected values (BUY_TO_COVER→BUY; fail-closed on unsupported TIF).
 
-class TestPreservedSideMapping:
+class TestSideMapping:
     def test_buy_maps_to_buy(self):
         from alpaca.trading.enums import OrderSide as AS
         assert _fresh_impl()._alpaca_side(OrderSide.BUY) == AS.BUY
@@ -518,14 +518,20 @@ class TestPreservedSideMapping:
         from alpaca.trading.enums import OrderSide as AS
         assert _fresh_impl()._alpaca_side(OrderSide.SELL_SHORT) == AS.SELL
 
-    def test_buy_to_cover_maps_to_SELL_quirk(self):
-        # PRESERVED BUG (T3-1): correct would be BUY; broker_api currently → SELL.
-        # R7 will flip this assertion to AS.BUY when it adopts the shared mapping.
+    def test_buy_to_cover_maps_to_buy(self):
+        # R7 T3-1 FIX: a short cover is a BUY (was wrongly → SELL under the preserved
+        # override). broker_api now inherits the correct shared mapping.
         from alpaca.trading.enums import OrderSide as AS
-        assert _fresh_impl()._alpaca_side(OrderSide.BUY_TO_COVER) == AS.SELL
+        assert _fresh_impl()._alpaca_side(OrderSide.BUY_TO_COVER) == AS.BUY
+
+    def test_unknown_side_raises(self):
+        # base maps only BUY/BUY_TO_COVER/SELL/SELL_SHORT; anything else is fail-closed.
+        # (All OrderSide members are valid, so exercise the guard with a bogus value.)
+        with pytest.raises(BrokerError):
+            _fresh_impl()._alpaca_side("FOO")
 
 
-class TestPreservedTimeInForce:
+class TestTimeInForce:
     def _o(self, tif, order_class=OrderClass.SIMPLE):
         return Order(symbol="AAPL", side=OrderSide.BUY, qty=1, order_type=OrderType.MARKET,
                      time_in_force=tif, order_class=order_class)
@@ -538,12 +544,16 @@ class TestPreservedTimeInForce:
         from alpaca.trading.enums import TimeInForce
         assert _fresh_impl()._time_in_force(self._o("day")) == TimeInForce.DAY
 
-    def test_unsupported_tif_silently_downgrades_to_DAY_not_raise(self):
-        # PRESERVED leniency (T3-2): Alpaca fail-closes here; broker_api → DAY.
-        # R7 will tighten this to raise BrokerError.
+    def test_ioc_and_fok_supported(self):
+        # R7 T3-2 FIX: the shared F9 map supports ioc/fok (no longer downgraded to DAY).
         from alpaca.trading.enums import TimeInForce
-        assert _fresh_impl()._time_in_force(self._o("opg")) == TimeInForce.DAY
-        assert _fresh_impl()._time_in_force(self._o("ioc")) == TimeInForce.DAY
+        assert _fresh_impl()._time_in_force(self._o("ioc")) == TimeInForce.IOC
+        assert _fresh_impl()._time_in_force(self._o("fok")) == TimeInForce.FOK
+
+    def test_unsupported_tif_fails_closed(self):
+        # R7 T3-2 FIX: opg/cls/unknown raise instead of silently downgrading to DAY.
+        with pytest.raises(BrokerError):
+            _fresh_impl()._time_in_force(self._o("opg"))
 
     def test_bracket_forces_gtc(self):
         from alpaca.trading.enums import TimeInForce
