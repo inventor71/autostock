@@ -7,12 +7,12 @@
 - **Track ID**: R5
 - **Title**: Investigate sharing the `claude -p` subprocess/JSON-envelope handling
 - **Type**: refactor (investigation-first)
-- **Status**: backlog  <!-- not started -->
-- **Branch**: refactor/R5 (TBD)
-- **Worktree**: .claude/worktrees/R5 (TBD)
+- **Status**: closed — won't-do (Stage 0 investigation, 2026-06-07)  <!-- overlap ~12 lines in hot agent brain; cure > disease. See 0-investigation.md -->
+- **Branch**: refactor/R5 (not yet branched — investigation-first)
+- **Worktree**: .claude/worktrees/R5 (not yet created)
 - **Submodule branch**: — (Python only)
-- **Base commit**: ec2875c (survey point; rebase when picked up)
-- **Start Date**: TBD
+- **Base commit**: 5e786b0 (main HEAD at pick-up)
+- **Start Date**: 2026-06-06
 
 ## Extension Configuration
 - **Security Baseline**: Applicable — the agent path enables tools/Bash; do NOT widen the
@@ -37,10 +37,15 @@ investigation-first: confirm the overlap is worth a helper before extracting. Se
   Do this only when no agent-path track is active. `src/strategy/llm/client.py` is quieter.
 - **API/시그니처 변경**: none public expected; only an internal helper.
 
-## Stage Progress (skill: ai-dlc-refactor) — NOT STARTED
-- [ ] Stage 0 — Investigation: measure real overlap; decide go/no-go (may close as "won't do")
-- [ ] Stage 1 — Baseline + characterization (lean on `tests/test_agent.py`, `tests/test_llm_formatter.py`)
-- [ ] Stage 2 — Tier ledger
-- [ ] Stage 3 — Redesign (`run_claude_headless` / `parse_claude_json` signature)
-- [ ] Stage 4 — Implementation
-- [ ] Build & Test
+## Stage Progress (skill: ai-dlc-refactor) — CLOSED at Stage 0
+- [x] Stage 0 — Investigation: **go/no-go = NO-GO (won't-do)**. Real overlap ~12 lines (post-`subprocess.run`
+      JSON-envelope), concentrated in the hot/high-stakes agent brain (`session.py`, F69 active). Agent
+      retry couples to exact exception text (`_SESSION_ERROR_FRAGMENTS`) so a shared helper can only
+      relocate — not simplify — the messages; strategy-only use = no dedup. Cure (touch trading brain +
+      reproduce exact messages) > disease. Minimal `parse_claude_json` alternative documented but skipped.
+      See `inception/refactor/claude-runner/0-investigation.md`.
+- [~] Stage 1 — Baseline + characterization — N/A (closed at Stage 0)
+- [~] Stage 2 — Tier ledger — N/A
+- [~] Stage 3 — Redesign — N/A
+- [~] Stage 4 — Implementation — N/A
+- [~] Build & Test — N/A (no code change)

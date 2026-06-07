@@ -243,3 +243,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-07 — **R3 merged** → main cfd34b0 (refactor/R3, ↑1). AlpacaShapedBroker base extracted; full suite 1022 passed. Worktree+branch cleaned.
 
 - 2026-06-07 — **R4 merged** → main f43366f (refactor/R4, ↑1, rebased onto post-R3 main). JSONL read/write consolidated into src/core/jsonl.py; full suite 1028 passed. Worktree+branch cleaned.
+
+- 2026-06-07 — **R5 closed (won't-do)** at Stage 0 investigation. Real overlap ~12 lines (claude -p JSON-envelope) in hot agent brain; agent retry couples to exact exception text → shared helper relocates not simplifies; strategy-only use = no dedup. No code change. Registry → abandoned (won't-do).
