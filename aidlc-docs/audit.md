@@ -255,3 +255,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 **Queue**: 1. R6 → 2. F70 → 3. F69 (independents first; F69 central → last, absorbs both overlaps on rebase). Excluded: none.
 
 - 2026-06-07 — **R6 merged** → main 230f74d (refactor/R6, ↑2, rebase no-op base=main). ET market-tz consolidated into src/core/markettime (ET/et_now/et_today); 7 dup constants + today_et→et_today + agent_trace.py folded in; full suite 1033 passed. Worktree+branch cleaned.
+
+- 2026-06-07 — **F70 merged** → main e4676fc (feat/F70, ↑1, rebased onto post-R6 main, 충돌 없음). 섀도우 벤치마크(결정론 baseline 측정자) — src/benchmark/* + buy_and_hold; full suite 1063 passed. Worktree+branch cleaned.

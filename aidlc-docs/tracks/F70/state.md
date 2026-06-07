@@ -8,7 +8,7 @@
 - **Track ID**: F70
 - **Title**: 섀도우 벤치마크 + alpha-vs-baseline 비교 — 결정론적 전략(기술적/buy&hold)을 LLM 경쟁자가 아닌 측정자로 상시 가동
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-07; /ai-dlc-merge가 merged로 전환 -->
+- **Status**: merged → main e4676fc (2026-06-07)  <!-- /ai-dlc-merge: rebased onto post-R6 main (충돌 없음 — R6와 파일 겹침 0), verify green (1063 passed), --no-ff merged -->
 - **Branch**: feat/F70
 - **Worktree**: .claude/worktrees/F70
 - **Submodule branch**: — (operator-console/cli 미변경 — Python/config만)
