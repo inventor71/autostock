@@ -7,7 +7,7 @@
 - **Track ID**: R6
 - **Title**: Consolidate market-timezone (ET) constant + `et_now()`/`et_today()` into `core`
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- Build & Test green (1033 passed); committed on refactor/R6. Post-merge guide skipped: pure internal behavior-preserving refactor (no user-facing/prod change). -->
+- **Status**: merge-awaiting  <!-- Build & Test green (1033 passed) + /code-review fixes applied; committed on refactor/R6. Post-merge guide skipped: pure internal behavior-preserving refactor. -->
 - **Branch**: refactor/R6
 - **Worktree**: .claude/worktrees/R6
 - **Submodule branch**: — (Python only)
@@ -44,3 +44,6 @@ offset/DST), so normalization is behavior-preserving. See `inception/refactor/et
       `today_et`→`et_today` migrated (state/channel/watch_store + 2 test monkeypatch targets);
       `turn_log`/`runtime`/`trades` use shared `ET`
 - [x] Build & Test — full suite **1033 passed, 0 failed**; py_compile clean
+- [x] /code-review (high) fixes — folded in 7th ET dup `scripts/agent_trace.py` (sys.path + core
+      import, mirrors status/health scripts; verified `python scripts/agent_trace.py --help` resolves);
+      de-flaked `test_et_today_is_current_et_date` (bracket the ET-midnight rollover). Suite still 1033.

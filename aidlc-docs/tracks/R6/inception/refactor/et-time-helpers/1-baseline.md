@@ -4,7 +4,7 @@
 
 ## Current state (refreshed survey)
 
-### Duplicated ET constant — 6 declarations, 2 spellings of the *same* zone
+### Duplicated ET constant — 7 declarations, 2 spellings of the *same* zone
 | Site | Spelling | Name |
 |------|----------|------|
 | `src/agent/steering/state.py:31` | `US/Eastern` | `_ET` (used by `today_et()`) |
@@ -13,6 +13,12 @@
 | `src/early_session/monitor.py:30` | `America/New_York` | `_ET` |
 | `src/agent/turn_log.py:22` | `America/New_York` | `_MARKET_TZ` |
 | `src/agent/steering/runtime.py:639` | `America/New_York` | `_MARKET_TZ` |
+| `scripts/agent_trace.py:33` | `US/Eastern` | `_ET` (found by /code-review — survey grepped `src/` only) |
+
+> The 7th site (`scripts/agent_trace.py`) was missed by the initial survey (it greps `src/`). A
+> high-effort `/code-review` caught it: leaving it would falsify the "single source of truth" claim.
+> Folded in — the script now does `sys.path.insert(0, repo_root)` then imports `ET`/`et_today` from
+> core (mirroring its siblings `scripts/status.py`, `scripts/health.py`).
 
 `US/Eastern` is a tz-database backward-compat **alias** of `America/New_York` (identical offset +
 DST rules), so today's behavior is consistent *by alias luck*, not by design — the drift risk this

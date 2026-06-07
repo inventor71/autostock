@@ -38,8 +38,13 @@ class TestAliasEquivalence:
 
 class TestEtHelpers:
     def test_et_today_is_current_et_date(self):
-        assert et_today() == datetime.now(ET).date()
-        assert isinstance(et_today(), date)
+        # Bracket the read so the assertion can't flake at the ET-midnight rollover:
+        # et_today() must equal the ET date on one side of its own clock read.
+        before = datetime.now(ET).date()
+        result = et_today()
+        after = datetime.now(ET).date()
+        assert result in (before, after)
+        assert isinstance(result, date)
 
     def test_et_now_is_tz_aware_et(self):
         now = et_now()
