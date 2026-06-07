@@ -20,7 +20,7 @@
 | F7 | Trading-native home copy | merged | — | — | merged→main | 631ec6e | 2026-05-31 |
 | F8 | Console Sidebar Status Rich | merged | feat/console-sidebar-status-rich | — | merged→fork main 2ac0cda | 77d5ed9 | 2026-05-31 |
 | R1 | New-surface refactor review | abandoned | (never branched) | — | — | — | 2026-06-04 |
-| M1 | AI-DLC multi-track customization | active | main (rules/docs) | — | — | 631ec6e | 2026-05-31 |
+| M1 | AI-DLC multi-track customization | complete | main (rules/docs) | — | — | 631ec6e | 2026-06-07 |
 | F9 | Alpaca-format console orders (limit/stop/TIF) via risk gate | merged | feat/F9 | — | — (parent-repo only; opencode perm keys = follow-up) | e8d99a6→8948e24 | 2026-05-31 |
 | F10 | Containerized verification harness (zero prod impact) | merged | feat/docker-verify | — | — | 8ff59c0 | 2026-05-31 |
 | F11 | Verify-harness ergonomics (clean worktree + reuse main .env.test) | merged | feat/verify-ergonomics | — | — | 24dc367 | 2026-05-31 |

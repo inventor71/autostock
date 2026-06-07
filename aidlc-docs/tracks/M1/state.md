@@ -6,7 +6,7 @@
 - **Track ID**: M1
 - **Title**: AI-DLC concurrent multi-track customization (partition + worktree gate)
 - **Type**: process/meta (applied directly on main per user; not a feature worktree)
-- **Status**: active
+- **Status**: complete (2026-06-07) — meta track applied on main; no branch to merge
 - **Branch**: main (rule/command/doc edits only — no application code)
 - **Worktree**: — (meta-work; worktree gate applies to application code, not rule edits)
 - **Submodule branch**: —
@@ -40,7 +40,9 @@ F7/F8, and again during this very session on `audit.md`).
       "Verification bootstrap" section + worktree-live-verification memory TS half. Fixes the
       recurring "can't tsgo in the worktree" (root cause: bun not on PATH + node_modules absent;
       install is cheap with warm bun cache + hardlinks, not a network op).
-- [ ] Optional follow-up: also wire refactor/deprecate commands + a track-merge helper (deferred)
+- [x] Optional follow-up: refactor/deprecate commands + track-merge helper — DONE: `.claude/commands/`
+      `ai-dlc-refactor.md`, `ai-dlc-deprecate.md`, `ai-dlc-merge.md` all exist and in active use
+      (R3/R4/R5/R6 refactor tracks + the R6/F70/F69 merge ran through them)
 - [x] CodeKB (`common/codekb.md`): shared codebase knowledge cache, single-writer = CI, ported
       from upstream `aidlc-workflows-concurrent`. Rule files updated (workspace-detection,
       reverse-engineering Step 0/12a, requirements-analysis Step 1, session-continuity,
