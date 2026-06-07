@@ -25,6 +25,18 @@ from src.agent.steering.bus import CommandBus
 from src.agent.steering.jsonl import atomic_write_text
 from src.agent.steering.channel import SteeringChannel
 from src.agent.steering.commands import CommandHandler
+# F69: lightweight system-health publish (steering/health.json) for the TUI. The
+# periodic daemon publish runs ONLY the cheap, no-external-call dimensions; the
+# full 9-dimension deep check (broker/llm/account/risk live) stays in
+# scripts/health.py for on-demand runs.
+from src.monitoring.health import CheckerDispatcher
+from src.monitoring.health.checker import BaseChecker
+from src.monitoring.health.dimensions.config_env import ConfigEnvChecker
+from src.monitoring.health.dimensions.logs import LogChecker
+from src.monitoring.health.dimensions.process import ProcessChecker
+from src.monitoring.health.dimensions.resources import ResourceChecker
+from src.monitoring.health.report import CheckResult, CheckStatus, Severity
+from config.config import get_settings
 from src.agent.steering.records import EMERGENCY_VERBS
 from src.agent.steering.security import (
     TOKEN_ENV_VAR,
@@ -37,6 +49,55 @@ from src.agent.steering.turns import ReconcileWorker, TurnCoordinator
 # repo root: src/agent/steering/runtime.py -> parents[3]
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STEERING_DIR = _REPO_ROOT / "steering"
+
+
+class _SnapshotAccountChecker(BaseChecker):
+    """F69: the ``account`` health dimension derived from the daemon's last published
+    snapshot — NO broker call. Distinct from the live ``AccountChecker`` (which queries
+    the broker) used by scripts/health.py's full deep check. Registered alongside the
+    cheap dimensions so the dispatcher assembles the report uniformly."""
+
+    dimension = "account"
+
+    def __init__(self, snapshot: dict | None):
+        self._snapshot = snapshot
+
+    def check(self) -> list[CheckResult]:
+        snap = self._snapshot
+        if not snap:
+            return [CheckResult(
+                name="account_snapshot",
+                status=CheckStatus.SKIPPED,
+                detail="No snapshot published yet (steering warming up)",
+                severity=Severity.INFO,
+            )]
+        acct = snap.get("account") or {}
+        market_open = snap.get("market_open")
+        equity = acct.get("equity")
+        cash = acct.get("cash")
+        pos_n = acct.get("position_count")
+        # Format the numeric line only when both fields are present — a partial
+        # snapshot (equity but no cash, etc.) must not raise inside the f-string.
+        if equity is not None and cash is not None:
+            detail = (f"equity=${equity:,.0f} cash=${cash:,.0f} positions={pos_n} "
+                      f"market={'OPEN' if market_open else 'CLOSED'}")
+        else:
+            detail = "snapshot present (account fields missing)"
+        checks = [CheckResult(
+            name="account_snapshot",
+            status=CheckStatus.OK,
+            detail=detail,
+            severity=Severity.INFO,
+        )]
+        # Only an obviously broken account is a warning; this is a display check.
+        if isinstance(cash, (int, float)) and cash < 0:
+            checks.append(CheckResult(
+                name="account_cash_negative",
+                status=CheckStatus.WARNING,
+                detail=f"cash is negative (${cash:,.0f})",
+                severity=Severity.WARNING,
+            ))
+        return checks
 
 def _resolve_code_version(root: Path) -> str:
     """The git HEAD SHA of the code THIS daemon process is running (F43 version-skew
@@ -597,6 +658,44 @@ class SteeringRuntime:
             atomic_write_text(self.steering_dir / "monitor.json", json.dumps(payload, default=str))
         except Exception as e:
             logger.error("steering monitor publish failed (continuing): {}", e)
+
+    def publish_health(self) -> None:
+        """F69: publish a lightweight system-health report to steering/health.json.
+
+        Runs ONLY the cheap, no-external-call dimensions (process / logs / config_env
+        / resources) and derives an ``account`` dimension from the snapshot the daemon
+        already holds (``self.last_snapshot``) — so a 5-minute cadence costs no broker
+        creation, no LLM API ping, and no extra network I/O. The full 9-dimension deep
+        check (which DOES create brokers and ping the LLM) stays in scripts/health.py.
+
+        Runs on a scheduler thread-pool worker (NFR-1): does not block the 2s command
+        poll or the trade bus. Best-effort — a failure keeps the previous health.json.
+        """
+        try:
+            settings = get_settings()
+            # Inject the repo root explicitly. Without it the checkers fall back to
+            # BaseChecker.root (derived from the health module's own path), which from a
+            # worktree resolves ABOVE the checkout — making config_env/process/resources
+            # all fail and the report a permanent false CRITICAL.
+            dispatcher = CheckerDispatcher(settings, project_root=_REPO_ROOT)
+            dispatcher.register_all([
+                ProcessChecker(settings),
+                LogChecker(settings),
+                ConfigEnvChecker(settings),
+                ResourceChecker(settings),
+                # `account` is just another checker — fed the snapshot the daemon
+                # already holds, so the dispatcher assembles dimensions + overall +
+                # summary uniformly (no hand-rolled report mutation).
+                _SnapshotAccountChecker(self.last_snapshot),
+            ])
+            report = dispatcher.run()
+            payload = report.model_dump(mode="json")
+            # F69: stamp the publish cadence so the TUI can compute "stale" without
+            # hardcoding an interval that drifts from health_publish_seconds.
+            payload["publish_interval_seconds"] = settings.monitoring.health_publish_seconds
+            atomic_write_text(self.steering_dir / "health.json", json.dumps(payload, default=str))
+        except Exception as e:
+            logger.warning("steering health publish failed (keeping last health.json): {}", e)
 
 
 # ---- monitor.json helpers (F6 FR-4) ------------------------------------- #

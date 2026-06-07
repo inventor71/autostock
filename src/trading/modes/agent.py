@@ -458,6 +458,13 @@ class AgentTradingMode:
                 lambda: self.steering.refresh_round_trip(since=self.experiment_start),
                 45, "steering_roundtrip")
             self.scheduler.add_seconds_job(self.steering.publish_monitor, 10, "steering_monitor")
+            # F69: lightweight system-health publish for the TUI (steering/health.json).
+            # Runs cheap, no-external-call dimensions on a pool worker; 0 disables it.
+            from config.config import get_settings
+            _health_secs = get_settings().monitoring.health_publish_seconds
+            if _health_secs > 0:
+                self.scheduler.add_seconds_job(
+                    self.steering.publish_health, _health_secs, "steering_health")
             # F8: sidebar enrichment — current price of resting-order symbols we
             # don't hold (held symbols reuse position.current_price) + the recent-
             # fills list; both cached on the worker and folded into the snapshot.

@@ -41,8 +41,10 @@ class BaseChecker(ABC):
         """Project root directory — injected or derived from this file's location."""
         if self._project_root is not None:
             return self._project_root
-        # Derive from module path: .../src/monitoring/health/dimensions/foo.py → 6 levels up
-        return Path(__file__).resolve().parent.parent.parent.parent.parent
+        # Derived from THIS file's path: src/monitoring/health/checker.py → repo root is
+        # parents[3] (health → monitoring → src → root). The property lives here in
+        # checker.py regardless of which subclass calls it, so the count is fixed at 3.
+        return Path(__file__).resolve().parents[3]
 
     def run_safe(self) -> DimensionResult:
         """Run ``check()`` wrapped with timing, error capture, and a per-check

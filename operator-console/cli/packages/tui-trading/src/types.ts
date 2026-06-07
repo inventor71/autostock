@@ -108,8 +108,39 @@ export interface PositionInfo {
   unrealized_pnl: number
 }
 
+// F69: system-health report mirror of src/monitoring/health/report.py. The daemon
+// publishes a lightweight subset to steering/health.json (cheap dimensions + a
+// snapshot-derived `account`); the TUI shows a status glyph + a detail overlay.
+// NOTE: distinct from `MonitorTurn.health` ("ok" | "error"), which is per-turn.
+export type HealthStatus = "OK" | "WARNING" | "ERROR" | "CRITICAL" | "SKIPPED"
+
+export interface HealthCheck {
+  name: string
+  status: HealthStatus
+  detail?: string
+  error?: string | null
+}
+
+export interface HealthDimension {
+  dimension: string
+  status: HealthStatus
+  checks: HealthCheck[]
+}
+
+export interface HealthReport {
+  run_id: string
+  ts: string
+  duration_ms: number
+  overall: HealthStatus
+  summary: string
+  dimensions: Record<string, HealthDimension>
+  // F69: publish cadence (seconds) the TUI uses to decide staleness without
+  // hardcoding an interval that drifts from the daemon's health_publish_seconds.
+  publish_interval_seconds?: number
+}
+
 export interface OverlayState {
-  type: "turn" | "symbol" | "intervention" | null
+  type: "turn" | "symbol" | "intervention" | "health" | null
   // Turn overlay renders from the selected-date session object the timeline already
   // resolved (carry the full turn + its decisions), symmetric with `intervention` —
   // so a historical turn no longer depends on the live monitor payload.
@@ -117,6 +148,8 @@ export interface OverlayState {
   decisions: MonitorDecision[]
   symbol: string | null
   intervention: InterventionMarker | null
+  // F69: the health report carried into the health overlay.
+  health: HealthReport | null
   anchorX: number
   anchorY: number
 }
