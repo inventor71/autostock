@@ -82,7 +82,7 @@
 | F66 | Health Check 발견 이슈 수정 — LLM provider 정합성 + circuit breaker 키 | merged | feat/F66 → main fff3d9e | — | — (monorepo) | f17d595→fff3d9e | 2026-06-06 |
 | F67 | 자가학습 스택 code-review 핫픽스 — efficacy ts AttributeError + stamp 인덱스 + 캐시 원자성 + regime 매칭 + 프롬프트 조립 일반화 | merged | feat/F67 → main 4f2b1b2 | — | — (monorepo) | f17d595→4f2b1b2 | 2026-06-06 |
 | F68 | F67 follow-up — 자가학습 스택 정리: rollback-rewrite 순서(#7) + collect_outcomes EOD 캐시(#8) + is_meaningful 제거/임계 단일화(#10) | merged | feat/F68 → main 9eaf8a0 | — | — (monorepo) | 58ca6a7→9eaf8a0 | 2026-06-06 |
-| F69 | Health Check TUI 통합 — 데몬 발행(steering/health.json) + TUI 글리프/오버레이 (F63 후속) | active | feat/F69 (TBD) | .claude/worktrees/F69 (TBD) | — (monorepo) | ec2875c | 2026-06-06 |
+| F69 | Health Check TUI 통합 — 데몬 발행(steering/health.json) + TUI 글리프/오버레이 (F63 후속) | merged | feat/F69 → main a0025b3 | — | — (monorepo) | ec2875c | 2026-06-07 |
 | R3 | Alpaca-shaped broker dedup — extract AlpacaShapedBroker base (alpaca_broker + broker_api_broker) | merged | feat/R3 → main cfd34b0 | — | — (monorepo) | ec2875c | 2026-06-07 |
 | R4 | JSONL record read/write helper (src/core/jsonl.py) de-dup | merged | refactor/R4 → main f43366f | — | — (monorepo) | 9e9aec2 | 2026-06-07 |
 | R5 | `claude -p` headless runner — investigate shared JSON-envelope parser | abandoned (won't-do, Stage 0) | (never branched) | — | — (monorepo) | ec2875c | 2026-06-07 |

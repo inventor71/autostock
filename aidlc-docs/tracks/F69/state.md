@@ -8,7 +8,7 @@
 - **Track ID**: F69
 - **Title**: Health Check TUI 통합 — 데몬 발행 + TUI 글리프/오버레이 (F63 후속)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- /code-review high fixes applied + re-verified (pytest 188, tsgo 19/19) 2026-06-07 -->
+- **Status**: merged → main a0025b3 (2026-06-07)  <!-- /ai-dlc-merge: rebased onto post-R6+F70 main; runtime.py import 블록 R6와 자동병합(ZoneInfo→markettime ET + F69 health imports 공존, 검증: stragglers 0/py_compile OK), config.py F70와 자동병합(다른 hunk), verify green (pytest 1071 + tsgo 19/19), --no-ff merged -->
 - **Branch**: feat/F69
 - **Worktree**: .claude/worktrees/F69
 - **Submodule branch**: — (monorepo; operator-console/cli/packages/tui-trading 변경 포함)
