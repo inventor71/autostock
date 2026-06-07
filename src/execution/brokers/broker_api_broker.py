@@ -9,8 +9,6 @@ from loguru import logger
 from src.agent.intraday.records import FillEvent
 from src.agent.trades_log import record_trades
 from src.core.exceptions import BrokerError
-from src.core.models import Order
-from src.core.types import OrderClass, OrderSide
 from src.execution.brokers._alpaca_shaped import AlpacaShapedBroker
 
 try:
@@ -23,9 +21,7 @@ try:
         GetAccountActivitiesRequest,
     )
     from alpaca.trading.enums import (
-        OrderSide as AlpacaSide,
         QueryOrderStatus,
-        TimeInForce,
         ActivityType,
     )
     from alpaca.trading.models import TradeActivity
@@ -34,7 +30,7 @@ except ImportError:
     BrokerClient = None
     MarketOrderRequest = LimitOrderRequest = StopOrderRequest = None
     StopLimitOrderRequest = GetAccountActivitiesRequest = None
-    AlpacaSide = QueryOrderStatus = TimeInForce = ActivityType = None
+    QueryOrderStatus = ActivityType = None
     TradeActivity = PaginationType = None
 
 
@@ -115,24 +111,9 @@ class BrokerApiBroker(AlpacaShapedBroker):
     def _mask(s: str, keep: int = 8) -> str:
         return s[:keep] + "…"
 
-    # ── behavioural overrides (preserved divergences; R3 T3-1 / T3-2) ──
-
-    @staticmethod
-    def _alpaca_side(side: OrderSide):
-        # T3-1 (preserved): current simple mapping. NOTE BUY_TO_COVER falls into the
-        # else branch → SELL (a latent bug). The correct mapping is adopted in R7.
-        return AlpacaSide.BUY if side == OrderSide.BUY else AlpacaSide.SELL
-
-    def _time_in_force(self, order: Order):
-        # T3-2 (preserved): GTC for protective legs; otherwise gtc→GTC else→DAY
-        # (silent downgrade rather than fail-closed; tightened in R7).
-        if order.order_class in (OrderClass.BRACKET, OrderClass.OCO):
-            return TimeInForce.GTC
-        return (
-            TimeInForce.GTC
-            if str(order.time_in_force).lower() == "gtc"
-            else TimeInForce.DAY
-        )
+    # Side mapping (BUY_TO_COVER→BUY, SELL_SHORT→SELL, raise on unknown) and the
+    # fail-closed TIF policy come from AlpacaShapedBroker — broker_api uses the same
+    # correct behaviour as AlpacaBroker (R7 dropped the two divergent overrides).
 
     # ── client hooks (Broker API, per-account endpoints) ──
 
