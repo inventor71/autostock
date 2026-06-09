@@ -1,7 +1,7 @@
 """Configuration for early-session signal detection.
 
 Loaded from ``config/settings.yaml`` → ``early_session:`` block.
-See ``src/early_session/config.py`` in the F51 design.
+See ``src/early_session/settings.py`` in the F51 design.
 """
 
 from __future__ import annotations

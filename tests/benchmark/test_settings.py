@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from src.benchmark.config import DEFAULT_BASELINES, BenchmarkConfig
+from src.benchmark.settings import DEFAULT_BASELINES, BenchmarkConfig
 
 
 def _settings(benchmark: dict):

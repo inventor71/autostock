@@ -21,7 +21,7 @@ from loguru import logger
 from src.core.markettime import ET
 from src.core.types import TimeFrame
 from src.early_session.buffer import BufferManager
-from src.early_session.config import EarlySessionConfig
+from src.early_session.settings import EarlySessionConfig
 from src.early_session.detector import SignalDetector
 from src.early_session.dumper import WindowDumper
 from src.early_session.index_writer import IndexWriter

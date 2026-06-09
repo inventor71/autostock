@@ -509,7 +509,7 @@ def _maybe_start_benchmark(settings, *, data_provider, universe, broker):
 
     Best-effort and fail-honest: any wiring failure leaves the agent unaffected."""
     try:
-        from src.benchmark.config import BenchmarkConfig
+        from src.benchmark.settings import BenchmarkConfig
         from src.benchmark.runner import BenchmarkRunner
 
         cfg = BenchmarkConfig.from_settings(settings)

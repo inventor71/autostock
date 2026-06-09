@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.benchmark.config import BenchmarkConfig
+from src.benchmark.settings import BenchmarkConfig
 from src.benchmark.runner import BenchmarkRunner
 from src.core.models import PortfolioState
 

@@ -7,7 +7,7 @@ from loguru import logger
 
 from src.core.models import PortfolioState
 from src.core.types import TimeFrame
-from src.benchmark.config import BenchmarkConfig
+from src.benchmark.settings import BenchmarkConfig
 from src.benchmark.models import LLM_KEY
 from src.benchmark.store import EquityRecorder
 

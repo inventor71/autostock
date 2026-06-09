@@ -178,7 +178,7 @@ class TestExecutorCursor:
 
 class TestEarlySessionMonitorF56:
     def _monitor(self, tmp_path, **cfg_kw):
-        from src.early_session.config import EarlySessionConfig
+        from src.early_session.settings import EarlySessionConfig
         from src.early_session.monitor import EarlySessionMonitor
 
         cfg = EarlySessionConfig(**cfg_kw)
@@ -231,7 +231,7 @@ class TestEarlySessionMonitorF56:
         assert idx.exists()
 
     def test_symbols_injection(self, tmp_path):
-        from src.early_session.config import EarlySessionConfig
+        from src.early_session.settings import EarlySessionConfig
         from src.early_session.monitor import EarlySessionMonitor
 
         m_list = EarlySessionMonitor(EarlySessionConfig(), MagicMock(), tmp_path / "a", symbols=["NVDA"])
