@@ -36,8 +36,8 @@ Autostock is an automated equities trading platform targeting US markets (NYSE/N
 
 ## Current State
 
-- **Total Packages**: 10 major Python modules + TypeScript operator console
-- **Total Source Files**: 159 Python source files + 50+ test files
+- **Total Packages**: 16 major Python modules + TypeScript operator console
+- **Total Source Files**: 169 Python source files + ~90 test files
 - **Primary Markets**: US equities (Alpaca paper/live); Korean equities (KIS paper; live pending)
 - **Storage**: File-based — JSONL logs, journal files, file-drop IPC; no relational/NoSQL database
-- **Last Significant Change**: F68 self-learning stack cleanup; M1 CodeKB CI 4h cooldown + 3% major-change override; F60 shorting master switch; F61 market-signal brief; F3 intraday event-driven wakes; F4/F5/F6 steering/console
+- **Last Significant Change**: R7 — BrokerApiBroker side/TIF fix (short-cover bug + fail-closed TIF); R8–R13 track registrations; prior: F68 self-learning stack cleanup; M1 CodeKB CI cooldown; F60 shorting master switch; F61 market-signal brief; F3 intraday event-driven wakes

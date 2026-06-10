@@ -102,6 +102,12 @@ Autostock has **two distinct orchestration paths** sharing the same domain core 
 - **Responsibilities**: Iterates historical bars, applies strategy + risk + SimulatedBroker; collects BacktestResult metrics; optionally drives prompt auto-improvement loop
 - **Type**: Application
 
+### BrokerApiBroker (`src/execution/brokers/broker_api_broker.py`)
+- **Purpose**: Broker implementation using the Alpaca Broker API (sandbox farm)
+- **Responsibilities**: Shares all request-building / fill-polling / position-mapping logic with `AlpacaBroker` via `AlpacaShapedBroker`; supplies only the Broker-API client hooks and account-ID routing
+- **R7 fix**: Short-cover side mapping corrected (`sell` → `buy_to_cover`); TIF handling is now fail-closed (unsupported TIF raises, not silently downgrades)
+- **Type**: Shared
+
 ## Data Flow (Agent Turn — Simplified)
 
 ```mermaid

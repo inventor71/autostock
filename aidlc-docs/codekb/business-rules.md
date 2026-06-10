@@ -76,6 +76,11 @@
 - **Rationale**: Alpaca's DAY+LIMIT restriction makes extended-hours OCO legs unreliable.
 - **Implemented In**: `src/execution/brokers/alpaca_broker.py`
 
+#### Fail-Closed TIF Enforcement (R7)
+- **Rule**: Brokers reject orders with unsupported `time_in_force` values rather than silently downgrading them. Supported TIF values are `day`, `gtc`, `ioc`, `fok`.
+- **Rationale**: Silent TIF downgrades caused short-cover orders to be submitted with incorrect semantics. Fail-closed forces the error to the surface.
+- **Implemented In**: `src/execution/brokers/broker_api_broker.py`, `src/risk/manager.py` (`_SUPPORTED_TIF`)
+
 ### Universe & Scheduling
 
 #### Universe Constraint
