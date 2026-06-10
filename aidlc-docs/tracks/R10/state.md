@@ -8,12 +8,12 @@
 - **Track ID**: R10
 - **Title**: `src/data/intraday_*.py` 평면 접두 파일을 `src/data/intraday/` 서브패키지로
 - **Type**: refactor
-- **Status**: backlog  <!-- not started; pick up via /ai-dlc-refactor R10 -->
-- **Branch**: refactor/R10 (TBD)
-- **Worktree**: .claude/worktrees/R10 (TBD)
+- **Status**: merge-awaiting  <!-- Build & Test green (1073 passed + 신규 -m CLI 스모크) 2026-06-11; refactor/R10에 커밋 -->
+- **Branch**: refactor/R10
+- **Worktree**: .claude/worktrees/R10
 - **Submodule branch**: — (Python only)
-- **Base commit**: 2a4e02f (survey point; rebase when picked up)
-- **Start Date**: TBD
+- **Base commit**: 0106a8b (main HEAD at resume)
+- **Start Date**: 2026-06-11
 
 ## Extension Configuration
 - **Security Baseline**: N/A (데이터 수집 모듈 이동만).
@@ -49,9 +49,12 @@ non-src(docs/cron/scripts) 참조까지 전수.
   churn을 읽기 쉽게 하려고 직렬화 권장. 실질 겹침은 R13(`test_intraday_*` 재배치) → R10을 R13보다 먼저.
 
 ## Stage Progress (skill: ai-dlc-refactor)
-- [ ] Stage 1 — Baseline (intraday_* 사용처 + `-m` 경로 non-src 참조 인벤토리; 기존 intraday 테스트 green)
-- [ ] Stage 2 — Tier ledger (코드 이동 T1 + `-m` 경로 클린 브레이크 = 의도된 외부 변경)
-- [ ] Stage 3 — Redesign (서브패키지 레이아웃 + 내부 심볼 접두 정리 매핑 + 새 `-m` 경로)
-- [ ] Stage 4 — Implementation (이동 + 전수 호출부/`-m` 참조 갱신)
-- [ ] post-merge-guide — 옛 `-m src.data.intraday_collector` → 새 경로 안내 (클린 브레이크 결정)
-- [ ] Build & Test
+- [x] Stage 1 — Baseline (`1-baseline.md`) — 전수 인벤토리 7건 라이브 + 오탐/제외 확정; 심볼 stutter 0
+      (개명 불필요); monkeypatch 문자열 0; non-src `-m` 참조 = 과거 트랙 문서/codekb(CI 소유)뿐
+- [x] Stage 2 — Tier ledger (`2-tier-ledger.md`) — 전부 T1 + `-m` 클린 브레이크(기승인), T3 게이트 없음
+- [x] Stage 3 — Redesign (`3-redesign.md`) — `src/data/intraday/{features,store,collector,analysis}.py`,
+      `__init__.py`=docstring만(재export shim 없음), CSV 경로 `data/intraday/` 불변
+- [x] Stage 4 — Implementation — git mv ×4 + import 7곳 + argparse prog/docstring + runtime.py:563
+      문자열 경로; 잔여 `intraday_*` 참조 0 (rg 확인)
+- [x] post-merge-guide — 옛→새 `-m` 경로 표 + 확인 체크리스트 + 롤백 (`post-merge-guide.md`)
+- [x] Build & Test — 전체 스위트 **1073 passed**; `-m src.data.intraday.{collector,analysis} --help` 스모크 OK

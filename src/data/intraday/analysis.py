@@ -207,9 +207,9 @@ def main(argv: list[str] | None = None) -> int:
     import json
     import sys
 
-    from src.data.intraday_store import IntradayFeatureStore
+    from src.data.intraday.store import IntradayFeatureStore
 
-    parser = argparse.ArgumentParser(prog="python -m src.data.intraday_analysis")
+    parser = argparse.ArgumentParser(prog="python -m src.data.intraday.analysis")
     parser.add_argument("--symbols", nargs="*", default=None, help="default: all stored")
     parser.add_argument("--format", choices=["md", "json"], default="md")
     parser.add_argument("--windows", type=int, default=4)
