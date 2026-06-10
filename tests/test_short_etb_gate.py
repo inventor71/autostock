@@ -2,7 +2,7 @@
 
 The gate lives at the executor (agent path) and command handler (human path),
 BEFORE RiskManager — broker.is_shortable() is the authority, fail-closed.
-Also covers code-review findings: SELL-on-SHORT guard, BrokerApiBroker parity.
+Also covers code-review findings: SELL-on-SHORT guard, AccountFarmBroker parity.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from src.agent.steering.state import SteeringState
 from src.core.models import Order, PortfolioState, Position, TradeSignal
 from src.core.types import OrderSide, PositionSide, Signal
 from src.execution.base import BaseBroker
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.risk.manager import RiskManager
 
 TOKEN = "tok"
@@ -151,11 +151,11 @@ def test_cover_on_short_position_accepted():
     assert order is not None and order.side == OrderSide.BUY_TO_COVER
 
 
-def test_broker_api_broker_gets_side_from_f54_parity():
-    """BrokerApiBroker.position_side mirrors AlpacaBroker (code-review finding #1).
+def test_account_farm_broker_gets_side_from_f54_parity():
+    """AccountFarmBroker.position_side mirrors AlpacaBroker (code-review finding #1).
     We test the static helper directly — it's shared across get_position/get_all_positions.
-    This ensures a short held via broker_api is visible as SHORT, not defaulted to LONG."""
-    from src.execution.brokers.broker_api_broker import BrokerApiBroker
+    This ensures a short held via account_farm is visible as SHORT, not defaulted to LONG."""
+    from src.execution.brokers.account_farm_broker import AccountFarmBroker
 
     class _Pos:
         def __init__(self, side, qty):
@@ -163,11 +163,11 @@ def test_broker_api_broker_gets_side_from_f54_parity():
             self.qty = qty
 
     # Alpaca reports short with negative qty; side attribute may or may not be 'short'.
-    assert BrokerApiBroker._position_side(_Pos("short", -100)) == PositionSide.SHORT
-    assert BrokerApiBroker._position_side(_Pos("long", 100)) == PositionSide.LONG
+    assert AccountFarmBroker._position_side(_Pos("short", -100)) == PositionSide.SHORT
+    assert AccountFarmBroker._position_side(_Pos("long", 100)) == PositionSide.LONG
     # Fallback via negative qty when side attribute is absent/ambiguous.
-    assert BrokerApiBroker._position_side(_Pos("", -50)) == PositionSide.SHORT
-    assert BrokerApiBroker._position_side(_Pos("", 50)) == PositionSide.LONG
+    assert AccountFarmBroker._position_side(_Pos("", -50)) == PositionSide.SHORT
+    assert AccountFarmBroker._position_side(_Pos("", 50)) == PositionSide.LONG
 
 
 # --- master short on/off toggle (F60) -------------------------------------- #

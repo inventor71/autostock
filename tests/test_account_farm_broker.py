@@ -9,8 +9,8 @@ import pytest
 from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, OpenOrder, Order, Position
 from src.core.types import OrderClass, OrderSide, OrderType
-from src.execution.brokers.broker_api_broker import (
-    BrokerApiBroker,
+from src.execution.brokers.account_farm_broker import (
+    AccountFarmBroker,
     _LedgerClientShim,
 )
 
@@ -23,7 +23,7 @@ def _mock_broker_client():
 
 
 def _fresh_impl(mock_broker=None, **overrides):
-    """Create a BrokerApiBroker with a mocked BrokerClient.
+    """Create a AccountFarmBroker with a mocked BrokerClient.
 
     Patches get_trade_account_by_id so init validation never hits the network.
     """
@@ -35,7 +35,7 @@ def _fresh_impl(mock_broker=None, **overrides):
     kwargs.update(overrides)
     if mock_broker is None:
         mock_broker = MagicMock()
-    impl = BrokerApiBroker.__new__(BrokerApiBroker)
+    impl = AccountFarmBroker.__new__(AccountFarmBroker)
     impl._c = mock_broker
     impl._account_id = str(kwargs["account_id"])
     impl._api_key = kwargs["api_key"]
@@ -61,7 +61,7 @@ def _fresh_impl(mock_broker=None, **overrides):
     acct.account_number = "PA000001"
     impl._c.get_trade_account_by_id.return_value = acct
     impl._account_number = acct.account_number
-    impl._masked_id = BrokerApiBroker._mask(impl._account_id)
+    impl._masked_id = AccountFarmBroker._mask(impl._account_id)
     return impl
 
 
@@ -70,23 +70,23 @@ def _fresh_impl(mock_broker=None, **overrides):
 class TestFailClosedInit:
     def test_missing_api_key(self):
         with pytest.raises(BrokerError, match="BROKER_API_KEY"):
-            BrokerApiBroker(api_key="", secret_key="s", account_id="a")
+            AccountFarmBroker(api_key="", secret_key="s", account_id="a")
 
     def test_missing_secret(self):
         with pytest.raises(BrokerError, match="BROKER_API_SECRET"):
-            BrokerApiBroker(api_key="k", secret_key="", account_id="a")
+            AccountFarmBroker(api_key="k", secret_key="", account_id="a")
 
     def test_missing_account_id(self):
         with pytest.raises(BrokerError, match="BROKER_ACCOUNT_ID"):
-            BrokerApiBroker(api_key="k", secret_key="s", account_id="")
+            AccountFarmBroker(api_key="k", secret_key="s", account_id="")
 
     def test_missing_client_import(self):
-        from src.execution.brokers import broker_api_broker as m
+        from src.execution.brokers import account_farm_broker as m
         old = m.BrokerClient
         try:
             m.BrokerClient = None
             with pytest.raises(BrokerError, match="alpaca-py"):
-                m.BrokerApiBroker(api_key="k", secret_key="s", account_id="a")
+                m.AccountFarmBroker(api_key="k", secret_key="s", account_id="a")
         finally:
             m.BrokerClient = old
 
@@ -429,7 +429,7 @@ class TestLedgerShim:
     def test_shim_forwards_get_orders(self):
         impl = _fresh_impl()
         with patch(
-            "src.execution.brokers.broker_api_broker.record_trades"
+            "src.execution.brokers.account_farm_broker.record_trades"
         ) as mock_rt:
             impl.record_trade_ledger("/tmp/ledger.jsonl")
             mock_rt.assert_called_once()
@@ -457,7 +457,7 @@ class TestMappersPBT:
     def test_valid_trade_activity_always_yields_fill(self):
         from alpaca.trading.enums import OrderSide as AlpacaSide, OrderStatus as AlpacaStatus
         from alpaca.trading.models import TradeActivity
-        from src.execution.brokers.broker_api_broker import BrokerApiBroker
+        from src.execution.brokers.account_farm_broker import AccountFarmBroker
 
         ta = TradeActivity(
             id="f-1", account_id=uuid.uuid4(), activity_type="FILL",
@@ -467,7 +467,7 @@ class TestMappersPBT:
             order_id=uuid.uuid4(), cum_qty=5,
             type="fill", order_status=AlpacaStatus.FILLED,
         )
-        result = BrokerApiBroker._to_fill_event_typed(ta)
+        result = AccountFarmBroker._to_fill_event_typed(ta)
         assert result is not None
         assert result.fill_id == "f-1"
         # qty is abs()
@@ -476,14 +476,14 @@ class TestMappersPBT:
 
     def test_non_trade_activity_yields_none(self):
         from alpaca.trading.models import NonTradeActivity
-        from src.execution.brokers.broker_api_broker import BrokerApiBroker
+        from src.execution.brokers.account_farm_broker import AccountFarmBroker
 
         nta = NonTradeActivity(
             id="nta-1", account_id=uuid.uuid4(),
             activity_type="DIV", transaction_time="2026-05-31T12:00:00Z",
             date="2026-05-31", net_amount=50.0, description="dividend",
         )
-        assert BrokerApiBroker._to_fill_event_typed(nta) is None
+        assert AccountFarmBroker._to_fill_event_typed(nta) is None
 
 
 # ── _LedgerClientShim isolated tests ─────────────────────────────────────
@@ -500,8 +500,8 @@ class TestLedgerShimUnit:
 
 
 # ── corrected behaviour (R7 — fixes R3 T3-1 / T3-2) ───────────────────────────
-# R3 preserved BrokerApiBroker's divergent side/TIF behaviour behind subclass
-# overrides; R7 dropped those overrides so broker_api now inherits the correct
+# R3 preserved AccountFarmBroker's divergent side/TIF behaviour behind subclass
+# overrides; R7 dropped those overrides so account_farm now inherits the correct
 # shared AlpacaShapedBroker behaviour (same as AlpacaBroker). These tests assert
 # the corrected values (BUY_TO_COVER→BUY; fail-closed on unsupported TIF).
 
@@ -520,7 +520,7 @@ class TestSideMapping:
 
     def test_buy_to_cover_maps_to_buy(self):
         # R7 T3-1 FIX: a short cover is a BUY (was wrongly → SELL under the preserved
-        # override). broker_api now inherits the correct shared mapping.
+        # override). account_farm now inherits the correct shared mapping.
         from alpaca.trading.enums import OrderSide as AS
         assert _fresh_impl()._alpaca_side(OrderSide.BUY_TO_COVER) == AS.BUY
 

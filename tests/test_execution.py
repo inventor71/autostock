@@ -7,7 +7,7 @@ from src.core.models import Order
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.core.exceptions import BrokerError
 from src.execution.brokers.alpaca_broker import AlpacaBroker, TradingClient
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 
 
 class TestSimulatedBroker:

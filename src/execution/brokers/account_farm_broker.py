@@ -34,7 +34,7 @@ except ImportError:
     TradeActivity = PaginationType = None
 
 
-class BrokerApiBroker(AlpacaShapedBroker):
+class AccountFarmBroker(AlpacaShapedBroker):
     """Broker implementation using the Alpaca **Broker API** (sandbox account farm).
 
     Talks to a single sandbox account (``account_id``) through the per-account
@@ -101,7 +101,7 @@ class BrokerApiBroker(AlpacaShapedBroker):
         self._account_number = acct.account_number
         self._masked_id = self._mask(self._account_id)
         logger.info(
-            f"BrokerApiBroker initialized "
+            f"AccountFarmBroker initialized "
             f"(account={self._account_number}, id={self._masked_id}, sandbox=True)"
         )
 
@@ -112,7 +112,7 @@ class BrokerApiBroker(AlpacaShapedBroker):
         return s[:keep] + "…"
 
     # Side mapping (BUY_TO_COVER→BUY, SELL_SHORT→SELL, raise on unknown) and the
-    # fail-closed TIF policy come from AlpacaShapedBroker — broker_api uses the same
+    # fail-closed TIF policy come from AlpacaShapedBroker — account_farm uses the same
     # correct behaviour as AlpacaBroker (R7 dropped the two divergent overrides).
 
     # ── client hooks (Broker API, per-account endpoints) ──

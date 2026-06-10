@@ -26,7 +26,7 @@ class BrokerConfig(BaseModel):
     paper: bool = True
     # provider selects the broker implementation:
     #   "alpaca"     → AlpacaBroker (Trading API, one own paper account)
-    #   "broker_api" → BrokerApiBroker (Broker API sandbox, per-account *_for_account)
+    #   "account_farm" → AccountFarmBroker (Broker API sandbox, per-account *_for_account)
     provider: str = "alpaca"
 
 

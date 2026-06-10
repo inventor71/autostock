@@ -8,12 +8,12 @@
 - **Track ID**: R12
 - **Title**: `broker_api_broker` 개명 + `simulated`→`simulated_broker` 접미사 통일 + `kis_*`→`brokers/kis/`
 - **Type**: refactor
-- **Status**: backlog  <!-- not started; pick up via /ai-dlc-refactor R12 -->
-- **Branch**: refactor/R12 (TBD)
-- **Worktree**: .claude/worktrees/R12 (TBD)
+- **Status**: merge-awaiting  <!-- Build & Test green (1073) + critic 반영 + T3-1/T3-2 승인 구현; code on refactor/R12 -->
+- **Branch**: refactor/R12
+- **Worktree**: .claude/worktrees/R12
 - **Submodule branch**: — (Python only)
-- **Base commit**: 2a4e02f (survey point; rebase when picked up)
-- **Start Date**: TBD
+- **Base commit**: 0106a8b (main HEAD; R9/R11 merge-awaiting — main.py/runner.py 라인 분리)
+- **Start Date**: 2026-06-11
 
 ## Extension Configuration
 - **Security Baseline**: Applicable — 브로커 자격증명은 이미 env-sourced; **개명만** 하고 키/엔드포인트
@@ -60,9 +60,10 @@ import까지 동반 수정.
 - **알려진 동시 변경 / 권장 순서**: R3(merged) 후속. 다른 R-트랙과 거의 안 겹침 → R11 다음(R12) 권장.
 
 ## Stage Progress (skill: ai-dlc-refactor)
-- [ ] Stage 1 — Baseline (provider 리터럴 사용처 전수 + in-repo config 파일 인벤토리; 기존 broker 테스트 green)
-- [ ] Stage 2 — Tier ledger (코드 개명 T1 + provider 리터럴 클린 브레이크 = 의도된 외부 변경)
-- [ ] post-merge-guide — settings.yaml `provider` 값 갱신 절차 (클린 브레이크 결정)
-- [ ] Stage 3 — Redesign (`broker_api_broker` 새 이름 확정 + kis 서브패키지 + 클래스 개명 매핑)
-- [ ] Stage 4 — Implementation (개명 + 전수 호출부/팩토리/키 갱신)
-- [ ] Build & Test
+- [x] Stage 1 — Baseline (`1-baseline.md`; 모듈3그룹 참조 전수 + provider 리터럴 인벤토리(운영 yaml=alpaca 확인); broker 테스트 133 green)
+- [x] Stage 2 — Tier ledger (`2-tier-ledger.md`) — T1 6항목 + T3 1(클린브레이크, 사전승인+이름확정)
+- [x] post-merge-guide — `post-merge-guide.md` (provider 마이그레이션 + 재시작/스모크/롤백)
+- [x] Stage 3 — Redesign (`3-redesign.md`) — **새 이름 = account_farm**(UAQ 2026-06-11) + kis/ 서브패키지 + 마이그레이션 순서
+- [x] Stage 4 — Implementation — git mv 5+테스트1; 클래스/모듈/리터럴 전수 갱신(33파일); T3-2 raise; 잔여 0
+- [x] Build & Test — 전체 **1073 passed**; broker 137; create_broker 4분기 스모크(구 리터럴 fails-loud 확인)
+- Status: **merge-awaiting**

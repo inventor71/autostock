@@ -1,7 +1,7 @@
 """F70 BenchmarkRunner — isolation, fail-closed build, exception isolation.
 
 The runner builds engines via late imports inside ``build()``, so we monkeypatch
-the source-module attributes (BrokerApiBroker / TradingEngine / create_strategy).
+the source-module attributes (AccountFarmBroker / TradingEngine / create_strategy).
 """
 from types import SimpleNamespace
 
@@ -17,7 +17,7 @@ def _pf(equity: float) -> PortfolioState:
 
 
 class FakeBroker:
-    """Stands in for BrokerApiBroker. Raises if account_id == 'BAD'."""
+    """Stands in for AccountFarmBroker. Raises if account_id == 'BAD'."""
 
     def __init__(self, *, api_key, secret_key, account_id, sandbox=True):
         if account_id == "BAD":
@@ -50,11 +50,11 @@ class FakeEngine:
 
 @pytest.fixture
 def patched(monkeypatch):
-    import src.execution.brokers.broker_api_broker as bap
+    import src.execution.brokers.account_farm_broker as bap
     import src.trading.engine as eng
     import src.strategy.registry as reg
 
-    monkeypatch.setattr(bap, "BrokerApiBroker", FakeBroker)
+    monkeypatch.setattr(bap, "AccountFarmBroker", FakeBroker)
     monkeypatch.setattr(eng, "TradingEngine", FakeEngine)
     monkeypatch.setattr(reg, "create_strategy", lambda name, params=None: SimpleNamespace(name=name))
     FakeEngine.last_kwargs = None

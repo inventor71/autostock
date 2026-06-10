@@ -30,8 +30,8 @@ from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, OpenOrder, Order, PortfolioState, Position
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.execution.base import BaseBroker
-from src.execution.brokers.kis_pricing import floor_qty, round_to_tick
-from src.execution.brokers.kis_rest import KisRestClient
+from src.execution.brokers.kis.pricing import floor_qty, round_to_tick
+from src.execution.brokers.kis.rest import KisRestClient
 
 _KST = ZoneInfo("Asia/Seoul")
 _ORDER_PATH = "/uapi/domestic-stock/v1/trading/order-cash"

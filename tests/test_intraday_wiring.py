@@ -9,7 +9,7 @@ from src.agent.intraday.settings import IntradayConfig
 from src.agent.journal import Journal
 from src.agent.steering.runtime import SteeringRuntime
 from src.risk.manager import RiskManager
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.trading.modes.agent import AgentTradingMode
 
 

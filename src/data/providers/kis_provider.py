@@ -15,7 +15,7 @@ from loguru import logger
 from src.core.exceptions import BrokerError
 from src.core.types import TimeFrame
 from src.data.base import BaseDataProvider
-from src.execution.brokers.kis_rest import KisRestClient
+from src.execution.brokers.kis.rest import KisRestClient
 
 _PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-price"
 _DAILY_CHART_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"

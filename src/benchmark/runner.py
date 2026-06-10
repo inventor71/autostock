@@ -75,7 +75,7 @@ class BenchmarkRunner:
 
     def build(self) -> list[_Baseline]:
         """Assemble one engine per baseline, fail-closed on any account problem."""
-        from src.execution.brokers.broker_api_broker import BrokerApiBroker
+        from src.execution.brokers.account_farm_broker import AccountFarmBroker
         from src.strategy.registry import create_strategy
         from src.trading.engine import TradingEngine
 
@@ -100,7 +100,7 @@ class BenchmarkRunner:
                 )
                 continue
             try:
-                broker = BrokerApiBroker(
+                broker = AccountFarmBroker(
                     api_key=self.broker_api_key,
                     secret_key=self.broker_api_secret,
                     account_id=str(account_id),
@@ -115,7 +115,7 @@ class BenchmarkRunner:
                     universe=self.universe,
                     timeframe=self.timeframe,
                 )
-                masked = getattr(broker, "_masked_id", None) or BrokerApiBroker._mask(str(account_id))
+                masked = getattr(broker, "_masked_id", None) or AccountFarmBroker._mask(str(account_id))
                 self._baselines.append(_Baseline(name, engine, masked))
                 logger.info("benchmark: '{}' ready (account {})", name, masked)
             except Exception as exc:  # BrokerError (bad creds/account) or build error

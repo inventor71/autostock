@@ -17,7 +17,7 @@ from hypothesis import strategies as st
 
 from src.core.models import FilledOrder, Order, Position, PortfolioState
 from src.core.types import OrderSide
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.risk.exits import run_polled_exits
 from src.risk.manager import RiskManager
 

@@ -22,7 +22,7 @@ from src.agent.intraday.records import FillEvent
 from src.agent.journal import Journal
 from src.agent.steering.runtime import SteeringRuntime
 from src.core.trades import summarize_today_round_trips
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.risk.manager import RiskManager
 
 _ET = ZoneInfo("America/New_York")

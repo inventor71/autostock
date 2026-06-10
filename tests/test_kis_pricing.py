@@ -6,7 +6,7 @@ import math
 
 from hypothesis import given, strategies as st
 
-from src.execution.brokers.kis_pricing import floor_qty, round_to_tick, tick_size
+from src.execution.brokers.kis.pricing import floor_qty, round_to_tick, tick_size
 
 # A realistic KRX price range (1 won .. 1,000,000 won).
 prices = st.floats(min_value=1.0, max_value=1_000_000.0, allow_nan=False, allow_infinity=False)

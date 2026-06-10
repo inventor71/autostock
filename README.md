@@ -127,14 +127,14 @@ autostock
 소유자당 페이퍼 계정 3개 제한이 있어, 다수의 격리된 거래 환경이 필요하면 **Alpaca Broker API
 sandbox**로 프로그래밍 방식 무제한 생성한 계정 팜(`scripts/broker_create_accounts.py`)에 거래를
 붙일 수 있습니다. 봇의 실행 계층은 `BaseBroker` 포트 뒤에 두 구현체(`AlpacaBroker` /
-`BrokerApiBroker`)를 두므로, **설정·환경변수만 바꾸면 코드 수정 없이 전환**됩니다.
+`AccountFarmBroker`)를 두므로, **설정·환경변수만 바꾸면 코드 수정 없이 전환**됩니다.
 
 전환 2단계:
 
-1. `config/settings.yaml` — `broker.provider`를 `broker_api`로:
+1. `config/settings.yaml` — `broker.provider`를 `account_farm`으로:
    ```yaml
    broker:
-     provider: broker_api   # 기본값: alpaca
+     provider: account_farm   # 기본값: alpaca
    ```
 2. `.env`(또는 export) — 어느 farm 계정으로 거래할지 지정:
    ```bash
