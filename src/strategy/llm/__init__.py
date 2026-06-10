@@ -7,7 +7,7 @@ from src.strategy.llm.client import (
     create_llm_client,
 )
 from src.strategy.llm.data_formatter import MarketDataFormatter
-from src.strategy.llm.llm_strategy import LLMStrategy
+from src.strategy.llm.strategy import LLMStrategy
 from src.strategy.llm.prompt_manager import PromptManager, PromptVersion
 from src.strategy.llm.auto_improver import PromptAutoImprover
 
