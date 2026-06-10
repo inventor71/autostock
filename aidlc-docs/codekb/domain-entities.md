@@ -1,63 +1,111 @@
 # Domain Entities
 
-All core entities are Pydantic v2 models / enums defined in `src/core/` and depend on nothing.
+All core entities are Pydantic v2 models / enums defined in `src/core/` — depends on nothing.
 
 ## Entity Catalog
 
 ### Bar
-- **Purpose**: A single OHLCV market data bar for a symbol/timeframe.
-- **Key Fields**: open/high/low/close (price), volume, timestamp, symbol, timeframe.
+- **Purpose**: A single OHLCV market data candlestick for a symbol/timeframe
+- **Key Fields**: `timestamp: datetime`, `open: float`, `high: float`, `low: float`, `close: float`, `volume: int`, `symbol: str`, `timeframe: TimeFrame`
+- **Relationships**: Many Bars per Symbol per TimeFrame; produced by BaseDataProvider; consumed by BaseStrategy and BacktestEngine
 - **Defined In**: `src/core/models.py`
+- **Lifecycle**: Fetched from provider; TTL-cached in `IntraydayStore`; never mutated
 
 ### TradeSignal
-- **Purpose**: A strategy's directional output before risk sizing — the input to the RiskManager.
-- **Key Fields**: symbol, side, confidence/strength, suggested levels, source strategy.
-- **Relationships**: produced by `BaseStrategy` → consumed by `RiskManager`.
+- **Purpose**: A strategy's directional output before risk sizing — the input to RiskManager
+- **Key Fields**: `symbol: str`, `signal: Signal` (BUY/SELL/HOLD), `confidence: float`, `sell_pct: float` (fraction to liquidate for SELL), `metadata: dict`
+- **Relationships**: Produced by `BaseStrategy.generate_signal()`; consumed by `RiskManager`
+- **Defined In**: `src/core/models.py`
+- **Lifecycle**: Generated per strategy evaluation cycle; discarded after order submission or rejection
+
+### Order
+- **Purpose**: A broker-bound trade instruction (simple, bracket, OCO, trailing stop)
+- **Key Fields**: `symbol: str`, `side: OrderSide`, `qty: float`, `order_type: OrderType`, `take_profit_price: float|None`, `stop_loss_price: float|None`, `trail_price: float|None`, `trail_percent: float|None`, `extended_hours: bool`, `client_order_id: str|None`
+- **Relationships**: Emitted by `RiskManager.validate_order()`; submitted to `BaseBroker`; becomes `FilledOrder`
+- **Defined In**: `src/core/models.py`
+- **Lifecycle**: Created → validated (RiskManager) → submitted (broker) → filled → logged in execution_log.jsonl
+
+### OpenOrder
+- **Purpose**: A resting (unexecuted) order at the broker
+- **Key Fields**: `order_id: str`, `symbol: str`, `side: OrderSide`, `qty: float`, `order_type: OrderType`, `status: str`
+- **Relationships**: Retrieved via `BaseBroker.get_open_orders()`; reconciled by `ReconcileWorker`
 - **Defined In**: `src/core/models.py`
 
-### Order / OpenOrder / FilledOrder
-- **Purpose**: An intended trade (`Order`), its resting state (`OpenOrder`), and its executed state
-  (`FilledOrder`). The RiskManager emits `Order`; brokers return open/filled states.
-- **Key Fields**: symbol, side (`OrderSide`), type (`OrderType`), class (`OrderClass` — incl. bracket/OCO),
-  quantity, limit/stop prices, status.
-- **Relationships**: `RiskManager` → `Order` → `BaseBroker` → `OpenOrder`/`FilledOrder`.
+### FilledOrder
+- **Purpose**: Confirmed execution record from the broker
+- **Key Fields**: `order_id: str`, `symbol: str`, `side: OrderSide`, `qty: float`, `filled_price: float`, `filled_at: datetime`, `commission: float`
+- **Relationships**: Aggregated into round-trip trades; persisted to `trades_log.jsonl`
 - **Defined In**: `src/core/models.py`
+- **Lifecycle**: Created on broker fill event; persisted; consumed by quality metrics
 
 ### Position
-- **Purpose**: A held position in a symbol (long/short).
-- **Key Fields**: symbol, side (`PositionSide`), quantity, avg entry, market value, unrealized P/L.
+- **Purpose**: Current open exposure in a single symbol (long or short)
+- **Key Fields**: `symbol: str`, `side: PositionSide` (LONG/SHORT), `qty: float`, `entry_price: float`, `current_price: float`, `unrealized_pnl: float`
+- **Relationships**: Many Positions per PortfolioState; queried by RiskManager before every order
 - **Defined In**: `src/core/models.py`
+- **Lifecycle**: Created on first fill; updated on price tick; closed on full liquidation
 
 ### PortfolioState
-- **Purpose**: Snapshot of the whole book — cash, positions, equity. Injected as context into agent turns.
+- **Purpose**: Snapshot of the full account at a point in time
+- **Key Fields**: `cash: float`, `equity: float`, `buying_power: float`, `positions: dict[str, Position]`
+- **Relationships**: Contains many Positions; injected as context into agent turns; queried by RiskManager
 - **Defined In**: `src/core/models.py`
+- **Lifecycle**: Fetched from broker on demand; not cached (always live in agent mode)
 
 ### BacktestResult
-- **Purpose**: Output metrics of a backtest run (returns, drawdown, trade stats).
+- **Purpose**: Aggregated performance report for one backtest run
+- **Key Fields**: `strategy_name: str`, `total_return_pct: float`, `sharpe_ratio: float`, `max_drawdown_pct: float`, `total_trades: int`, `win_rate: float`, `profit_factor: float`, `final_capital: float`
+- **Relationships**: Produced by BacktestEngine; optionally fed to LLM auto-improver
 - **Defined In**: `src/core/models.py`
 
-### Decision (agent journal)
-- **Purpose**: A machine-readable trade decision line emitted by the agent brain and consumed by the
-  executor; the unit of the brain/body hand-off. Self-learning attaches `lessons_cited` + `prompt_version`.
-- **Key Fields**: symbol, action, suggested levels, rationale, lessons_cited, prompt_version.
-- **Defined In**: `src/agent/` (journal/decision modules) — persisted to `decisions.jsonl`.
-- **Lifecycle**: appended by AgentTradingLoop → read once by DecisionExecutor (cursor-tracked) → outcome
-  attributed at EOD review.
+### Decision (Agent Journal)
+- **Purpose**: A machine-readable trade decision emitted by the agent brain; the unit of brain/body hand-off
+- **Key Fields**: `symbol: str`, `action: Signal`, `qty: float`, `ts: datetime`, `rationale: str`, `lessons_cited: list[str]`, `prompt_version: str`, `metadata: dict`
+- **Relationships**: Many Decisions per Journal; each Decision has 0-1 FilledOrder; cursor tracks last executed index
+- **Defined In**: `src/agent/journal.py` — persisted to `decisions.jsonl`
+- **Lifecycle**: Appended by `AgentTradingLoop`; consumed once by `DecisionExecutor` (cursor-tracked); outcome attributed at EOD self-review
 
-### LessonRecord (self-learning)
-- **Purpose**: A single lesson learned from a trading outcome, persisted in `lessons.jsonl`. Contains recall keys (regime, sector) used by situational recall to select relevant lessons for injection into prompts.
-- **Key Fields**: lesson_id, date, category, regime, sector, outcome, takeaway, signal_used.
+### Thesis (Agent)
+- **Purpose**: LLM conviction statement for a position — entry rationale plus bracket levels
+- **Key Fields**: `symbol: str`, `rationale: str`, `entry_price: float`, `stop_loss: float`, `take_profit: float`, `conviction: float`
+- **Relationships**: Associated with a Decision; informs bracket Order construction
 - **Defined In**: `src/agent/journal.py`
-- **Lifecycle**: Written by EOD `review.py`; recalled by `src/agent/recall.py`; efficacy tracked in `src/agent/efficacy.py`.
+
+### LessonRecord (Self-Learning)
+- **Purpose**: A single lesson learned from a trading outcome; persisted for situational recall
+- **Key Fields**: `lesson_id: str`, `date: str`, `category: str`, `regime: str`, `sector: str`, `outcome: str`, `takeaway: str`, `signal_used: str`
+- **Relationships**: Written by EOD `review.py`; recalled by `src/agent/recall.py`; efficacy tracked by `src/agent/efficacy.py`
+- **Defined In**: `src/agent/journal.py` — persisted to `lessons.jsonl`
+- **Lifecycle**: Written at EOD; recalled by regime/sector match; attribution tracks `lessons_cited` on Decision
 
 ### SurgeRecord
-- **Purpose**: Records a stock that had an abnormal EOD move (surge/dive) beyond a threshold. Used as agent analysis input during the EOD review turn.
-- **Key Fields**: symbol, date, return_pct, direction (surge/dive).
+- **Purpose**: Records a stock with an abnormal EOD move (surge/dive) beyond a threshold
+- **Key Fields**: `symbol: str`, `date: str`, `return_pct: float`, `direction: str` (surge/dive)
+- **Relationships**: Written by `SurgeDetector`; consumed by agent EOD review turn
 - **Defined In**: `src/surge/records.py`
 
-## Enums
-- `OrderSide`, `OrderType`, `OrderClass`, `PositionSide`, `TimeFrame`, `TradingMode`, `Signal` — `src/core/types.py`.
+### CommandRecord (Steering)
+- **Purpose**: A human operator command received via file-drop channel
+- **Key Fields**: `verb: str` (lock/approve/place/adjust), `args: dict`, `requester: str`, `status: str`, `reason: str`
+- **Relationships**: Processed by SteeringRuntime → CommandBus → RiskManager → Broker
+- **Defined In**: `src/agent/steering/records.py`
 
-## Exceptions
-- `AutostockError` (base), `DataProviderError`, `BrokerError`, `StrategyError`, `RiskLimitError`,
-  `ConfigurationError`, `InsufficientDataError` — `src/core/exceptions.py`.
+### ApprovalRecord (Steering)
+- **Purpose**: Human approval or rejection of a specific LLM decision
+- **Key Fields**: `decision_id: str`, `approved_by: str`, `requested_by: str`, `reason: str`
+- **Relationships**: Gates DecisionExecutor — decision's order is only submitted after approval
+- **Defined In**: `src/agent/steering/records.py`
+
+## Enums (`src/core/types.py`)
+
+- `Signal`: BUY / SELL / HOLD
+- `OrderSide`: BUY / SELL
+- `OrderType`: MARKET / LIMIT / STOP / STOP_LIMIT
+- `OrderClass`: SIMPLE / BRACKET / OCO / OTO
+- `PositionSide`: LONG / SHORT
+- `TimeFrame`: 1Min / 5Min / 15Min / 1Hour / 1Day
+- `TradingMode`: backtest / paper / live / agent
+
+## Exceptions (`src/core/exceptions.py`)
+
+- `AutostockError` (base), `DataProviderError`, `BrokerError`, `StrategyError`, `RiskLimitError`, `ConfigurationError`, `InsufficientDataError`

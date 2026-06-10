@@ -1,34 +1,43 @@
 # Codebase Summary
 
 ## Business Domain
-Autostock is an automated equities trading framework. It runs pluggable trading
-strategies and an agentic LLM "portfolio manager" against live brokers (Alpaca for
-US markets, KIS for Korean markets) and a simulated broker for backtesting. It covers
-the full pipeline: market data → signal/strategy → risk gate → order execution →
-telemetry, journaling, and EOD self-review (self-learning lessons).
+
+Autostock is an automated equities trading platform targeting US markets (NYSE/NASDAQ via Alpaca) and Korean markets (KIS — 한국투자증권). It runs pluggable trading strategies and an agentic LLM "portfolio manager" against live brokers and a simulated broker for backtesting. It covers the full pipeline: market data → signal/strategy → risk gate → order execution → telemetry, journaling, and EOD self-review (self-learning lessons). The system is safety-first: shorting is off by default, position sizing is risk-budget driven, and a deterministic RiskManager gates every order before it reaches the broker.
 
 ## Technical Overview
-- **Primary Language**: Python (>= 3.11)
-- **Framework**: Pydantic v2 domain models; APScheduler for market-time scheduling; no web framework (CLI/daemon app)
-- **Architecture Style**: Modular monolith with a strict layered core; two orchestration paths (strategy engine + agent loop) over a shared domain core
-- **Build System**: hatchling (`pyproject.toml`)
+
+- **Primary Language**: Python 3.11+
+- **Framework**: Pydantic v2 (models + settings), Loguru (structured logging), APScheduler (market-time scheduling); no web framework — CLI/daemon app
+- **Architecture Style**: Modular monolith with two distinct orchestration paths (strategy engine + agent loop) over a shared domain core; pluggable provider pattern throughout (broker, data, strategy)
+- **Build System**: hatchling / pyproject.toml (PEP 517); Bun/Node for the TypeScript operator console
 
 ## Key Components
+
 | Component | Type | Purpose |
 |---|---|---|
-| `src/core/` | shared | Pydantic domain models, enums, exceptions; depends on nothing |
-| `src/trading/` | app | `TradingEngine` (per-symbol cycle) + mode dispatch (agent/realtime/batch) |
-| `src/agent/` | app | Agentic LLM portfolio manager: orchestrator, session, journal, executor, telemetry, self-review |
-| `src/strategy/` | app | `BaseStrategy` registry: technical (4), ml (4), llm (5), ensemble (2) |
-| `src/risk/` | app | `RiskManager` — single gate from signal/decision to `Order` |
-| `src/execution/` | app | `BaseBroker` abstraction + Alpaca / KIS / Simulated brokers |
-| `src/data/` | app | Data providers: Alpaca, yfinance, KIS, news |
-| `src/signals/` | app | Market-signals research turn: movers, peer-map, Finnhub earnings |
-| `src/backtest/` | app | Replays bars through the same RiskManager + strategies |
-| `src/universe/`, `src/surge/`, `src/early_session/`, `src/monitoring/` | app | Universe selection, surge detection, early-session handling, health monitoring |
+| `main.py` | app | CLI dispatcher — backtest / paper / live / agent modes |
+| `src/agent/` | app | Agentic LLM PM loop: orchestrator, session (claude CLI), executor, steering, telemetry, self-review |
+| `src/trading/` | app | Strategy-driven TradingEngine + mode dispatch (agent / realtime / batch) |
+| `src/strategy/` | shared | Pluggable strategies: technical (4), ML (RF, LSTM), LLM (Claude/OpenAI), ensemble |
+| `src/risk/` | shared | RiskManager — single gate from signal/decision to Order; circuit breaker, bracket validation, short rules |
+| `src/execution/` | shared | BaseBroker abstraction + Alpaca Trading, Alpaca Broker API, KIS, SimulatedBroker |
+| `src/data/` | shared | BaseDataProvider + Alpaca Data, yfinance (fallback), KIS, News providers |
+| `src/core/` | shared | Pydantic domain models, enums, exceptions — depended on by all, depends on nothing |
+| `src/signals/` | app | Research-turn signal assembly (F61): movers, peer read-through, Finnhub earnings |
+| `src/agent/steering/` | shared | Human-in-the-loop: file-drop IPC, CommandBus (NFR-2), OrderGate |
+| `src/monitoring/` | shared | Health checkers (account, broker, LLM, process, disk, risk) + alert dispatch |
+| `src/backtest/` | app | Vectorised bar-by-bar backtest engine + metrics + parameter optimizer |
+| `src/surge/` | app | EOD surge/dive detector — extreme post-close movers |
+| `src/early_session/` | app | Pre/early-market rapid-move detection (first 60 min) |
+| `src/universe/` | shared | Trading universe resolver — US S&P100 / KR market-cap |
+| `operator-console/` | app | TypeScript human-steering TUI (system-tray, daemon control, file-drop channel) |
+| `config/` | infra | config.py (Pydantic Settings), settings.yaml, strategies.yaml |
+| `.github/workflows/` | infra | CodeKB CI refresh (cooldown 4h + major-change 3% override) |
 
 ## Current State
-- **Primary markets**: US equities (Alpaca); Korean equities supported via KIS broker/data (multi-broker)
-- **Storage**: file-based — `workspace/` journal (markdown theses + append-only `decisions.jsonl`) + JSONL telemetry logs; no database
-- **Last Significant Change**: F68 — self-learning stack cleanup: self-learning stack pruning (#7 #8 #10); M1 — CodeKB CI adoption; includes short-selling (F60), intraday wake redesign (F3), steering/operator-console (F4/F5/F6), and signals research turn (F61)
-- **Snapshot**: HEAD `3572f30` (2026-06-05). Refreshed by CI.
+
+- **Total Packages**: 10 major Python modules + TypeScript operator console
+- **Total Source Files**: 159 Python source files + 50+ test files
+- **Primary Markets**: US equities (Alpaca paper/live); Korean equities (KIS paper; live pending)
+- **Storage**: File-based — JSONL logs, journal files, file-drop IPC; no relational/NoSQL database
+- **Last Significant Change**: F68 self-learning stack cleanup; M1 CodeKB CI 4h cooldown + 3% major-change override; F60 shorting master switch; F61 market-signal brief; F3 intraday event-driven wakes; F4/F5/F6 steering/console

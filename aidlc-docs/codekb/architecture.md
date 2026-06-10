@@ -1,103 +1,165 @@
 # System Architecture
 
 ## System Overview
-Autostock has **two distinct orchestration paths** that share the same domain core
-(`src/core/`), risk gate (`src/risk/`), and broker abstraction (`src/execution/`):
 
-1. **Strategy path** (original): `TradingEngine` runs pluggable strategies
-   (technical / ml / llm / ensemble) per symbol. Used by backtest, paper, and realtime modes.
-2. **Agent path** (newer, most actively developed): an agentic LLM portfolio manager reasons
-   over the whole book each trading day via the local `claude` CLI, writes machine-readable
-   `Decision` lines to a file journal, and a deterministic `DecisionExecutor` places resting
-   bracket orders. Used by `--mode agent`.
+Autostock has **two distinct orchestration paths** sharing the same domain core (`src/core/`), risk gate (`src/risk/`), and broker abstraction (`src/execution/`):
+
+1. **Strategy path** (original): `TradingEngine` runs pluggable strategies (technical / ML / LLM / ensemble) per symbol. Used by backtest, paper, and realtime modes.
+2. **Agent path** (newer, most actively developed): an agentic LLM portfolio manager reasons over the whole book each trading day via the local `claude` CLI, writes machine-readable `Decision` lines to a file journal, and a deterministic `DecisionExecutor` places resting bracket orders. Used by `--mode agent`.
 
 ## Architecture Diagram
 
 ```text
-                          main.py  (CLI mode dispatch)
-                              |
-        +---------------------+--------------------------+
-        |                     |                          |
-        v                     v                          v
-   backtest mode        paper / realtime modes       agent mode
-        |                     |                          |
-        v                     v                          v
-  BacktestEngine        TradingEngine             AgentTradingMode
-  (SimulatedBroker)     (per-symbol cycle)        +--------------------+
-        |                     |                   | AgentTradingLoop   |  brain
-        |                     |                   |  -> AgentSession   |  (claude CLI)
-        |                     |                   |  -> Journal (files)|
-        |                     |                   +---------+----------+
-        |                     |                             | decisions.jsonl
-        |                     |                             v
-        |                     |                   DecisionExecutor       body
-        |                     |                             |
-        +---------+-----------+--------------+--------------+
-                  v                          v
-            RiskManager  <----------->  BaseBroker
-          (signal -> Order)     (Simulated / Alpaca / KIS)
-                  ^
-                  |
-            src/core/  (models, enums, exceptions — depended on by all)
+                         main.py  (CLI mode dispatch)
+                             |
+       +---------------------+--------------------------+
+       |                     |                          |
+       v                     v                          v
+  backtest mode        paper / realtime modes       agent mode
+       |                     |                          |
+       v                     v                          v
+ BacktestEngine        TradingEngine             AgentTradingMode
+ (SimulatedBroker)     (per-symbol cycle)        +----------------------------+
+       |                     |                   | AgentTradingLoop           | brain
+       |                     |                   |  -> SignalCollector (F61)  |
+       |                     |                   |  -> AgentSession           | (claude CLI)
+       |                     |                   |  -> Journal (files)        |
+       |                     |                   +---------+------------------+
+       |                     |                             | decisions.jsonl
+       |                     |                             v
+       |                     |                   DecisionExecutor              body
+       |                     |                   (cursor-idempotent)
+       |                     |                             |
+       |                     |   [SteeringRuntime + CommandBus — optional]
+       |                     |                             |
+       +---------+-----------+--------------+--------------+
+                 v                          v
+           RiskManager  <----------->  BaseBroker
+         (signal -> Order)     (Simulated / Alpaca / KIS / BrokerAPI)
+                 ^
+                 |
+           src/core/  (models, enums, exceptions — depended on by all)
 ```
 
 ## Component Descriptions
 
-### Strategy path
-- **TradingEngine** (`src/trading/engine.py`) — per-symbol cycle: data → strategy → RiskManager →
-  broker; also owns polled stop/take-profit exits. Entry points `run_cycle()` (whole universe) and
-  `run_cycle_for_symbol()` (realtime).
-- **Strategy layer** (`src/strategy/`) — `BaseStrategy` ABC + decorator registry; technical (4),
-  ml (4), llm (5), ensemble (2).
-- **Trading modes** (`src/trading/modes/`) — `agent.py`, `realtime.py`, `batch.py`.
-- **Backtest** (`src/backtest/`) — replays bars through the same RiskManager + strategies against `SimulatedBroker`.
+### AgentTradingLoop (`src/agent/orchestrator.py`)
+- **Purpose**: Daily PM cycle — research turn → 0-N intraday turns (event-driven) → EOD review
+- **Responsibilities**: Sequences LLM calls, assembles prompts, drives executor, manages journal, handles self-learning recall and constitution/self-rewrite
+- **Dependencies**: AgentSession, DecisionExecutor, SignalCollector, SteeringRuntime (optional), Journal
+- **Type**: Application
 
-### Agent path
-- **AgentTradingMode** (`src/trading/modes/agent.py`) — schedules daily turns (pre-market research /
-  intraday / EOD) on `TradingScheduler`; composes orchestrator (brain) with executor (body).
-- **AgentTradingLoop** (`src/agent/orchestrator.py`) — sequences turn types, injects context
-  (universe, held positions), enforces the universe constraint.
-- **AgentSession** (`src/agent/session.py`) — wraps the local `claude -p` CLI with tools enabled;
-  one resumable session per US/Eastern trading day.
-- **Journal** (`src/agent/journal.py`) — file-based durable memory under `workspace/`: markdown
-  theses + append-only `decisions.jsonl`.
-- **DecisionExecutor** (`src/agent/executor.py`) — the only thing that places agent orders; reads
-  `decisions.jsonl`, applies pool/expiry/circuit-breaker checks, routes through RiskManager (bracket
-  mode) → broker, reconciles resting protective legs. Cursor file makes it idempotent.
-- **Self-learning / telemetry** (`src/agent/turn_log.py`, `equity_log.py`, `trades_log.py`,
-  `review.py`, plus efficacy/lessons modules) — per-turn cost, daily equity vs benchmark, closed
-  round-trips, EOD self-review → lessons, lesson attribution, hybrid recall, charter-bounded prompt
-  self-rewrite.
+### AgentSession (`src/agent/session.py`)
+- **Purpose**: Wraps `claude -p` CLI in headless mode with a curated tool manifest
+- **Responsibilities**: Spawns subprocess, streams JSON output, enforces turn timeout, exposes market tools (quote, indicators, scoreboard, fundamentals, earnings) to LLM
+- **Dependencies**: Claude Code CLI (subscription auth at `~/.claude/`), `src/agent/tools/__main__.py`
+- **Type**: Application
 
-### Shared core
-- **RiskManager** (`src/risk/manager.py`) — single gate from signal/decision to `Order`. Two behaviors
-  selected by `use_bracket_orders`: legacy market-order + polled stop, or resting BRACKET/OCO from supplied levels.
-- **BaseBroker** (`src/execution/base.py`) — `SimulatedBroker`, `AlpacaBroker`, `KISBroker`.
-- **core** (`src/core/`) — Pydantic models, enums, exceptions; depended on by all, depends on nothing.
+### DecisionExecutor (`src/agent/executor.py`)
+- **Purpose**: Converts LLM journal decisions into real broker orders — the only actuator in agent mode
+- **Responsibilities**: Idempotent cursor-based replay, pool/expiry/circuit-breaker checks, gates through RiskManager (bracket mode), records execution log, atomic cursor writes
+- **Dependencies**: RiskManager, BaseBroker, Journal
+- **Type**: Application
 
-## Data Flow (agent turn, simplified)
-```text
-pre-market research turn  -> AgentSession (claude CLI) -> Journal theses + decisions.jsonl
-intraday turn             -> AgentSession -> updated decisions
-DecisionExecutor          -> reads decisions.jsonl -> RiskManager (bracket) -> Broker (resting OCO)
-EOD turn                  -> review.py -> lessons (self-learning) -> next-day prompt context
+### SteeringRuntime (`src/agent/steering/runtime.py`)
+- **Purpose**: Human-in-the-loop daemon engine — optional (`--steering` flag)
+- **Responsibilities**: Polls file-drop channel, dispatches through CommandBus, publishes monitor.json snapshot, coordinates turn sequencing via TurnCoordinator
+- **Dependencies**: CommandBus, SteeringChannel, TurnCoordinator, ReconcileWorker
+- **Type**: Application
+
+### CommandBus (`src/agent/steering/bus.py`)
+- **Purpose**: Single-writer queue for all broker operations (NFR-2)
+- **Responsibilities**: Serialises concurrent command/snapshot requests onto one worker thread; prevents order/fill races between LLM executor and human commands
+- **Dependencies**: BaseBroker, RiskManager
+- **Type**: Shared
+
+### SignalCollector (`src/signals/collector.py`)
+- **Purpose**: Pre-research signal assembly (F61) — movers, peer read-through, earnings
+- **Responsibilities**: Scans price movers, propagates to sector peers via PeerMap, fetches Finnhub earnings calendar, builds markdown/structured brief injected into research prompt
+- **Dependencies**: AlpacaProvider, FinnhubEarnings, PeerMap
+- **Type**: Shared
+
+### TradingEngine (`src/trading/engine.py`)
+- **Purpose**: Strategy evaluation loop for non-agent modes
+- **Responsibilities**: Iterates universe symbols, calls `strategy.generate_signal()`, gates through RiskManager, submits to broker, polls stop/take-profit exits
+- **Dependencies**: BaseStrategy, RiskManager, BaseBroker, BaseDataProvider
+- **Type**: Application
+
+### RiskManager (`src/risk/manager.py`)
+- **Purpose**: Single gate from signal/decision to Order — no LLM involvement
+- **Responsibilities**: Position-size limits, portfolio circuit breaker, short master switch (F60), short-specific halt rules (F54), bracket leg validation (long vs short direction), market-halt halts
+- **Dependencies**: BaseBroker (for portfolio state), RiskConfig
+- **Note**: Dual-mode — `use_bracket_orders` selects legacy market-order+polled-exits vs resting BRACKET/OCO (structural debt S-2)
+- **Type**: Shared
+
+### BaseBroker (`src/execution/base.py`)
+- **Purpose**: Abstract broker interface; implementations swap without changing callers
+- **Implementations**: AlpacaBroker (paper/live), BrokerApiBroker (sandbox farm), KisPaperBroker (Korean equities), SimulatedBroker (backtest)
+- **Type**: Shared
+
+### BacktestEngine (`src/backtest/engine.py`)
+- **Purpose**: Vectorised bar-by-bar simulation against SimulatedBroker
+- **Responsibilities**: Iterates historical bars, applies strategy + risk + SimulatedBroker; collects BacktestResult metrics; optionally drives prompt auto-improvement loop
+- **Type**: Application
+
+## Data Flow (Agent Turn — Simplified)
+
+```mermaid
+sequenceDiagram
+    participant ORC as AgentTradingLoop
+    participant SIG as SignalCollector
+    participant SESS as AgentSession
+    participant CLAUDE as Claude CLI
+    participant JNL as Journal
+    participant EXEC as DecisionExecutor
+    participant RM as RiskManager
+    participant BRK as Broker
+
+    ORC->>SIG: collect_signals()
+    SIG-->>ORC: SignalBrief (movers/earnings/peers)
+    ORC->>SESS: run_research_turn(brief + portfolio + universe)
+    SESS->>CLAUDE: claude -p (headless, tools enabled)
+    CLAUDE-->>SESS: decisions JSON
+    SESS-->>ORC: turn output
+    ORC->>JNL: write_decisions()
+    ORC->>EXEC: execute_journal(date)
+    EXEC->>RM: validate_order(order)
+    RM-->>EXEC: approved / rejected
+    EXEC->>BRK: submit_order(order)
+    BRK-->>EXEC: FilledOrder
+    EXEC->>JNL: record_execution_log() + advance_cursor()
 ```
 
 ## Design Patterns
-- **Strategy registry** — `BaseStrategy` ABC + decorator registration in `src/strategy/`.
-- **Port/adapter (broker)** — `BaseBroker` abstraction; Alpaca/KIS/Simulated adapters.
-- **Brain/body split (agent)** — orchestrator reasons (LLM) and journals; deterministic executor places orders.
-- **Idempotent journal consumer** — cursor file makes `DecisionExecutor` safe across restarts.
 
-### Operator Console / Human Steering (F4/F5/F6)
-- **operator-console** (TypeScript, Bun) — opencode-derived trader terminal; LLM advisory layer with human confirm before writes. Sends commands via `steering/` file-drop channel.
-- **SteeringRuntime** (`src/agent/steering/runtime.py`) — daemon-side engine: reads file-drop channel, publishes snapshots, `CommandBus` (per-kind serialisation), `RunState` (pause/halt/entries_halted).
-- **TurnCoordinator** (`src/agent/steering/turns.py`) — single `turn_lock`; serialises all LLM turns (wake/intraday/human-reconcile).
+### Strategy Registry
+- **Location**: `src/strategy/registry.py`
+- **Purpose**: `@register_strategy` decorator auto-registers strategy classes; `create_strategy()` factory resolves by name from `strategies.yaml`
 
-### Signals / Research (F61)
-- **SignalCollector** (`src/signals/collector.py`) — assembles movers, read-through peers, and earnings calendar before each research turn; injected into the prompt as a structured brief.
-- **Bellwether peer map** (`src/signals/peer_map.py`) — static sector groups; a bellwether ETF move propagates to related tickers.
+### Port/Adapter (Broker + Data)
+- **Location**: `src/execution/base.py`, `src/data/base.py`
+- **Purpose**: Swap broker (Alpaca/KIS/Simulated) or data provider (Alpaca/yfinance/KIS) without changing callers
 
-## Layer Dependency Rule (intended)
-`trading`/`backtest`/`agent` → `strategy`/`risk`/`execution`/`data`/`signals` → `core`.
-`core` depends on nothing.
+### Brain/Body Split (Agent)
+- **Location**: `src/agent/orchestrator.py` (brain), `src/agent/executor.py` (body)
+- **Purpose**: LLM reasons and journals; deterministic executor is the sole actuator; crash safety via cursor file
+
+### Idempotent Cursor Replay
+- **Location**: `src/agent/executor.py`
+- **Purpose**: Atomic `os.replace()` cursor write; restart replays only decisions after cursor index; torn-file impossible with single-writer CommandBus
+
+### Single-Writer CommandBus
+- **Location**: `src/agent/steering/bus.py`
+- **Purpose**: All broker mutations serialised on one worker thread (NFR-2); prevents concurrent order/fill corruption
+
+## Layer Dependency Rule
+
+```
+trading / backtest / agent  →  strategy / risk / execution / data / signals  →  core
+core depends on nothing
+```
+
+## Known Structural Debt
+
+- **S-2**: `RiskManager` is dual-mode toggled by `use_bracket_orders` — legacy market-order + polled exits vs resting BRACKET/OCO; the two modes diverge in behavior.
+- **S-3**: Some `src/` modules reach into the config singleton directly (layer violation vs injection through `main.py`).
