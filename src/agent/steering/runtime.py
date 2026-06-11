@@ -560,7 +560,7 @@ class SteeringRuntime:
         "src/risk/manager.py": "RiskManager — single gate: signal/decision → Order",
         "src/execution/base.py": "BaseBroker — abstract broker; SimulatedBroker, AlpacaBroker",
         "src/execution/alpaca_broker.py": "AlpacaBroker — live Alpaca Trading API",
-        "src/data/intraday_features.py": "Per-session intraday features (F1)",
+        "src/data/intraday/features.py": "Per-session intraday features (F1)",
         "src/core/models.py": "Core Pydantic models — Order, Position, PortfolioState, etc.",
         "operator-console/src/mcp-server.ts": "MCP server — steer/steer_read + Alpaca-shaped tools",
         "operator-console/src/steer-handler.ts": "steer/steer_read command dispatch + validation",

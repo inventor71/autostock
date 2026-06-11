@@ -15,7 +15,7 @@ from typing import Iterable
 
 import pandas as pd
 
-from src.data.intraday_features import FEATURE_COLUMNS
+from src.data.intraday.features import FEATURE_COLUMNS
 
 
 class IntradayFeatureStore:

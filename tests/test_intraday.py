@@ -13,15 +13,15 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from src.core.types import TimeFrame
-from src.data.intraday_analysis import (
+from src.data.intraday.analysis import (
     DEFAULT_HYPOTHESES,
     analyze,
     to_markdown,
     with_derived,
 )
-from src.data.intraday_collector import collect, features_for_symbol, sessionize
-from src.data.intraday_features import FEATURE_COLUMNS, compute_session_features
-from src.data.intraday_store import IntradayFeatureStore
+from src.data.intraday.collector import collect, features_for_symbol, sessionize
+from src.data.intraday.features import FEATURE_COLUMNS, compute_session_features
+from src.data.intraday.store import IntradayFeatureStore
 
 
 def _session(start="2026-01-05 09:30") -> pd.DataFrame:

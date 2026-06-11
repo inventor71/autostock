@@ -11,10 +11,10 @@ serves minute bars back to 2016; the free IEX feed is a volume subset). Either w
 the store accumulates forward over subsequent runs.
 
 Run:
-    python -m src.data.intraday_collector backfill --days 30 [--symbols AAPL MSFT]
-    python -m src.data.intraday_collector backfill --provider alpaca \
+    python -m src.data.intraday.collector backfill --days 30 [--symbols AAPL MSFT]
+    python -m src.data.intraday.collector backfill --provider alpaca \
         --start 2022-01-01 [--end 2024-01-01] [--timeframe 5m] [--symbols AAPL]
-    python -m src.data.intraday_collector today    [--symbols AAPL MSFT]
+    python -m src.data.intraday.collector today    [--symbols AAPL MSFT]
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ import pandas as pd
 from loguru import logger
 
 from src.core.types import TimeFrame
-from src.data.intraday_features import compute_session_features
-from src.data.intraday_store import IntradayFeatureStore
+from src.data.intraday.features import compute_session_features
+from src.data.intraday.store import IntradayFeatureStore
 
 
 def sessionize(bars: pd.DataFrame) -> list[tuple[date, pd.DataFrame]]:
@@ -141,7 +141,7 @@ def _provider(name: str, settings):
 def main(argv: list[str] | None = None) -> int:
     from config.config import get_settings
 
-    parser = argparse.ArgumentParser(prog="python -m src.data.intraday_collector")
+    parser = argparse.ArgumentParser(prog="python -m src.data.intraday.collector")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     for name in ("backfill", "today"):
