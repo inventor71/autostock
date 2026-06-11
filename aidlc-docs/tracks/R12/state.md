@@ -8,7 +8,7 @@
 - **Track ID**: R12
 - **Title**: `broker_api_broker` 개명 + `simulated`→`simulated_broker` 접미사 통일 + `kis_*`→`brokers/kis/`
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- Build & Test green (1073) + critic 반영 + T3-1/T3-2 승인 구현; code on refactor/R12 -->
+- **Status**: merged → main 018c59e (2026-06-11)
 - **Branch**: refactor/R12
 - **Worktree**: .claude/worktrees/R12
 - **Submodule branch**: — (Python only)

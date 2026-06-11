@@ -266,3 +266,4 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-11 — **/ai-dlc-merge 시작** (큐: R9→R11→R12→R10, 사용자 지정+선제 critic 검토). Triage: 노이즈 = tracks/F71/**(타 세션 active inception, registry lag) → 보존·통과. 예상 충돌: aidlc-state.md만(해소=ours; prep e7d14cb).
 - 2026-06-11 — **R9 merged** → main c3c0137 (config↔settings 모듈명 통일; 1073 passed; registry-only rebase conflict→ours)
 - 2026-06-11 — **R11 merged** → main 37fc0b2 (strategy 접미사 제거 5모듈; 1073 passed; registry-only conflict→ours)
+- 2026-06-11 — **R12 merged** → main 018c59e (brokers 네이밍 + provider account_farm 클린브레이크 + fails-loud; 1073 passed; registry-only conflict→ours)
