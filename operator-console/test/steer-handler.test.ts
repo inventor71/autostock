@@ -229,3 +229,78 @@ test("handleSteerRead: /theses with no files returns graceful message", () => {
   const out = handleSteerRead("/theses", fd);
   expect(out).toContain("no thesis files found");
 });
+
+// ---- F72 screening funnel read --------------------------------------------- #
+
+function writeScreening(date: string, scan?: object | string, verdicts?: string) {
+  mkdirSync(fd.screeningDir, { recursive: true });
+  if (scan !== undefined) {
+    const body = typeof scan === "string" ? scan : JSON.stringify(scan);
+    writeFileSync(join(fd.screeningDir, `${date}.scan.json`), body, "utf8");
+  }
+  if (verdicts !== undefined) {
+    writeFileSync(join(fd.screeningDir, `${date}.verdicts.jsonl`), verdicts, "utf8");
+  }
+}
+
+const SCAN = {
+  et_date: "2026-06-11",
+  ts: "2026-06-11T09:31:02-04:00",
+  count: 2,
+  rows: [
+    { symbol: "AAPL", close: 234.5, chg_1d: 0.3, chg_5d: -1.2, chg_20d: 4.0,
+      rsi_14: 61.2, macd_hist: 0.45, vol_ratio: 1.1, dist_high_20d_pct: -2.3 },
+    { symbol: "XYZ", error: "no data" },
+  ],
+};
+const VERDICTS =
+  '{"ts": "2026-06-11T09:40:00-04:00", "symbol": "NVDA", "verdict": "passed", "reason": "RSI 82 overbought"}\n' +
+  "{torn line\n" +
+  '{"ts": "2026-06-11T09:44:00-04:00", "symbol": "TMO", "verdict": "entered", "reason": "limit entry setup"}\n';
+
+test("handleSteerRead: /screening renders verdicts + scan for latest date", () => {
+  writeScreening("2026-06-10", { ...SCAN, et_date: "2026-06-10" });
+  writeScreening("2026-06-11", SCAN, VERDICTS);
+  const out = handleSteerRead("/screening", fd);
+  expect(out).toContain("screening 2026-06-11 (scan 2026-06-11T09:31:02-04:00, 2 symbols):");
+  expect(out).toContain("verdicts (2):");
+  expect(out).toContain("09:40 NVDA passed — RSI 82 overbought");
+  expect(out).toContain("09:44 TMO entered — limit entry setup");
+  expect(out).toContain("AAPL 234.5 +0.3 -1.2 +4 61.2 1.1x -2.3");
+  expect(out).toContain("XYZ error: no data");
+});
+
+test("handleSteerRead: /screening <date> reads that day", () => {
+  writeScreening("2026-06-10", { ...SCAN, et_date: "2026-06-10" });
+  writeScreening("2026-06-11", SCAN, VERDICTS);
+  const out = handleSteerRead("/screening 2026-06-10", fd);
+  expect(out).toContain("screening 2026-06-10");
+  expect(out).toContain("verdicts: (none recorded)");
+});
+
+test("handleSteerRead: /screening rejects malformed/path-injection dates", () => {
+  writeScreening("2026-06-11", SCAN);
+  for (const bad of ["2026-6-1", "..", "../../etc/passwd", "2026-06-11.scan", "x"]) {
+    expect(handleSteerRead(`/screening ${bad}`, fd)).toContain("invalid date");
+  }
+});
+
+test("handleSteerRead: /screening with no data is graceful", () => {
+  try { rmSync(join(dir, "..", "workspace"), { recursive: true, force: true }); } catch {}
+  expect(handleSteerRead("/screening", fd)).toContain("no screening data yet");
+  expect(handleSteerRead("/screening 2026-06-10", fd)).toContain("no screening data for 2026-06-10");
+});
+
+test("handleSteerRead: /screening with corrupt scan still shows verdicts", () => {
+  writeScreening("2026-06-11", "{torn", VERDICTS);
+  const out = handleSteerRead("/screening", fd);
+  expect(out).toContain("verdicts (2):");
+  expect(out).toContain("scan: (unreadable)");
+});
+
+test("handleSteerRead: /screening verdicts-only day works (no scan file)", () => {
+  writeScreening("2026-06-11", undefined, VERDICTS);
+  const out = handleSteerRead("/screening", fd);
+  expect(out).toContain("verdicts (2):");
+  expect(out).toContain("scan: (none)");
+});

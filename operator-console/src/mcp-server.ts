@@ -79,7 +79,11 @@ server.registerTool(
       "pass an id (e.g. /ui-legend topbar.today_cost) for one.\n" +
       "THESIS verbs (F53 — agent position thesis from workspace/positions/): " +
       "/thesis <SYMBOL> (read a symbol's thesis markdown — investment thesis, plan, stop/target, " +
-      "call-vs-outcome log) · /theses (list all symbols that have a thesis file).",
+      "call-vs-outcome log) · /theses (list all symbols that have a thesis file).\n" +
+      "SCREENING verb (F72 — research-turn screening funnel from workspace/screening/): " +
+      "/screening [YYYY-MM-DD] — which universe names the agent examined and why they were " +
+      "entered/watchlisted/passed, plus the full quant scoreboard snapshot. Omit the date for " +
+      "the latest research day. Use this when asked why a name was or wasn't picked.",
     inputSchema: { command: z.string().describe("a read command, e.g. /status or /turns") },
   },
   async ({ command }) => ({ content: [{ type: "text", text: handleSteerRead(command, fd, supervisor) }] }),

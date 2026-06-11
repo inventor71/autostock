@@ -128,8 +128,13 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "news":
         out = market.news(args.symbol, limit=args.limit)
     elif args.cmd == "scoreboard":
+        from src.agent import screening_log
+
         symbols = args.symbols or _universe()
         out = market.scoreboard(symbols, _provider())
+        # F72: persist the latest universe scan for the operator's /screening
+        # view. Fail-honest — a save failure never sinks the scan output.
+        screening_log.record_scan(out)
     elif args.cmd == "earnings":
         out = market.earnings(args.symbol)
     elif args.cmd == "insider":

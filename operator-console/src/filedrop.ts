@@ -17,6 +17,7 @@ export class FileDrop {
   readonly monitorFile: string;
   readonly codebaseFile: string;  // F29
   readonly positionsDir: string;  // F53: workspace/positions/
+  readonly screeningDir: string;  // F72: workspace/screening/
   private token: string;
 
   constructor(steeringDir: string, token?: string) {
@@ -27,6 +28,7 @@ export class FileDrop {
     this.monitorFile = join(steeringDir, "monitor.json"); // F6: deep-monitoring read view
     this.codebaseFile = join(steeringDir, "codebase.json"); // F29: project tree
     this.positionsDir = join(steeringDir, "..", "workspace", "positions"); // F53
+    this.screeningDir = join(steeringDir, "..", "workspace", "screening"); // F72
     this.token = token ?? process.env[TOKEN_ENV] ?? "";
   }
 
@@ -152,6 +154,67 @@ export class FileDrop {
         .sort();
     } catch {
       return []; // fail-closed: permission errors etc.
+    }
+  }
+
+  /** F72: Latest ET date with screening data (scan snapshot or verdicts), or
+   *  null when workspace/screening/ is missing/empty/unreadable (fail-closed). */
+  latestScreeningDate(): string | null {
+    try {
+      if (!existsSync(this.screeningDir)) return null;
+      const dates = readdirSync(this.screeningDir)
+        .map((f) => /^(\d{4}-\d{2}-\d{2})\.(?:scan\.json|verdicts\.jsonl)$/.exec(f)?.[1])
+        .filter((d): d is string => d !== undefined)
+        .sort();
+      return dates.length > 0 ? dates[dates.length - 1] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** F72: Read one ET date's screening funnel. Returns null when NEITHER file
+   *  exists for the date. `scan` is null when absent or unreadable
+   *  (`scanUnreadable` distinguishes the two); verdict lines are parsed
+   *  leniently — torn/corrupt lines are skipped, the rest kept. */
+  readScreening(date: string): {
+    scan: Record<string, unknown> | null;
+    scanUnreadable: boolean;
+    verdicts: Array<Record<string, unknown>>;
+  } | null {
+    try {
+      const scanFile = join(this.screeningDir, `${date}.scan.json`);
+      const verdictsFile = join(this.screeningDir, `${date}.verdicts.jsonl`);
+      const hasScan = existsSync(scanFile);
+      const hasVerdicts = existsSync(verdictsFile);
+      if (!hasScan && !hasVerdicts) return null;
+      let scan: Record<string, unknown> | null = null;
+      if (hasScan) {
+        try {
+          scan = JSON.parse(readFileSync(scanFile, "utf8"));
+        } catch {
+          scan = null;
+        }
+      }
+      const verdicts: Array<Record<string, unknown>> = [];
+      if (hasVerdicts) {
+        try {
+          for (const line of readFileSync(verdictsFile, "utf8").split("\n")) {
+            const t = line.trim();
+            if (!t) continue;
+            try {
+              const rec = JSON.parse(t);
+              if (rec && typeof rec === "object" && !Array.isArray(rec)) verdicts.push(rec);
+            } catch {
+              /* skip a torn/corrupt line — the journal is evidence, not schema */
+            }
+          }
+        } catch {
+          /* unreadable verdicts file → show what we have */
+        }
+      }
+      return { scan, scanUnreadable: hasScan && scan === null, verdicts };
+    } catch {
+      return null; // fail-closed (SECURITY-15)
     }
   }
 }
