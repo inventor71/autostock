@@ -6,45 +6,55 @@
 
 ## Track Info
 - **Track ID**: F71
-- **Title**: 폰에서 autostock operator 콘솔 — Tailscale + `opencode serve` + PWA(packages/app) + 데몬 read 표면
+- **Title**: 폰에서 autostock operator 콘솔 — Tailscale + `opencode serve` + PWA(packages/app)
 - **Type**: feature
-- **Status**: backlog  <!-- 등록만. Q&A로 스코프 확정 후 사용자가 /ai-dlc-resume으로 진행 -->
-- **Branch**: feat/F71 (TBD)
-- **Worktree**: .claude/worktrees/F71 (TBD)
-- **Submodule branch**: — (TBD — operator-console/cli 건드릴 가능성 높음: serve 진입점/PWA)
-- **Base commit**: TBD (resume 시점 main)
-- **Start Date**: TBD
+- **Status**: active
+- **Branch**: feat/F71
+- **Worktree**: .claude/worktrees/F71
+- **Submodule branch**: — (monorepo; operator-console/* 변경 포함)
+- **Base commit**: 76ff7b6
+- **Start Date**: 2026-06-10
 
 ## Extension Configuration
-- **Security Baseline**: TBD (Applicable 예상 — 트레이딩 제어를 네트워크 노출: 서버 비번/tailnet/권한 프로파일/주문 confirm 게이트)
-- **Property-Based Testing**: TBD (제한적 — UI/통합 위주, 순수 로직 적으면 N/A 가능)
+- **Security Baseline**: **Enabled (Applicable)** — 트레이딩 제어 네트워크 노출 + 폰 뮤테이팅.
+  강제: OPENCODE_SERVER_PASSWORD 필수(fail-closed), `:4096` tailnet 한정, **긴급정지 포함 모든
+  뮤테이팅 WebAuthn 서명 + 서버측 검증**(클라이언트 게이트 아님), human-order-gate/RiskManager
+  이중 게이트 유지, 패스키는 공개키만 저장, QR(URL+비번)은 요청 시 표시·로그 미기록.
+- **Property-Based Testing**: **Partial** — 순수 로직(뮤테이팅 분류/서명 검증 판정)에 한정,
+  UI/통합 비대상. (U2 NFR에서 최종 확정)
 
-## Scope (조사 기반, Q&A로 확정 예정)
-경로 A MVP: PC(데몬 호스트)에서 `opencode serve`를 MCP/STEERING wiring과 함께 띄우고, 폰이
-**Tailscale**로 그 서버에 도달해 **PWA(`packages/app`)** 로 autostock operator 콘솔을 사용.
-모바일 경험 = **대화형 operator**(steer_read 읽기 + steer/주문 도구), opentui 비주얼 대시보드는
-범위 밖(후속). 필수 변경: serve 진입점 + 권한 안전기본값 + 시크릿 위생.
+## Scope (Q&A + UAQ 확정)
+경로 A MVP: PC(데몬 호스트)에서 `opencode serve`(TUI와 동일 MCP/STEERING wiring, systemd 상시)
+→ 폰이 **Tailscale**로 도달 → **PWA(packages/app)**. 모바일 = 대화형 operator + 패널.
 
-상세 조사: `aidlc-docs/research/mobile-app-investigation.md` (어떤 앱/연결/Claude RC 대비/필수 변경).
+확정 결정: UI=PWA / 제어=기존 뮤테이팅 도구만(신규 주문 작성 제외) / confirm=WebAuthn 패스키
+(**긴급정지 포함 예외 없음**) / 네트워크=Tailscale / 인증=서버비번+ACL / 등록=QR(URL+비번) 1회 /
+serve=systemd / 데이터=steer_read 패널 래핑 / **홈=대시보드 우선** / **US-8 TUI 세션 이어보기 채택**
+(feasibility ✅: 글로벌 SQLite+WAL+session.list).
 
-> **상태: 등록만 됨(backlog).** 사용자 Q&A 진행 → 스코프 확정 후 레지스트리/이 파일 업데이트 →
-> 사용자가 `/ai-dlc-resume F71`로 inception 시작 예정.
+범위 밖: 계정 자동detect(경로 B), 푸시 알림, 신규 수동 주문, opentui 대시보드 전체 포팅, 네이티브 앱.
+
+문서: `inception/requirements/requirements.md`(FR-1~10) · `inception/user-stories/user-stories.md`
+(P1, US-1~8) · `inception/plans/workflow-plan.md`(3유닛) · `inception/application-design/
+application-design.md`(C1~C11, D1~D5, R1~R4) · 조사 `aidlc-docs/research/mobile-app-investigation.md`.
 
 ## Merge Risk Notes
-> 트랙이 `merge-awaiting` 전환 시 작성. `/ai-dlc-merge`가 큐 구성·충돌 해결 시 참조.
-> 비워두면 `/ai-dlc-merge`가 `git diff --name-only`로 자동 추론.
+> merge-awaiting 전환 시 보강.
 
-- **공유 파일 (주의)**: <다른 활성 트랙과 겹칠 가능성 높은 파일 — 예: `src/agent/steering/runtime.py`>
-- **API/시그니처 변경**: <rename, 삭제, 함수 분할 — 다른 트랙 rebase 시 수동 조정 필요한 부분>
-- **알려진 동시 변경**: <같은 파일을 건드리는 게 확실한 다른 트랙 ID (예: F44)>
+- **공유 파일 (주의)**: `operator-console/launcher/*`(cli/config/unit-template/install),
+  opencode fork `packages/opencode/src/server/*`(라우트 추가), `packages/app/*`(PWA addon).
+- **API/시그니처 변경**: 없음 예정(추가형 — 신규 서브커맨드/라우트/페이지).
+- **알려진 동시 변경**: 현재 operator-console를 만지는 활성 트랙 없음(F33 paused).
 
 ## Stage Progress
-- [ ] Workspace Detection
-- [ ] Requirements Analysis — <depth>
-- [ ] User Stories — <execute/skip + reason>
-- [ ] Workflow Planning
-- [ ] Application Design — <execute/skip>
-- [ ] Units Generation — <execute/skip>
-- [ ] Construction (per-unit Code Generation)
-  - [ ] <Unit> — <note>
-- [ ] Build & Test
+- [x] Workspace Detection — brownfield, codekb
+- [x] Requirements Analysis — standard ✅ 승인 (FR-1~10)
+- [x] User Stories — EXECUTE ✅ 승인 (P1, US-1~8 + AC)
+- [x] Workflow Planning ✅ 승인 (U1 server-runtime / U2 security-gate / U3 pwa-client 순차)
+- [x] Application Design ✅ 승인 (US-8 feasibility ✅ 채택, C1~C11, D1~D5)
+- [x] Units Generation — Workflow Plan에 통합(3유닛 확정)
+- [ ] Construction (per-unit)
+  - [x] U1 server-runtime — serve/qr 서브커맨드 + systemd 유닛 + QR (테스트 13, launcher 스위트 144 pass)
+  - [ ] U2 security-gate — WebAuthn 라우트 + permission.reply 서명검증 + 프로파일
+  - [ ] U3 pwa-client — 대시보드/트레이스/QR/confirm/세션이어보기
+- [ ] Build & Test (+ post-merge-guide)

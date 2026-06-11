@@ -35,6 +35,24 @@ async function main(): Promise<void> {
   await daemon.ensureInstalled();
   console.log(`installed systemd unit: ${daemon.unitPath()} (enabled, linger)`);
 
+  // 2.5 F71: mobile serve unit (opencode serve, tailnet-only). Enabled but NOT started here —
+  //     it fail-closes without OPENCODE_SERVER_PASSWORD / tailscale, which install must not
+  //     require. First start: `systemctl --user start autostock-serve` (or reboot).
+  const { renderServeUnit, SERVE_UNIT_NAME } = await import("./unit-template");
+  const serveUnitPath = join(home, ".config", "systemd", "user", SERVE_UNIT_NAME);
+  mkdirSync(dirname(serveUnitPath), { recursive: true });
+  const bunDir = process.execPath ? dirname(process.execPath) : join(home, ".bun", "bin");
+  writeFileSync(
+    serveUnitPath,
+    renderServeUnit({ autostockRoot, shimPath, path: `${bunDir}:/usr/local/bin:/usr/bin:/bin` }),
+    "utf8",
+  );
+  // @ts-ignore Bun global
+  Bun.spawnSync(["systemctl", "--user", "daemon-reload"]);
+  // @ts-ignore Bun global
+  Bun.spawnSync(["systemctl", "--user", "enable", SERVE_UNIT_NAME]);
+  console.log(`installed systemd unit: ${serveUnitPath} (enabled; start = systemctl --user start ${SERVE_UNIT_NAME})`);
+
   // 3. PATH check — warn loudly if the shim won't be found (no silent mis-install, BR-1 spirit).
   const localBin = join(home, ".local", "bin");
   const onPath = (process.env.PATH ?? "").split(":").includes(localBin);
