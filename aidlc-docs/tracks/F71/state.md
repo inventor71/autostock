@@ -55,6 +55,6 @@ application-design.md`(C1~C11, D1~D5, R1~R4) · 조사 `aidlc-docs/research/mobi
 - [x] Units Generation — Workflow Plan에 통합(3유닛 확정)
 - [ ] Construction (per-unit)
   - [x] U1 server-runtime — serve/qr 서브커맨드 + systemd 유닛 + QR (테스트 13, launcher 스위트 144 pass)
-  - [ ] U2 security-gate — WebAuthn 라우트 + permission.reply 서명검증 + 프로파일
+  - [x] U2 security-gate — WebAuthn 라우트+양쪽 reply 게이트(원격 한정)+fail-closed 분류 (23 pass, tsgo 19/19)
   - [ ] U3 pwa-client — 대시보드/트레이스/QR/confirm/세션이어보기
 - [ ] Build & Test (+ post-merge-guide)
