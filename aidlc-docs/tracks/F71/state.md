@@ -56,5 +56,5 @@ application-design.md`(C1~C11, D1~D5, R1~R4) · 조사 `aidlc-docs/research/mobi
 - [ ] Construction (per-unit)
   - [x] U1 server-runtime — serve/qr 서브커맨드 + systemd 유닛 + QR (테스트 13, launcher 스위트 144 pass)
   - [x] U2 security-gate — WebAuthn 라우트+양쪽 reply 게이트(원격 한정)+fail-closed 분류 (23 pass, tsgo 19/19)
-  - [ ] U3 pwa-client — 대시보드/트레이스/QR/confirm/세션이어보기
+  - [~] U3 pwa-client — 클라이언트 로직(페어링/WebAuthn confirm/대시보드 변환) +테스트 15 pass; SolidJS 뷰 배선은 실기기 검증분으로 분리
 - [ ] Build & Test (+ post-merge-guide)
