@@ -8,7 +8,7 @@
 - **Track ID**: R11
 - **Title**: `strategy/` 파일 접미사 통일(`_strategy` 제거) + stutter 해소
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- Build & Test green (1073 passed) + registry-key smoke; code on refactor/R11 -->
+- **Status**: merged → main 37fc0b2 (2026-06-11)
 - **Branch**: refactor/R11
 - **Worktree**: .claude/worktrees/R11
 - **Submodule branch**: — (Python only)

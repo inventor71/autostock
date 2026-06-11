@@ -92,7 +92,7 @@
 | R8 | `src/agent/` 재구조화 — grab-bag 15파일을 logs/·learning/ 서브패키지로 + stutter 해소 (구조점검 #1) | backlog | refactor/R8 (TBD) | — | — (monorepo) | 2a4e02f | 2026-06-08 |
 | R9 | config↔settings 용어 통일 — 패키지 로컬 설정 모듈을 settings.py로 (구조점검 #3) | merged | refactor/R9 → main c3c0137 | — | — (monorepo) | 3297de5 | 2026-06-11 |
 | R10 | intraday 일원화 — `data/intraday_*.py` → `data/intraday/` 서브패키지 (구조점검 #4) | active | refactor/R10 | .claude/worktrees/R10 | — (monorepo) | 0106a8b | 2026-06-11 |
-| R11 | strategy 네이밍 일관화 — `_strategy` 접미사 제거 + `llm_strategy` stutter 해소 (구조점검 #5) | active | refactor/R11 | .claude/worktrees/R11 | — (monorepo) | 3297de5 | 2026-06-10 |
+| R11 | strategy 네이밍 일관화 — `_strategy` 접미사 제거 + `llm_strategy` stutter 해소 (구조점검 #5) | merged | refactor/R11 → main 37fc0b2 | — | — (monorepo) | 3297de5 | 2026-06-11 |
 | R12 | execution/brokers 네이밍 — `account_farm_broker` 개명 + `simulated_broker` 통일 + `kis/` 서브패키지 (구조점검 #6) | active | refactor/R12 | .claude/worktrees/R12 | — (monorepo) | 0106a8b | 2026-06-11 |
 | R13 | tests 네이밍·구조 정비 — 트랙ID 테스트명→행동기반 + `src/` 미러링 (구조점검 #2+#7) | backlog | refactor/R13 (TBD) | — | — (monorepo) | 2a4e02f | 2026-06-08 |
 | F71 | autostock 모바일(안드로이드) 앱 — 경로 A (Tailscale + opencode serve + PWA, 대화형 operator) | active | feat/F71 (TBD) | .claude/worktrees/F71 (TBD) | — (TBD: opencode/cli) | TBD | 2026-06-10 |
