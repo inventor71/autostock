@@ -105,7 +105,7 @@ class TestGetDailyBar:
 def _executor(tmp_path):
     from src.agent.journal import Journal
     from src.agent.executor import DecisionExecutor
-    from src.execution.brokers.simulated import SimulatedBroker
+    from src.execution.brokers.simulated_broker import SimulatedBroker
     from src.risk.manager import RiskManager
 
     broker = SimulatedBroker(initial_capital=100_000.0)

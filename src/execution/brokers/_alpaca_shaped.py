@@ -1,6 +1,6 @@
 """Shared base for the two Alpaca-shaped brokers (R3 dedup).
 
-``AlpacaBroker`` (Alpaca Trading API) and ``BrokerApiBroker`` (Alpaca Broker API,
+``AlpacaBroker`` (Alpaca Trading API) and ``AccountFarmBroker`` (Alpaca Broker API,
 sandbox account farm) were ~80% duplicated — same request-building, fill polling,
 position/order mapping, market clock, shortable check, and latest-prices logic over
 two different SDK client surfaces. This base owns that shared algorithm as a
@@ -9,12 +9,12 @@ template-method class; each subclass supplies only the thin client-specific hook
 
 Behaviour-preserving (R3 is T1): the three real behavioural divergences are routed
 through overridable members so each subclass keeps its exact current behaviour —
-- ``_alpaca_side``  : base = correct mapping (Alpaca); BrokerApiBroker overrides
+- ``_alpaca_side``  : base = correct mapping (Alpaca); AccountFarmBroker overrides
   with its current simpler mapping (the BUY_TO_COVER→SELL quirk is preserved; the
   fix is deferred to track R7).
-- ``_time_in_force``: base = F9 fail-closed map (Alpaca); BrokerApiBroker overrides
+- ``_time_in_force``: base = F9 fail-closed map (Alpaca); AccountFarmBroker overrides
   with its gtc→GTC else→DAY downgrade (preserved; fix deferred to R7).
-- ``_extras``       : base = ``{}`` (BrokerApiBroker); AlpacaBroker overrides to pass
+- ``_extras``       : base = ``{}`` (AccountFarmBroker); AlpacaBroker overrides to pass
   extended_hours / client_order_id. Trailing-stop support is gated on ``_req_trailing``.
 """
 from __future__ import annotations
@@ -82,7 +82,7 @@ class AlpacaShapedBroker(BaseBroker):
     """
 
     # Default: don't client-side filter terminal orders (Alpaca's OPEN query already
-    # excludes them). BrokerApiBroker sets True (its ALL query needs the filter).
+    # excludes them). AccountFarmBroker sets True (its ALL query needs the filter).
     _open_orders_skip_terminal: bool = False
 
     # SDK request-envelope classes — set per-subclass in __init__ (after the
@@ -101,7 +101,7 @@ class AlpacaShapedBroker(BaseBroker):
     def _alpaca_side(side: OrderSide):
         """Map our OrderSide → Alpaca's BUY/SELL. Default = the correct full mapping
         (Alpaca has no explicit short sides: a SELL on a flat symbol opens a short,
-        a BUY covers). BrokerApiBroker overrides to preserve its current behaviour."""
+        a BUY covers). AccountFarmBroker overrides to preserve its current behaviour."""
         if side in (OrderSide.BUY, OrderSide.BUY_TO_COVER):
             return AlpacaSide.BUY
         if side in (OrderSide.SELL, OrderSide.SELL_SHORT):
@@ -123,14 +123,14 @@ class AlpacaShapedBroker(BaseBroker):
 
     def _time_in_force(self, order: Order):
         """Protective legs persist across sessions (GTC); simple orders honour the
-        order's TIF, fail-closed on unsupported (F9). BrokerApiBroker overrides."""
+        order's TIF, fail-closed on unsupported (F9). AccountFarmBroker overrides."""
         if order.order_class in (OrderClass.BRACKET, OrderClass.OCO):
             return TimeInForce.GTC
         return self._tif_value(order.time_in_force)
 
     def _extras(self, order: Order) -> dict:
         """extended_hours / client_order_id passthrough for simple-class orders.
-        Default = none (BrokerApiBroker); AlpacaBroker overrides."""
+        Default = none (AccountFarmBroker); AlpacaBroker overrides."""
         return {}
 
     # ── shared static mappers ──

@@ -7,7 +7,7 @@ from src.agent.journal import Decision, Journal
 from src.agent.review import outcome_lines
 from src.core.models import OpenOrder, Order
 from src.core.types import OrderClass, OrderSide, OrderType
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.risk.manager import RiskManager
 
 

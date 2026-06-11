@@ -18,7 +18,7 @@ from src.agent.executor import DecisionExecutor
 from src.agent.journal import Decision, Journal
 from src.core.models import Order, PortfolioState, Position, TradeSignal
 from src.core.types import OrderClass, OrderSide, OrderType, PositionSide, Signal
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.risk.manager import RiskManager
 
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import main
-from src.execution.brokers.kis_broker import KisPaperBroker
+from src.execution.brokers.kis.broker import KisPaperBroker
 from src.trading.modes.agent import AgentTradingMode
 
 

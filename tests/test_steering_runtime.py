@@ -17,7 +17,7 @@ from src.agent.steering.records import SteeringCommand, SteeringEvent
 from src.agent.steering.runtime import SteeringRuntime
 from src.core.models import Order
 from src.core.types import OrderSide
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.risk.manager import RiskManager
 from src.trading.modes.agent import AgentTradingMode
 

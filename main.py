@@ -34,25 +34,30 @@ def create_data_provider(settings, broker=None):
 
 
 def create_broker(settings):
-    """Create broker based on config (alpaca | kis | broker_api)."""
+    """Create broker based on config (alpaca | kis | account_farm)."""
     if (settings.broker.name or "").lower() == "kis":
         if not settings.broker.paper:
             raise NotImplementedError("KIS live broker not yet implemented (paper only)")
-        from src.execution.brokers.kis_broker import KisPaperBroker
+        from src.execution.brokers.kis.broker import KisPaperBroker
         return KisPaperBroker(
             settings.kis_paper_api_key, settings.kis_paper_api_secret,
             settings.kis_paper_account, paper=True,
         )
     provider = settings.broker.provider
-    if provider == "broker_api":
-        from src.execution.brokers.broker_api_broker import BrokerApiBroker
-        return BrokerApiBroker(
+    if provider == "account_farm":
+        from src.execution.brokers.account_farm_broker import AccountFarmBroker
+        return AccountFarmBroker(
             api_key=settings.broker_api_key,
             secret_key=settings.broker_api_secret,
             account_id=settings.broker_account_id,
             sandbox=True,
         )
-    # default: alpaca (Trading API)
+    if provider != "alpaca":
+        # Fail loud on an unknown provider — a silent fallback would trade on the
+        # wrong (Alpaca) account when the config names a provider we don't know.
+        raise ValueError(
+            f"Unknown broker.provider {provider!r}; expected 'alpaca' or 'account_farm'"
+        )
     from src.execution.brokers.alpaca_broker import AlpacaBroker
     return AlpacaBroker(
         api_key=settings.alpaca_api_key,

@@ -30,7 +30,7 @@ def resolve_universe(settings, *, override: Sequence[str] | None = None,
         if client is None:
             # No shared broker client (e.g. backtest): make one. In the live agent
             # path main passes broker.client so both honour the 1-token/min cap.
-            from src.execution.brokers.kis_rest import KisRestClient
+            from src.execution.brokers.kis.rest import KisRestClient
             client = KisRestClient(
                 settings.kis_paper_api_key, settings.kis_paper_api_secret, paper=True)
         provider = KRUniverseProvider(

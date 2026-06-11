@@ -8,11 +8,11 @@ broker:
   paper: true
   # Which broker implementation to use:
   #   alpaca     → AlpacaBroker (Trading API, own paper account, ALPACA_API_KEY)
-  #   broker_api → BrokerApiBroker (Broker API sandbox, BROKER_API_KEY + BROKER_ACCOUNT_ID)
+  #   account_farm → AccountFarmBroker (Broker API sandbox, BROKER_API_KEY + BROKER_ACCOUNT_ID)
   provider: alpaca
   # API keys should be set via environment variables:
   # ALPACA_API_KEY, ALPACA_API_SECRET (alpaca provider)
-  # BROKER_API_KEY, BROKER_API_SECRET, BROKER_ACCOUNT_ID (broker_api provider)
+  # BROKER_API_KEY, BROKER_API_SECRET, BROKER_ACCOUNT_ID (account_farm provider)
 
 data:
   provider: yfinance  # yfinance, alpaca

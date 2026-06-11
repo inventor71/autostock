@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.execution.brokers.kis_rest import KisRestClient
+from src.execution.brokers.kis.rest import KisRestClient
 from src.universe.base import BaseUniverseProvider
 
 _RANK_PATH = "/uapi/domestic-stock/v1/ranking/market-cap"

@@ -11,7 +11,7 @@ from src.core.exceptions import InsufficientDataError
 from src.core.models import BacktestResult, FilledOrder, Order
 from src.core.trades import match_round_trips
 from src.core.types import OrderClass, OrderSide
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.risk.manager import RiskManager
 from src.strategy.base import BaseStrategy
 

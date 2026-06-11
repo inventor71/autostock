@@ -7,7 +7,7 @@ import pytest
 from src.core.exceptions import BrokerError
 from src.core.models import Order
 from src.core.types import OrderClass, OrderSide, OrderType
-from src.execution.brokers.kis_broker import KisBroker, KisPaperBroker, _OcoStore
+from src.execution.brokers.kis.broker import KisBroker, KisPaperBroker, _OcoStore
 
 
 class FakeKis:

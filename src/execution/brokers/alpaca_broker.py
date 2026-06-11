@@ -35,7 +35,7 @@ class AlpacaBroker(AlpacaShapedBroker):
     """Broker implementation using the Alpaca **Trading API** (paper/live).
 
     Shares all request-building / fill-polling / position-mapping logic with
-    ``BrokerApiBroker`` via ``AlpacaShapedBroker``; this class supplies only the
+    ``AccountFarmBroker`` via ``AlpacaShapedBroker``; this class supplies only the
     Trading-API client hooks, request-envelope classes, the ``_extras`` passthrough,
     the raw-dict fills feed, and the native replace/cancel-all endpoints.
     """

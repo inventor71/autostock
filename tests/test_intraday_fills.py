@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import src.execution.brokers.alpaca_broker as alpaca_broker
 from src.execution.brokers.alpaca_broker import AlpacaBroker
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 
 
 class _FakeClient:

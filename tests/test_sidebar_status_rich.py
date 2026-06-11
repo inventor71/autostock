@@ -22,7 +22,7 @@ from src.agent.journal import Journal
 from src.agent.steering.runtime import SteeringRuntime
 from src.core.models import OpenOrder, PortfolioState, Position
 from src.core.types import OrderSide, OrderType
-from src.execution.brokers.simulated import SimulatedBroker
+from src.execution.brokers.simulated_broker import SimulatedBroker
 from src.risk.manager import RiskManager
 
 

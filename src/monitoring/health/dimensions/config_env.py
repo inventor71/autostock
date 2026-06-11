@@ -69,8 +69,8 @@ class ConfigEnvChecker(BaseChecker):
         if signals_cfg.get("enabled", False) and not s.finnhub_api_key:
             pass  # Not blocking — earnings provider is optional
 
-        # Broker API keys (only if provider is broker_api)
-        if s.broker.provider == "broker_api":
+        # Broker API keys (only if provider is account_farm)
+        if s.broker.provider == "account_farm":
             if not s.broker_api_key:
                 missing.append("BROKER_API_KEY")
             if not s.broker_api_secret:
