@@ -316,10 +316,19 @@ cleanup) — note the skip in `state.md`.
 **Create `aidlc-docs/tracks/<id>/post-merge-guide.md`** covering:
 1. **무엇이 바뀌나 (prod 기대 동작)** — 머지 후 프로드에서 달라지는 동작을 한 줄 요약 + 구체.
 2. **전제/활성 조건** — 데몬 재기동 필요 여부, 새 env 키(`.env`)·config 블록, 기본 on/off 상태.
+   - **F43 자동 재시작 표준 공지 (모든 코드-변경 트랙 공통, R10 critic 발견)**: "데몬 재시작
+     불필요"라고 쓰지 말 것 — **어떤 머지든 HEAD SHA가 바뀌므로 F43 버전-스큐 자가치유가 다음
+     콘솔 attach 시 데몬을 1회 자동 재시작한다**(`operator-console/launcher/daemon.ts`
+     `detectCodeSkew()` → 무조건 restart). 가이드에는 "코드 동작 불변이어도 다음 attach 시 1회
+     자동 재시작은 정상(F43)"을 명시하고, in-flight 턴 중이면 attach를 턴 사이로 미루라고 안내.
 3. **실사용 확인 체크리스트** — 운영자가 실제로 눌러볼 순서(스모크 명령, 어디를 보면 되는지:
    로그/콘솔/산출 파일), 무엇이 "정상"인지(기대 출력)와 fail-honest 시 신호.
+   **로그 문구는 코드에서 실제 문자열을 인용**(추측 금지 — R10 critic: "wrote N rows"류 가공
+   문구가 실제 `{symbol}: N sessions`와 불일치했던 사례).
 4. **튜닝 노브** — `config/...`에서 조정 가능한 값과 의미(시드 기본값 포함).
 5. **롤백/비활성** — 부분/완전 비활성 방법(예: `enabled: false`, 소스 토글, 머지 revert).
+   **revert 명령은 `git revert -m 1 <merge-sha>`로 적을 것** — `/ai-dlc-merge`는 `--no-ff`
+   merge commit이라 `-m 1` 없이는 git이 거부한다(R10 critic 발견).
 6. **알려진 한계 / 범위 밖** — 이번 트랙이 커버하지 **않는** 것(후속 트랙 후보) — 기대치 오정렬 방지.
 
 가능하면 worktree에서 **실데이터 라이브 스모크를 1회** 돌려(외부 연동은 fake 테스트가 못 잡는다)
