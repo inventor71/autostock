@@ -8,7 +8,7 @@
 - **Track ID**: R9
 - **Title**: 패키지 로컬 설정 모듈 명칭을 `settings.py`로 통일 (config/settings 혼용 해소)
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- Build & Test green (1073 passed) + critic 반영; code on refactor/R9 -->
+- **Status**: merged → main c3c0137 (2026-06-11)
 - **Branch**: refactor/R9
 - **Worktree**: .claude/worktrees/R9
 - **Submodule branch**: — (Python only)
