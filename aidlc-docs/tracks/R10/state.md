@@ -8,7 +8,7 @@
 - **Track ID**: R10
 - **Title**: `src/data/intraday_*.py` 평면 접두 파일을 `src/data/intraday/` 서브패키지로
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- Build & Test green (1073 passed + 신규 -m CLI 스모크) 2026-06-11; refactor/R10에 커밋 -->
+- **Status**: merged → main 2245def (2026-06-11)
 - **Branch**: refactor/R10
 - **Worktree**: .claude/worktrees/R10
 - **Submodule branch**: — (Python only)

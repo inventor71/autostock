@@ -91,7 +91,7 @@
 | F70 | 섀도우 벤치마크 + alpha-vs-baseline — 결정론적 전략(기술적/buy&hold)을 LLM 경쟁자 아닌 측정자로 상시 가동 | merged | feat/F70 → main e4676fc | — | — (monorepo) | 5e786b0 | 2026-06-07 |
 | R8 | `src/agent/` 재구조화 — grab-bag 15파일을 logs/·learning/ 서브패키지로 + stutter 해소 (구조점검 #1) | backlog | refactor/R8 (TBD) | — | — (monorepo) | 2a4e02f | 2026-06-08 |
 | R9 | config↔settings 용어 통일 — 패키지 로컬 설정 모듈을 settings.py로 (구조점검 #3) | merged | refactor/R9 → main c3c0137 | — | — (monorepo) | 3297de5 | 2026-06-11 |
-| R10 | intraday 일원화 — `data/intraday_*.py` → `data/intraday/` 서브패키지 (구조점검 #4) | active | refactor/R10 | .claude/worktrees/R10 | — (monorepo) | 0106a8b | 2026-06-11 |
+| R10 | intraday 일원화 — `data/intraday_*.py` → `data/intraday/` 서브패키지 (구조점검 #4) | merged | refactor/R10 → main 2245def | — | — (monorepo) | 0106a8b | 2026-06-11 |
 | R11 | strategy 네이밍 일관화 — `_strategy` 접미사 제거 + `llm_strategy` stutter 해소 (구조점검 #5) | merged | refactor/R11 → main 37fc0b2 | — | — (monorepo) | 3297de5 | 2026-06-11 |
 | R12 | execution/brokers 네이밍 — `account_farm_broker` 개명 + `simulated_broker` 통일 + `kis/` 서브패키지 (구조점검 #6) | merged | refactor/R12 → main 018c59e | — | — (monorepo) | 0106a8b | 2026-06-11 |
 | R13 | tests 네이밍·구조 정비 — 트랙ID 테스트명→행동기반 + `src/` 미러링 (구조점검 #2+#7) | backlog | refactor/R13 (TBD) | — | — (monorepo) | 2a4e02f | 2026-06-08 |
