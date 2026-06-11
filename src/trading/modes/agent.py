@@ -289,7 +289,7 @@ class AgentTradingMode:
         off. Best-effort — a wiring failure must never abort daemon startup."""
         try:
             from config.config import CONFIG_DIR, load_yaml_config
-            from src.early_session.config import EarlySessionConfig
+            from src.early_session.settings import EarlySessionConfig
             from src.early_session.monitor import EarlySessionMonitor
 
             # Read the yaml directly: Settings(extra="ignore") drops the
