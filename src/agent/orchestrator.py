@@ -131,7 +131,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         self, prompt: str, turn_type: str, model: str | None = None,
         timeout: float | None = None, event_reasons: list[str] | None = None,
     ) -> AgentTurnResult:
-        from src.agent.turn_log import build_turn_summary, generate_turn_id, record_turn
+        from src.agent.logs.turn import build_turn_summary, generate_turn_id, record_turn
 
         from datetime import datetime as _dt
 
@@ -239,7 +239,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
     # -- F64: constitution-bounded guidance --------------------------------- #
     def _guidance_history(self):
         if self._guidance is None:
-            from src.agent.self_rewrite import load_history
+            from src.agent.learning.self_rewrite import load_history
             self._guidance = load_history(self.journal.root)
         return self._guidance
 
@@ -249,7 +249,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
     def _guidance_preamble(self) -> str:
         """Constitution + current evolvable guidance, prepended to guidance-bearing
         turns (morning/intraday/wake/research). Eval turns and EOD are excluded."""
-        from src.agent.self_rewrite import build_guidance
+        from src.agent.learning.self_rewrite import build_guidance
         return build_guidance(self._guidance_history())
 
     def _assemble_turn(self, core: str, *, lessons: str = "") -> str:
@@ -302,7 +302,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         outcomes — so recall never re-fetches and never breaks a turn (empty
         outcomes → empty efficacy → recall falls back to relevance + recency).
         """
-        from src.agent.efficacy import lesson_efficacy
+        from src.agent.learning.efficacy import lesson_efficacy
         return lesson_efficacy(self._cached_outcomes())
 
     def _get_lessons(self):
@@ -315,7 +315,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         all_lessons = self.journal.read_lessons_jsonl()
         if not all_lessons:
             return []
-        from src.agent.recall import build_fingerprint, recall_lessons
+        from src.agent.learning.recall import build_fingerprint, recall_lessons
 
         fp = build_fingerprint(regime_text=self.journal.read_regime())
         return recall_lessons(
@@ -331,8 +331,8 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
     def _run_sequential_research(self) -> AgentTurnResult:
         from datetime import datetime as _dt
 
-        from src.agent import agent_reports
-        from src.agent.turn_log import build_turn_summary, generate_turn_id, record_turn
+        from src.agent.reports import build_report, make_eval, write_agent_report
+        from src.agent.logs.turn import build_turn_summary, generate_turn_id, record_turn
 
         n = self._multi_agent_n
         n_rounds = n - 1
@@ -367,7 +367,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 model=self.research_model,
                 timeout=per_round,
             )
-            agents.append(agent_reports.make_eval(
+            agents.append(make_eval(
                 index=0, label="Round 1 · Initial",
                 role="Initial full-universe cross-validation pass",
                 text=getattr(r0, "result", ""),
@@ -379,7 +379,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                     model=self.research_model,
                     timeout=per_round,
                 )
-                agents.append(agent_reports.make_eval(
+                agents.append(make_eval(
                     index=i, label=f"Round {i + 1} · Debate",
                     role=f"Debate round {i} — challenge and verify prior leans",
                     text=getattr(ri, "result", ""),
@@ -430,7 +430,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 ),
                 error=error, started_at=started_at,
             )
-            agent_reports.write_agent_report(self.journal.root, agent_reports.build_report(
+            write_agent_report(self.journal.root, build_report(
                 turn_id=turn_id,
                 ts=_dt.now().astimezone().isoformat(timespec="seconds"),
                 mode="sequential", agents=agents, synthesis_text=synthesis_text,
@@ -543,8 +543,8 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
 
         from datetime import datetime as _dt
 
-        from src.agent import agent_reports
-        from src.agent.turn_log import build_turn_summary, generate_turn_id, record_turn
+        from src.agent.reports import build_report, make_eval, write_agent_report
+        from src.agent.logs.turn import build_turn_summary, generate_turn_id, record_turn
 
         turns_path = self.journal.root / "turns.jsonl"
         turn_id = generate_turn_id(turns_path, "research")
@@ -608,7 +608,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             # F41: one AgentEval per spawned sub-agent (sorted by index for stable
             # display); completed→ok, otherwise→error with the failure reason.
             agents = [
-                agent_reports.make_eval(
+                make_eval(
                     index=r.agent_index,
                     label=f"Agent {r.agent_index + 1} · {_task_title(r.task)}",
                     role=r.task.description,
@@ -618,7 +618,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 )
                 for r in sorted(reports, key=lambda r: r.agent_index)
             ]
-            agent_reports.write_agent_report(self.journal.root, agent_reports.build_report(
+            write_agent_report(self.journal.root, build_report(
                 turn_id=turn_id,
                 ts=_dt.now().astimezone().isoformat(timespec="seconds"),
                 mode="parallel", agents=agents, synthesis_text=synthesis_text,
@@ -663,8 +663,8 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         is set), then auto-rollback a degraded version. Fully guarded; any error
         is swallowed so it can never break the EOD turn."""
         try:
-            from src.agent.efficacy import lesson_efficacy, prompt_version_efficacy
-            from src.agent.self_rewrite import (
+            from src.agent.learning.efficacy import lesson_efficacy, prompt_version_efficacy
+            from src.agent.learning.self_rewrite import (
                 maybe_rollback,
                 propose_rewrite,
                 save_history,

@@ -1,6 +1,6 @@
-from src.agent.equity_log import snapshot
-from src.agent.trades_log import match_round_trips
-from src.agent.turn_log import read_turns, record_turn
+from src.agent.logs.equity import snapshot
+from src.agent.logs.trades import match_round_trips
+from src.agent.logs.turn import read_turns, record_turn
 from src.core.models import PortfolioState, Position
 
 
@@ -104,7 +104,7 @@ class TestFillFiltering:
 
     def test_drops_pre_experiment_and_penny_fills(self):
         from datetime import datetime, timezone
-        from src.agent.trades_log import _alpaca_fills
+        from src.agent.logs.trades import _alpaca_fills
 
         orders = [
             self._order("PFE", "sell", 1, 25.79, datetime(2026, 5, 26, 14, 42, tzinfo=timezone.utc)),  # pre-start

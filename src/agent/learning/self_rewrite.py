@@ -26,8 +26,8 @@ from pathlib import Path
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from src.agent.constitution import AGENT_CONSTITUTION, check_compliance
-from src.agent.efficacy import MIN_EFFICACY_SAMPLE
+from src.agent.learning.constitution import AGENT_CONSTITUTION, check_compliance
+from src.agent.learning.efficacy import MIN_EFFICACY_SAMPLE
 
 SEED_VERSION = "seed"
 _SEED_GUIDANCE = (

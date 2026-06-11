@@ -4,7 +4,7 @@ import pandas as pd
 
 from src.agent.executor import DecisionExecutor
 from src.agent.journal import Decision, Journal
-from src.agent.review import outcome_lines
+from src.agent.learning.review import outcome_lines
 from src.core.models import OpenOrder, Order
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.execution.brokers.simulated_broker import SimulatedBroker

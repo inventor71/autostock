@@ -7,7 +7,7 @@ from pathlib import Path
 
 from hypothesis import given, strategies as st
 
-from src.agent.turn_log import compute_et_date
+from src.agent.logs.turn import compute_et_date
 from src.agent.steering.runtime import (
     _DEFAULT_MARKET_RULE,
     _interventions_tail,

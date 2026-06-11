@@ -5,7 +5,7 @@ compliance gate."""
 
 from __future__ import annotations
 
-from src.agent.constitution import (
+from src.agent.learning.constitution import (
     AGENT_CONSTITUTION,
     check_compliance,
     constitution_sha256,

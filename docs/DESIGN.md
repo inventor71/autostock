@@ -307,7 +307,7 @@ AgentTradingMode (trading/modes/agent.py)   장중 인식 스케줄로 두 축�
   (이후엔 거래소가 OCO를 보유).
 - **자문-실행 시간 분리**: 리서치는 장 시작 전에 앞서 돌 수 있지만(`is_market_open`이 False면 결정은 pending 유지),
   실행은 정규장에서만 일어난다.
-- **텔레메트리/장부**: `turn_log`(턴별 비용), `equity_log`(일일 자산 vs 벤치마크), `trades_log`(완료된 라운드트립),
+- **텔레메트리/장부**: `logs.turn`(턴별 비용), `logs.equity`(일일 자산 vs 벤치마크), `logs.trades`(완료된 라운드트립),
   `review.py`(EOD 셀프리뷰 → lessons.md).
 
 > 참고: 실행기가 Alpaca에 한해 trade-ledger를 재구성할 때 브로커의 비공개 속성에 접근하는 등 일부 누수가 있다 —

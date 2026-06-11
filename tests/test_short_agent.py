@@ -106,7 +106,7 @@ class TestReviewShortPnL:
 
     def _outcome_line(self, side: PositionSide, entry: float, price: float):
         from datetime import datetime
-        from src.agent import review
+        from src.agent.learning import review
         from src.agent.journal import Decision
 
         class _Broker:

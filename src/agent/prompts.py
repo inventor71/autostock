@@ -220,7 +220,7 @@ def _build_lesson_context(lessons: "list[LessonRecord]", max_n: int = 10) -> str
     # ._get_lessons -> recall.recall_lessons); this renders the already-selected
     # lessons WITH their lesson_id so the agent can cite them in ``lessons_cited``
     # (F62 attribution loop). Lessons arrive pre-ranked, so no recency truncation.
-    from src.agent.recall import build_lesson_context
+    from src.agent.learning.recall import build_lesson_context
     return build_lesson_context(lessons, max_n=max_n)
 
 

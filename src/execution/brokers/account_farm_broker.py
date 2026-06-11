@@ -7,7 +7,7 @@ from uuid import UUID
 from loguru import logger
 
 from src.agent.intraday.records import FillEvent
-from src.agent.trades_log import record_trades
+from src.agent.logs.trades import record_trades
 from src.core.exceptions import BrokerError
 from src.execution.brokers._alpaca_shaped import AlpacaShapedBroker
 

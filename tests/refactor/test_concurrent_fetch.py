@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.agent.equity_log import fetch_benchmark
+from src.agent.logs.equity import fetch_benchmark
 from src.agent.tools import market
 from src.data.prices import fetch_latest_prices
 

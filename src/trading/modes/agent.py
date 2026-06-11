@@ -320,8 +320,8 @@ class AgentTradingMode:
 
     def _eod(self) -> None:
         logger.info("Agent end-of-day cycle")
-        from src.agent.equity_log import fetch_benchmark, record_equity
-        from src.agent.review import outcome_lines
+        from src.agent.logs.equity import fetch_benchmark, record_equity
+        from src.agent.learning.review import outcome_lines
 
         # F47: scan for surge/dive stocks before the EOD review so the agent
         # can run ``surge-list`` / ``surge-analyze`` during the review turn.

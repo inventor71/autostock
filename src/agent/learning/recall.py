@@ -24,7 +24,7 @@ from datetime import date
 
 from loguru import logger
 
-from src.agent.efficacy import MIN_EFFICACY_SAMPLE, LessonEfficacy
+from src.agent.learning.efficacy import MIN_EFFICACY_SAMPLE, LessonEfficacy
 from src.agent.journal import LessonRecord
 
 
