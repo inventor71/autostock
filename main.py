@@ -89,14 +89,14 @@ def create_strategies(strategies_config: dict, settings):
     """Create strategy instances from config."""
     # Import strategies to trigger registration
     import src.strategy.technical.ma_crossover
-    import src.strategy.technical.rsi_strategy
-    import src.strategy.technical.macd_strategy
+    import src.strategy.technical.rsi
+    import src.strategy.technical.macd
     import src.strategy.technical.bollinger
-    import src.strategy.ml.rf_strategy
-    import src.strategy.ml.lstm_strategy
+    import src.strategy.ml.rf
+    import src.strategy.ml.lstm
     import src.strategy.ensemble.voting
     import src.strategy.ensemble.weighted
-    import src.strategy.llm.llm_strategy
+    import src.strategy.llm.strategy
 
     from src.strategy.registry import create_strategy
 

@@ -8,12 +8,12 @@
 - **Track ID**: R11
 - **Title**: `strategy/` 파일 접미사 통일(`_strategy` 제거) + stutter 해소
 - **Type**: refactor
-- **Status**: backlog  <!-- not started; pick up via /ai-dlc-refactor R11 -->
-- **Branch**: refactor/R11 (TBD)
-- **Worktree**: .claude/worktrees/R11 (TBD)
+- **Status**: merge-awaiting  <!-- Build & Test green (1073 passed) + registry-key smoke; code on refactor/R11 -->
+- **Branch**: refactor/R11
+- **Worktree**: .claude/worktrees/R11
 - **Submodule branch**: — (Python only)
-- **Base commit**: 2a4e02f (survey point; rebase when picked up)
-- **Start Date**: TBD
+- **Base commit**: 3297de5 (main HEAD; R9 merge-awaiting — runner.py 다른 라인이라 무겹침)
+- **Start Date**: 2026-06-09
 
 ## Extension Configuration
 - **Security Baseline**: N/A.
@@ -45,8 +45,9 @@ strategy 파일 접미사가 뒤섞여 있다(점검 #5, MEDIUM):
 - **알려진 동시 변경 / 권장 순서**: strategy는 다른 R-트랙과 거의 안 겹침(`benchmark/runner.py` import만) → R9 다음(R11) 권장.
 
 ## Stage Progress (skill: ai-dlc-refactor)
-- [ ] Stage 1 — Baseline (`benchmark/runner.py` 등록 import 등 모듈경로 사용처 인벤토리; 테스트 green)
-- [ ] Stage 2 — Tier ledger (all-T1 — 모듈 파일 개명만; 키·클래스 불변)
-- [ ] Stage 3 — Redesign (모듈명 매핑 + 클래스명 유지 여부 + registry 갱신)
-- [ ] Stage 4 — Implementation (개명 + 전수 호출부/키 갱신)
-- [ ] Build & Test
+- [x] Stage 1 — Baseline (`1-baseline.md`; 개명 5건 매핑 + 참조 11곳+doc2 전수; test_strategies 19 green)
+- [x] Stage 2 — Tier ledger (`2-tier-ledger.md`) — all-T1(6항목), T3 없음
+- [x] Stage 3 — Redesign (`3-redesign.md`) — 5모듈 개명 매핑 + 키/클래스 유지 + 마이그레이션 순서
+- [x] Stage 4 — Implementation — `git mv` 5모듈; 참조 11곳+docs 2 갱신; 잔여 0
+- [x] Build & Test — 전체 **1073 passed**; py_compile OK; import smoke(등록 키 5개 전부 정상)
+- Status: **merge-awaiting**

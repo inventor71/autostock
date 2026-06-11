@@ -5,8 +5,8 @@ import pytest
 from src.core.types import Signal
 from src.core.exceptions import InsufficientDataError
 from src.strategy.technical.ma_crossover import MovingAverageCrossover
-from src.strategy.technical.rsi_strategy import RSIStrategy
-from src.strategy.technical.macd_strategy import MACDStrategy
+from src.strategy.technical.rsi import RSIStrategy
+from src.strategy.technical.macd import MACDStrategy
 from src.strategy.technical.bollinger import BollingerBandsStrategy
 from src.strategy.registry import list_strategies, get_strategy_class, create_strategy
 
@@ -127,7 +127,7 @@ class TestLLMStrategyConfigInjection:
     composition root) — it must not reach into global settings (S-3)."""
 
     def _make(self, **params):
-        import src.strategy.llm.llm_strategy  # noqa: F401 (trigger registration)
+        import src.strategy.llm.strategy  # noqa: F401 (trigger registration)
         return create_strategy("llm", params)
 
     def test_defaults_when_no_params(self):

@@ -169,7 +169,7 @@ create_strategy("rsi", params)     # 이름 문자열 → 인스턴스 (팩토�
 가장 복잡한 모듈로, 6개 컴포넌트로 구성된다:
 
 ```
-llm_strategy.py    LLMStrategy — generate_signal 구현. 데이터 포맷 → LLM 호출
+strategy.py    LLMStrategy — generate_signal 구현. 데이터 포맷 → LLM 호출
                    → JSON 파싱(3단계 폴백) → TradeSignal 변환
 client.py          BaseLLMClient + ClaudeClient / OpenAIClient
                    └ create_llm_client() 팩토리, 지수 백오프 재시도 내장

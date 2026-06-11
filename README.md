@@ -237,7 +237,7 @@ print(f"최적 파라미터: {best_params}")
 
 ```python
 from src.data.providers.yfinance_provider import YFinanceProvider
-from src.strategy.ml.rf_strategy import RandomForestStrategy
+from src.strategy.ml.rf import RandomForestStrategy
 
 provider = YFinanceProvider()
 bars = provider.get_bars("AAPL", limit=500)

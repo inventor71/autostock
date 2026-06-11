@@ -17,8 +17,8 @@ def _import_baseline_strategies() -> None:
     import src.strategy.buy_and_hold  # noqa: F401
     import src.strategy.technical.bollinger  # noqa: F401
     import src.strategy.technical.ma_crossover  # noqa: F401
-    import src.strategy.technical.macd_strategy  # noqa: F401
-    import src.strategy.technical.rsi_strategy  # noqa: F401
+    import src.strategy.technical.macd  # noqa: F401
+    import src.strategy.technical.rsi  # noqa: F401
 
 
 class _Baseline:
