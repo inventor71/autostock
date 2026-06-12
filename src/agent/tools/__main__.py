@@ -117,6 +117,27 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    # F74: eval fixture interception — a market command under
+    # AUTOSTOCK_TOOLS_FIXTURE_DIR is answered from the scenario fixture before
+    # any data wiring runs, so an eval turn can never touch live data. A
+    # missing fixture key yields an explicit fixture_missing error object.
+    from src.agent.tools.fixtures import (
+        MARKET_COMMANDS,
+        FixtureStore,
+        RecordingStore,
+        command_key,
+    )
+
+    fixture = FixtureStore.from_env()
+    recorder = RecordingStore.from_env() if fixture is None else None
+    if fixture is not None and RecordingStore.from_env() is not None:
+        sys.stderr.write("tools: fixture mode active; record dir ignored\n")
+    if fixture is not None and args.cmd in MARKET_COMMANDS:
+        json.dump(fixture.get(args.cmd, command_key(args)), sys.stdout,
+                  indent=2, default=str)
+        sys.stdout.write("\n")
+        return 0
+
     if args.cmd == "quote":
         out = market.quote(args.symbol, _provider())
     elif args.cmd == "indicators":
@@ -206,6 +227,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:  # pragma: no cover - argparse enforces choices
         parser.error(f"unknown command: {args.cmd}")
+
+    if recorder is not None and args.cmd in MARKET_COMMANDS:
+        try:
+            recorder.save(args.cmd, command_key(args), out)
+        except Exception as exc:  # capture aid must never sink a live tool call
+            sys.stderr.write(f"tools: record failed ({exc})\n")
 
     json.dump(out, sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")
