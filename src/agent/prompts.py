@@ -21,6 +21,29 @@ _ADVISOR_REMINDER = (
 )
 
 
+def _screening_journal_block() -> str:
+    """F72: per-candidate screening journal mandate for discovery steps.
+
+    The operator's /screening view joins this with the auto-saved scoreboard
+    snapshot, so 'which names were examined and why they were dropped' survives
+    the turn instead of evaporating with the session context. The filename is
+    keyed by the ET trading date — NOT the prompt's local `today` — so it lands
+    in the same file the scan snapshot uses (critic #2: on a non-ET host the
+    two dates diverge around midnight and the /screening join silently splits)."""
+    from src.agent.logs.turn import compute_et_date
+
+    record = ('{"ts": "<ISO>", "symbol": "<SYM>", '
+              '"verdict": "entered|watchlist|passed", "reason": "<one line>"}')
+    return (
+        "   Screening journal (mandatory): for EVERY candidate you actually\n"
+        "   examined this turn — dug into, or consciously rejected after a look —\n"
+        f"   append one JSON line to `screening/{compute_et_date()}.verdicts.jsonl`:\n"
+        f"   {record}\n"
+        "   (entered = you added a decision; watchlist = still tracking; passed =\n"
+        "   examined and dropped). Do NOT write lines for names you never looked at."
+    )
+
+
 def morning_research_prompt(
     universe: list[str],
     held: list[str] | None = None,
@@ -49,6 +72,7 @@ def morning_research_prompt(
         if shorting_enabled else ""
     )
     short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
+    screening_journal = _screening_journal_block()
     return f"""{prefix}Morning research turn — {today.isoformat()}.
 Start by reading CLAUDE.md, lessons.md, regime.md, watchlist.md, and the thesis
 file for every held/tracked name.
@@ -83,6 +107,7 @@ following:
    promising candidate dig in with indicators / fundamentals / news (and web
    search) before writing a thesis. Add a BUY — always with a stop, and a target
    where you have one — only on genuine conviction.{short_discovery}
+{screening_journal}
 5. Update watchlist.md with the names you are tracking and why.
 {short_block}
 Keep decisions.jsonl consistent with what your thesis files say.
@@ -247,6 +272,7 @@ signal_brief: str | None = None,) -> str:
         "4. Discovery: scan scoreboard, dig into promising long candidates."
     )
     short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
+    screening_journal = _screening_journal_block()
     prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
     return f"""{prefix}Morning research turn — {today.isoformat()} (multi-agent, round 1 of {n_rounds + 1}).
 
@@ -264,11 +290,14 @@ Ground every call in fresh data pulled THIS turn. Do the following:
 2. Regime: refresh regime.md using tools and web research.
 3. Held positions: for EACH held name, pull indicators + news, update thesis.
 {discovery}
+{screening_journal}
 5. Update watchlist.md.
 {short_block}
 This is round 1 of a {n_rounds + 1}-round cross-validation process.
 Do NOT write to decisions.jsonl yet — record your analysis and preliminary
 views in your session context. The last round will produce the verdicts.
+(The screening journal above is separate from decisions.jsonl and IS expected
+in this round.)
 
 {_ADVISOR_REMINDER}"""
 

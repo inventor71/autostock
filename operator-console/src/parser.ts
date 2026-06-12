@@ -30,6 +30,8 @@ export const READ_VERBS = new Set([
   "ui-legend",
   // F53: position thesis read — agent's thesis/plan/call-vs-outcome for a symbol
   "thesis", "theses",
+  // F72: research-turn screening funnel — examined names + verdicts + quant scan
+  "screening",
 ]);
 
 const VERB_ALIASES: Record<string, SteeringVerb> = {

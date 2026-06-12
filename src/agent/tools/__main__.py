@@ -128,8 +128,15 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "news":
         out = market.news(args.symbol, limit=args.limit)
     elif args.cmd == "scoreboard":
+        from src.agent.logs import screening
+
         symbols = args.symbols or _universe()
         out = market.scoreboard(symbols, _provider())
+        # F72: persist the latest FULL-universe scan for the operator's
+        # /screening view. A partial --symbols run must not clobber the day's
+        # record (critic #1). Fail-honest — a save failure never sinks the scan.
+        if args.symbols is None:
+            screening.record_scan(out)
     elif args.cmd == "earnings":
         out = market.earnings(args.symbol)
     elif args.cmd == "insider":

@@ -111,3 +111,14 @@ test("/cancel passes the target through (daemon resolves id-prefix vs symbol)", 
   expect(ok("/cancel a1187da8").verb).toBe("cancel");
   expect(() => ok("/cancel")).toThrow(ParseError); // arg required
 });
+
+test("F72: /screening is a read-only verb (with and without a date)", () => {
+  const d = ok("/screening");
+  expect(d.verb).toBe("screening");
+  expect(d.readOnly).toBe(true);
+  expect(d.confirmRequired).toBe(false);
+  const d2 = ok("/screening 2026-06-10");
+  expect(d2.verb).toBe("screening");
+  expect(d2.readOnly).toBe(true);
+  expect(d2.args.raw).toBe("screening 2026-06-10");
+});

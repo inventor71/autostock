@@ -115,6 +115,10 @@ class Journal:
         self.root.mkdir(parents=True, exist_ok=True)
         self.positions_dir.mkdir(exist_ok=True)
         self.daily_dir.mkdir(exist_ok=True)
+        # F72: the screening journal target must exist regardless of whether a
+        # scoreboard run created it first — the agent's restricted Bash cannot
+        # mkdir, so a verdicts append before the day's first scan would fail.
+        (self.root / "screening").mkdir(exist_ok=True)
 
         if not self.claude_md.exists():
             template = TEMPLATE_DIR / "CLAUDE.md"

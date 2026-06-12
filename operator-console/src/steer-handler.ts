@@ -172,6 +172,21 @@ export function handleSteerRead(command: string, fd: FileDrop, supervisor = fals
     if (symbols.length === 0) return "(no thesis files found in workspace/positions/)";
     return `theses: ${symbols.join(", ")}`;
   }
+  // F72: research-turn screening funnel — the agent's per-candidate verdicts
+  // (entered/watchlist/passed + reason) joined with the auto-saved scoreboard
+  // quant snapshot. `/screening` → latest day; `/screening 2026-06-10` → that day.
+  if (draft.verb === "screening") {
+    const arg = String(draft.args.raw ?? "").trim().split(/\s+/)[1];
+    // SECURITY-05: strict date allowlist BEFORE the value goes anywhere near a path.
+    if (arg !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(arg)) {
+      return "(screening: invalid date, expected YYYY-MM-DD)";
+    }
+    const date = arg ?? fd.latestScreeningDate();
+    if (!date) return "(no screening data yet)";
+    const data = fd.readScreening(date);
+    if (!data) return `(no screening data for ${date})`;
+    return formatScreening(date, data);
+  }
   // F6: dispatch deep-monitoring verbs to monitor.json (previously every read verb,
   // even `log`, fell through to the snapshot — critic #3).
   const key = MONITOR_VERBS[draft.verb];
@@ -182,4 +197,57 @@ export function handleSteerRead(command: string, fd: FileDrop, supervisor = fals
   }
   const snap = fd.readSnapshot();
   return snap ? `snapshot: ${JSON.stringify(snap)}` : "(no snapshot yet)";
+}
+
+// ---- F72: /screening rendering -------------------------------------------- #
+
+/** "+0.3" / "-2.3" / "?" — signed change for the compact scan rows. */
+function signed(v: unknown): string {
+  return typeof v === "number" ? (v >= 0 ? `+${v}` : `${v}`) : "?";
+}
+
+/** "09:40" from an ISO timestamp, or the raw value when it isn't one. */
+function hhmm(ts: unknown): string {
+  const s = String(ts ?? "?");
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s) ? s.slice(11, 16) : s;
+}
+
+function formatScreening(
+  date: string,
+  data: { scan: Record<string, unknown> | null; scanUnreadable: boolean; verdicts: Array<Record<string, unknown>> },
+): string {
+  const scan = data.scan as { ts?: unknown; count?: unknown; rows?: unknown } | null;
+  const rows = Array.isArray(scan?.rows) ? (scan.rows as Array<Record<string, unknown>>) : [];
+  const lines: string[] = [];
+  lines.push(
+    scan
+      ? `screening ${date} (scan ${String(scan.ts ?? "?")}, ${String(scan.count ?? rows.length)} symbols):`
+      : `screening ${date}:`,
+  );
+  if (data.verdicts.length === 0) {
+    lines.push("verdicts: (none recorded)");
+  } else {
+    lines.push(`verdicts (${data.verdicts.length}):`);
+    for (const v of data.verdicts) {
+      lines.push(`  ${hhmm(v.ts)} ${String(v.symbol ?? "?")} ${String(v.verdict ?? "?")} — ${String(v.reason ?? "")}`);
+    }
+  }
+  if (data.scanUnreadable) {
+    lines.push("scan: (unreadable)");
+  } else if (!scan) {
+    lines.push("scan: (none)");
+  } else {
+    lines.push("scan (symbol close chg1d% chg5d% chg20d% rsi volx dist20d%):");
+    for (const r of rows) {
+      if (r.error !== undefined) {
+        lines.push(`  ${String(r.symbol ?? "?")} error: ${String(r.error)}`);
+      } else {
+        lines.push(
+          `  ${String(r.symbol ?? "?")} ${String(r.close ?? "?")} ${signed(r.chg_1d)} ${signed(r.chg_5d)} ` +
+          `${signed(r.chg_20d)} ${String(r.rsi_14 ?? "?")} ${String(r.vol_ratio ?? "?")}x ${signed(r.dist_high_20d_pct)}`,
+        );
+      }
+    }
+  }
+  return lines.join("\n");
 }
