@@ -44,6 +44,11 @@ export function launcherHelpSection(): string {
     "                 셸 접근이 있는 개발자 전용. 평상시엔 생략.",
     "  -h, --help     이 도움말을 표시.",
     "",
+    "런처 서브커맨드 (F71 모바일):",
+    "  serve          헤드리스 opencode 서버를 tailnet 인터페이스에만 바인드해 기동",
+    "                 (폰 PWA용; OPENCODE_SERVER_PASSWORD 필수 — 없으면 거부).",
+    "  qr             폰 페어링 QR(서버 URL+비번)을 터미널에 표시. 표시 후 화면을 지우세요.",
+    "",
     "그 외 모든 인자는 opencode 콘솔로 그대로 전달됩니다 (예: autostock -s ses_x → 세션 재개).",
     "아래는 opencode 콘솔 자체 도움말입니다:",
     "─".repeat(60),
@@ -94,6 +99,20 @@ export async function main(): Promise<void> {
     die(EXIT.CONFIG, `config 해석 실패: ${(e as Error).message}`);
   }
 
+  // 1.5 F71 launcher-owned subcommands (mobile path). `qr` needs only config; `serve`
+  //     continues through preflight + daemon ensure below, then spawns the headless server.
+  const sub = process.argv[2];
+  if (sub === "qr") {
+    const { runQr, ServeConfigError } = await import("./serve");
+    try {
+      await runQr(cfg);
+      process.exit(EXIT.OK);
+    } catch (e) {
+      if (e instanceof ServeConfigError) die(EXIT.CONFIG, e.message);
+      die(EXIT.CONSOLE, `qr 실패: ${(e as Error).message}`);
+    }
+  }
+
   // 2. preflight (fail-closed) — warnings printed, blocking failures abort.
   const report = runPreflight(cfg);
   for (const c of report.checks) {
@@ -114,6 +133,20 @@ export async function main(): Promise<void> {
   } catch (e) {
     if (e instanceof DaemonStartError) die(EXIT.DAEMON, `데몬 기동 실패:\n      ${e.message}`);
     die(EXIT.DAEMON, `데몬 확인 중 오류: ${(e as Error).message}`);
+  }
+
+  // 3.5 F71 `autostock serve` — same wiring as the TUI (MCP/steering env) but headless,
+  //     bound to the tailnet interface only. Daemon ensure above still applies (the phone
+  //     operator needs a live daemon just like the desktop TUI).
+  if (sub === "serve") {
+    const { runServe, ServeConfigError } = await import("./serve");
+    try {
+      const code = await runServe(cfg, process.argv.slice(3));
+      process.exit(code === 0 ? EXIT.OK : code);
+    } catch (e) {
+      if (e instanceof ServeConfigError) die(EXIT.CONFIG, e.message);
+      die(EXIT.CONSOLE, `serve 실행 실패: ${(e as Error).message}`);
+    }
   }
 
   // 4. launch console — TTY handoff (inherit stdio), session-first (Q1=A/critic2 #5 option B: -c).

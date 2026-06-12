@@ -33,6 +33,35 @@ WantedBy=default.target
 `;
 }
 
+// F71 U1 — headless mobile server unit. ExecStart runs the launcher's own `serve` subcommand
+// so the password fail-closed + tailnet-only-bind logic is enforced identically to a manual
+// run (no second code path). Needs bun on PATH (same class of problem as the daemon's `claude`).
+export const SERVE_UNIT_NAME = "autostock-serve.service";
+
+export interface ServeUnitParams {
+  autostockRoot: string;
+  shimPath: string; // ~/.local/bin/autostock (baked AUTOSTOCK_ROOT + exec bun cli.ts)
+  path?: string; // PATH incl. bun's bin dir; undefined → omit
+}
+
+export function renderServeUnit(p: ServeUnitParams): string {
+  const pathLine = p.path ? `Environment=PATH=${p.path}\n` : "";
+  return `[Unit]
+Description=autostock mobile operator server (opencode serve, tailnet-only)
+After=default.target
+
+[Service]
+Type=simple
+${pathLine}WorkingDirectory=${p.autostockRoot}
+ExecStart=${p.shimPath} serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+`;
+}
+
 /** Candidate venv interpreters, in order; the daemon module picks the first that exists. */
 export function pythonCandidates(autostockRoot: string): string[] {
   return [

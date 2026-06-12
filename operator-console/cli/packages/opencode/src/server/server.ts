@@ -58,7 +58,11 @@ class ListenerServerService extends Context.Service<ListenerServerService, Liste
 export const Default = lazy(() => {
   const handler = HttpApiApp.webHandler().handler
   const app: ServerApp = {
-    fetch: (request: Request) => handler(request, HttpApiApp.context),
+    // F71: autostock WebAuthn endpoints (register/assert) are mounted ahead of the typed
+    // HttpApi — fork-isolated in server/autostock/webauthn.ts to keep rebase surface small.
+    fetch: async (request: Request) =>
+      (await import("./autostock/webauthn").then((m) => m.route(request))) ??
+      handler(request, HttpApiApp.context),
     request(input, init) {
       return app.fetch(input instanceof Request ? input : new Request(new URL(input, "http://localhost"), init))
     },

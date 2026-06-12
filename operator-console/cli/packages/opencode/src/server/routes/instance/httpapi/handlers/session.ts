@@ -357,6 +357,27 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof PermissionResponsePayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      // F71 U2: remote approvals of mutating autostock permissions require a WebAuthn
+      // assertion — same gate as the permission-group reply (handlers/permission.ts).
+      {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const pending = yield* permissionSvc.list()
+        const info = pending.find((p) => p.id === ctx.params.permissionID)
+        const { checkReply } = yield* Effect.promise(() => import("@/server/autostock/webauthn"))
+        const denial = yield* Effect.promise(() =>
+          checkReply({
+            reply: ctx.payload.response,
+            remoteAddress: Option.getOrUndefined(request.remoteAddress),
+            permission: info?.permission,
+            header: request.headers["x-autostock-webauthn"],
+          }),
+        )
+        if (denial !== null) {
+          return yield* Effect.fail(
+            new PermissionNotFoundError({ requestID: String(ctx.params.permissionID), message: denial }),
+          )
+        }
+      }
       yield* permissionSvc.reply({ requestID: ctx.params.permissionID, reply: ctx.payload.response }).pipe(
         Effect.catchTag("Permission.NotFoundError", (error) =>
           Effect.fail(
