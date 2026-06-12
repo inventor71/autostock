@@ -98,13 +98,17 @@ All core entities are Pydantic v2 models / enums defined in `src/core/` — depe
 
 ## Enums (`src/core/types.py`)
 
-- `Signal`: BUY / SELL / HOLD
-- `OrderSide`: BUY / SELL
-- `OrderType`: MARKET / LIMIT / STOP / STOP_LIMIT
+- `Signal`: BUY / SELL / HOLD / SELL_SHORT / BUY_TO_COVER (F54: short-selling signals added)
+- `OrderSide`: buy / sell / sell_short / buy_to_cover (F54: maps 1:1 to Alpaca's native short sides)
+- `OrderType`: MARKET / LIMIT / STOP / STOP_LIMIT / TRAILING_STOP (F9: trailing stop via trail_price or trail_percent)
 - `OrderClass`: SIMPLE / BRACKET / OCO / OTO
 - `PositionSide`: LONG / SHORT
-- `TimeFrame`: 1Min / 5Min / 15Min / 1Hour / 1Day
+- `TimeFrame`: MINUTE_1(1m) / MINUTE_5(5m) / MINUTE_15(15m) / MINUTE_30(30m) / HOUR_1(1h) / HOUR_4(4h) / DAY_1(1d) / WEEK_1(1w) / MONTH_1(1mo)
 - `TradingMode`: backtest / paper / live / agent
+
+## DecisionAction (`src/agent/journal.py`)
+
+Literal type used for agent journal entries: `BUY` / `SELL` / `HOLD` / `ADJUST_STOP` / `SELL_SHORT` / `BUY_TO_COVER`
 
 ## Exceptions (`src/core/exceptions.py`)
 

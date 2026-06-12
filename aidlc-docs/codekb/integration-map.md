@@ -46,6 +46,7 @@
 ## Notes
 
 - **KIS specifics**: `python-kis` 2.1.6 (`pykis`) has no `stop` param; 모의투자 (paper) does not support stop-limit (`ORD_DVSN=22`) — live-only. KIS live trading is pending.
+- **BrokerApiBroker (R7)**: `BrokerApiBroker` shares all request-building / fill-polling / position-mapping logic with `AlpacaBroker` via `AlpacaShapedBroker`. R7 fixed the short-cover order side mapping (was incorrectly sending `sell` instead of `buy_to_cover`) and tightened TIF handling to fail-closed (unsupported TIF raises, not silently downgrades).
 - **Auth model**: All external credentials loaded from environment variables / `.env`; no secrets in repo; `AUTOSTOCK_ENV_FILE` allows test harness to load a separate `.env.test`.
 - **Signal sources**: movers/news via Alpaca Data API (primary) + yfinance (fallback); earnings via Finnhub; toggleable per `settings.yaml` `signals.sources` section.
 - **Extended hours / OCO**: OCO orders do not set `extended_hours=True` — Alpaca DAY+LIMIT restriction makes extended-hours OCOs unreliable.
