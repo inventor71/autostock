@@ -268,3 +268,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-11 — **R11 merged** → main 37fc0b2 (strategy 접미사 제거 5모듈; 1073 passed; registry-only conflict→ours)
 - 2026-06-11 — **R12 merged** → main 018c59e (brokers 네이밍 + provider account_farm 클린브레이크 + fails-loud; 1073 passed; registry-only conflict→ours)
 - 2026-06-11 — **R10 merged** → main 2245def (data/intraday 서브패키지 + -m 클린브레이크; 1073 passed + -m smoke; rebase clean)
+- 2026-06-12 — **/ai-dlc-merge 시작** (큐: R8→F71→F72, 사용자 승인 — F72는 rebase 시 screening_log→logs/screening 동일방향 정돈 포함). Triage: 공유 registry 노이즈(F72 행) + tracks/F71/inception/(active) → 통과.
+- 2026-06-12 — **R8 merged** → main d065ed6 (agent logs/·learning/ 재구조화; main verify 1073 passed) ※ 1차 merge가 registry 노이즈에 막혀 실패→복구(stash-merge-pop); close 커밋에 F72 등록행 동승

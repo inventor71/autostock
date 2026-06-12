@@ -8,7 +8,7 @@
 - **Track ID**: R8
 - **Title**: `src/agent/` 최상위 잡탕 파일을 성격별 서브패키지로 재구조화
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- B&T green (1073) 2026-06-11; code on refactor/R8 -->
+- **Status**: merged → main d065ed6 (2026-06-12)
 - **Branch**: refactor/R8
 - **Worktree**: .claude/worktrees/R8
 - **Submodule branch**: — (Python only)

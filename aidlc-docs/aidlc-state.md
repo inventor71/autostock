@@ -89,13 +89,16 @@
 | R6 | ET (market timezone) helper consolidation into core | merged | refactor/R6 → main 230f74d | — | — (monorepo) | 5e5c2a9 | 2026-06-07 |
 | R7 | Broker behavior fixes (broker_api short-side bug + fail-closed TIF) — deferred from R3 T3 gate | merged | refactor/R7 → main 3dde03c | — | — (monorepo) | c9669ec→3dde03c | 2026-06-08 |
 | F70 | 섀도우 벤치마크 + alpha-vs-baseline — 결정론적 전략(기술적/buy&hold)을 LLM 경쟁자 아닌 측정자로 상시 가동 | merged | feat/F70 → main e4676fc | — | — (monorepo) | 5e786b0 | 2026-06-07 |
-| R8 | `src/agent/` 재구조화 — grab-bag 15파일을 logs/·learning/ 서브패키지로 + stutter 해소 (구조점검 #1) | active | refactor/R8 | .claude/worktrees/R8 | — (monorepo) | 76ff7b6 | 2026-06-11 |
+| R8 | `src/agent/` 재구조화 — grab-bag 15파일을 logs/·learning/ 서브패키지로 + stutter 해소 (구조점검 #1) | merged | refactor/R8 → main d065ed6 | — | — (monorepo) | 76ff7b6 | 2026-06-12 |
 | R9 | config↔settings 용어 통일 — 패키지 로컬 설정 모듈을 settings.py로 (구조점검 #3) | merged | refactor/R9 → main c3c0137 | — | — (monorepo) | 3297de5 | 2026-06-11 |
 | R10 | intraday 일원화 — `data/intraday_*.py` → `data/intraday/` 서브패키지 (구조점검 #4) | merged | refactor/R10 → main 2245def | — | — (monorepo) | 0106a8b | 2026-06-11 |
 | R11 | strategy 네이밍 일관화 — `_strategy` 접미사 제거 + `llm_strategy` stutter 해소 (구조점검 #5) | merged | refactor/R11 → main 37fc0b2 | — | — (monorepo) | 3297de5 | 2026-06-11 |
 | R12 | execution/brokers 네이밍 — `account_farm_broker` 개명 + `simulated_broker` 통일 + `kis/` 서브패키지 (구조점검 #6) | merged | refactor/R12 → main 018c59e | — | — (monorepo) | 0106a8b | 2026-06-11 |
 | R13 | tests 네이밍·구조 정비 — 트랙ID 테스트명→행동기반 + `src/` 미러링 (구조점검 #2+#7) | backlog | refactor/R13 (TBD) | — | — (monorepo) | 2a4e02f | 2026-06-08 |
 | F71 | autostock 모바일(안드로이드) 앱 — 경로 A (Tailscale + opencode serve + PWA, 대화형 operator) | active | feat/F71 (TBD) | .claude/worktrees/F71 (TBD) | — (TBD: opencode/cli) | TBD | 2026-06-10 |
+| F72 | research 스크리닝→필터링 결과 로깅 + TUI(steer_read) 노출 | active | feat/F72 (TBD) | .claude/worktrees/F72 (TBD) | — (TBD) | TBD | 2026-06-11 |
+| F73 | viz-shell — 읽기 전용 생성형 대시보드 사이드카 (vibeOS 패턴 방향 A, 장기 브랜치) | active | vibeshell (사용자 지정, TBD) | .claude/worktrees/F73 (TBD) | — (신규 viz-shell/) | TBD | 2026-06-12 |
+| F74 | Prompt Eval & Regression Framework — promptfoo 기반 합성 시나리오 행동 채점/회귀 게이트 | active | feat/F74 | .claude/worktrees/F74 | — (monorepo) | 76ff7b6 | 2026-06-12 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
