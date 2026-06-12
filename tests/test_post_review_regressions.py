@@ -176,7 +176,7 @@ class TestExecutorCursor:
 # ===========================================================================
 
 
-class TestEarlySessionMonitorF56:
+class TestEarlySessionMonitor:
     def _monitor(self, tmp_path, **cfg_kw):
         from src.early_session.settings import EarlySessionConfig
         from src.early_session.monitor import EarlySessionMonitor
