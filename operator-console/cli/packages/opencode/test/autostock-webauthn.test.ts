@@ -1,17 +1,21 @@
-// F71 U2 — security gate pure-core tests (no crypto, no Effect):
-// mutating classification (fail-closed), loopback detection (in-process = local),
-// gate decision matrix, single-use challenge TTL, basic-auth check, https-only origin.
+// F71 U2 + F75 hardening — security gate pure-core tests (no crypto, no Effect):
+// mutating classification (fail-closed), origin classification (in-process / host-local /
+// remote incl. tailscale-serve loopback hop), gate decision matrix, value-keyed single-use
+// challenge TTL, constant-time basic-auth check, https-only origin.
 import { describe, expect, test } from "bun:test"
 
 import {
+  CHALLENGE_MAX,
   CHALLENGE_TTL_MS,
   checkBasicAuth,
   consumeChallenge,
   decideGate,
   expectedOrigin,
   expectedRpId,
+  extractClientChallenge,
   isLoopbackAddress,
   isMutatingAutostockPermission,
+  isRemoteOrigin,
   issueChallenge,
 } from "../src/server/autostock/webauthn"
 
@@ -49,8 +53,8 @@ describe("isLoopbackAddress", () => {
     expect(isLoopbackAddress("::1")).toBe(true)
     expect(isLoopbackAddress("::ffff:127.0.0.1")).toBe(true)
   })
-  test("undefined = in-process (desktop TUI embedded fetch) = local", () => {
-    expect(isLoopbackAddress(undefined)).toBe(true)
+  test("undefined is NOT loopback — in-process is classified separately", () => {
+    expect(isLoopbackAddress(undefined)).toBe(false)
   })
   test("tailnet/remote addresses are not loopback", () => {
     expect(isLoopbackAddress("100.101.102.103")).toBe(false)
@@ -58,8 +62,30 @@ describe("isLoopbackAddress", () => {
   })
 })
 
+describe("isRemoteOrigin (F75)", () => {
+  test("in-process (no socket) is local", () => {
+    expect(isRemoteOrigin(undefined, false)).toBe(false)
+    expect(isRemoteOrigin(undefined, true)).toBe(false) // header alone can't make in-process remote
+  })
+  test("plain loopback (attach-mode TUI, host-local) is local", () => {
+    expect(isRemoteOrigin("127.0.0.1", false)).toBe(false)
+  })
+  test("loopback WITH tailscale identity header = tailscale-serve hop = REMOTE", () => {
+    expect(isRemoteOrigin("127.0.0.1", true)).toBe(true)
+  })
+  test("non-loopback socket is remote regardless of header", () => {
+    expect(isRemoteOrigin("100.1.2.3", false)).toBe(true)
+    expect(isRemoteOrigin("100.1.2.3", true)).toBe(true)
+  })
+})
+
 describe("decideGate", () => {
-  const base = { reply: "once" as const, remoteAddress: "100.1.2.3", permission: "autostock_cancel_all_orders" }
+  const base = {
+    reply: "once" as const,
+    remoteAddress: "100.1.2.3",
+    tailscaleIdentity: false,
+    permission: "autostock_cancel_all_orders",
+  }
   test("remote mutating approve without assertion → denied", () => {
     expect(decideGate({ ...base, assertionValid: false })).toContain("WebAuthn")
   })
@@ -69,9 +95,17 @@ describe("decideGate", () => {
   test("reject is always allowed (no signature to refuse)", () => {
     expect(decideGate({ ...base, reply: "reject", assertionValid: false })).toBeNull()
   })
-  test("loopback approve bypasses (desktop)", () => {
+  test("host-local loopback approve bypasses (attach-mode TUI)", () => {
     expect(decideGate({ ...base, remoteAddress: "127.0.0.1", assertionValid: false })).toBeNull()
     expect(decideGate({ ...base, remoteAddress: undefined, assertionValid: false })).toBeNull()
+  })
+  test("F75: loopback via tailscale-serve proxy (identity header) is GATED", () => {
+    expect(
+      decideGate({ ...base, remoteAddress: "127.0.0.1", tailscaleIdentity: true, assertionValid: false }),
+    ).toContain("WebAuthn")
+    expect(
+      decideGate({ ...base, remoteAddress: "127.0.0.1", tailscaleIdentity: true, assertionValid: true }),
+    ).toBeNull()
   })
   test("non-autostock permission untouched", () => {
     expect(decideGate({ ...base, permission: "edit", assertionValid: false })).toBeNull()
@@ -84,21 +118,49 @@ describe("decideGate", () => {
   })
 })
 
-describe("challenge store", () => {
+describe("challenge store (value-keyed, F75)", () => {
   test("single-use: consume removes", () => {
     issueChallenge("assert", 1000, "abc")
-    expect(consumeChallenge("assert", 1001)).toBe("abc")
-    expect(consumeChallenge("assert", 1001)).toBeNull()
+    expect(consumeChallenge("assert", "abc", 1001)).toBe(true)
+    expect(consumeChallenge("assert", "abc", 1001)).toBe(false)
   })
   test("expired challenge is rejected", () => {
-    issueChallenge("assert", 1000, "abc")
-    expect(consumeChallenge("assert", 1000 + CHALLENGE_TTL_MS + 1)).toBeNull()
+    issueChallenge("assert", 1000, "exp")
+    expect(consumeChallenge("assert", "exp", 1000 + CHALLENGE_TTL_MS + 1)).toBe(false)
   })
-  test("register/assert kinds are independent", () => {
-    issueChallenge("register", 1000, "reg")
-    issueChallenge("assert", 1000, "ast")
-    expect(consumeChallenge("assert", 1001)).toBe("ast")
-    expect(consumeChallenge("register", 1001)).toBe("reg")
+  test("wrong kind is rejected (and consumed — single use either way)", () => {
+    issueChallenge("register", 1000, "regonly")
+    expect(consumeChallenge("assert", "regonly", 1001)).toBe(false)
+    expect(consumeChallenge("register", "regonly", 1001)).toBe(false)
+  })
+  test("F75: two in-flight challenges don't invalidate each other", () => {
+    issueChallenge("assert", 1000, "first")
+    issueChallenge("assert", 1000, "second")
+    expect(consumeChallenge("assert", "first", 1001)).toBe(true)
+    expect(consumeChallenge("assert", "second", 1001)).toBe(true)
+  })
+  test("unknown/null value is rejected", () => {
+    expect(consumeChallenge("assert", "never-issued", 1001)).toBe(false)
+    expect(consumeChallenge("assert", null, 1001)).toBe(false)
+  })
+  test("F75: capped at CHALLENGE_MAX — oldest evicted, memory bounded", () => {
+    for (let i = 0; i < CHALLENGE_MAX + 10; i++) issueChallenge("assert", 5000, `c${i}`)
+    expect(consumeChallenge("assert", "c0", 5001)).toBe(false) // evicted
+    expect(consumeChallenge("assert", `c${CHALLENGE_MAX + 9}`, 5001)).toBe(true) // newest survives
+  })
+})
+
+describe("extractClientChallenge (F75)", () => {
+  const wrap = (clientData: unknown) => ({
+    response: { clientDataJSON: Buffer.from(JSON.stringify(clientData)).toString("base64url") },
+  })
+  test("pulls the base64url challenge out of clientDataJSON", () => {
+    expect(extractClientChallenge(wrap({ type: "webauthn.get", challenge: "abc123" }))).toBe("abc123")
+  })
+  test("garbage/missing → null", () => {
+    expect(extractClientChallenge({})).toBeNull()
+    expect(extractClientChallenge({ response: { clientDataJSON: "%%%" } })).toBeNull()
+    expect(extractClientChallenge(wrap({ challenge: 42 }))).toBeNull()
   })
 })
 

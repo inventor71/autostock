@@ -99,6 +99,7 @@
 | F72 | research 스크리닝→필터링 결과 로깅 + TUI(steer_read) 노출 | merged | feat/F72 → main 7b4b409 | — | — (monorepo) | 76ff7b6 | 2026-06-12 |
 | F73 | viz-shell — 읽기 전용 생성형 대시보드 사이드카 (vibeOS 패턴 방향 A, 장기 브랜치) | active | vibeshell (사용자 지정, TBD) | .claude/worktrees/F73 (TBD) | — (신규 viz-shell/) | TBD | 2026-06-12 |
 | F74 | Prompt Eval & Regression Framework — promptfoo 기반 합성 시나리오 행동 채점/회귀 게이트 | active | feat/F74 | .claude/worktrees/F74 | — (monorepo) | 76ff7b6 | 2026-06-12 |
+| F75 | F71 후속 — WebAuthn 게이트 토폴로지 검증·강화 (code-review 5건: 우회/fail-open/챌린지/타이밍/등록통제) | active | feat/F75 | .claude/worktrees/F75 | — (monorepo) | cf9869b | 2026-06-12 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
