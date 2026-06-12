@@ -7,67 +7,67 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
-from src.agent import agent_reports
+from src.agent import reports
 from src.agent.journal import Journal
 from src.agent.orchestrator import AgentTradingLoop, SubAgentReport, SubAgentTask
 from src.agent.session import AgentSession
 
 
-# -- module: agent_reports schema ------------------------------------------- #
+# -- module: reports schema ------------------------------------------- #
 
 class TestAgentReportsModule:
     def test_roundtrip_by_turn_id(self, tmp_path):
-        report = agent_reports.build_report(
+        report = reports.build_report(
             turn_id="R5", ts="2026-06-02T21:42:52+09:00", mode="sequential",
-            agents=[agent_reports.make_eval(index=0, label="Round 1 · Initial",
+            agents=[reports.make_eval(index=0, label="Round 1 · Initial",
                                             role="initial", text="lean HOLD AAPL")],
             synthesis_text="final: HOLD AAPL",
         )
-        path = agent_reports.write_agent_report(tmp_path, report)
+        path = reports.write_agent_report(tmp_path, report)
         assert path is not None and path.name == "R5.json"
-        back = agent_reports.read_agent_report(tmp_path, "R5")
+        back = reports.read_agent_report(tmp_path, "R5")
         assert back is not None
         assert back["mode"] == "sequential"
         assert back["n_agents"] == 1
         assert back["agents"][0]["text"] == "lean HOLD AAPL"
         assert back["synthesis"]["text"] == "final: HOLD AAPL"
         assert back["et_date"] == "2026-06-02"
-        assert agent_reports.has_agent_report(tmp_path, "R5")
+        assert reports.has_agent_report(tmp_path, "R5")
 
     def test_ts_key_fallback_when_turn_id_blank(self, tmp_path):
-        report = agent_reports.build_report(
+        report = reports.build_report(
             turn_id="", ts="2026-06-02T21:42:52+09:00", mode="parallel",
             agents=[], synthesis_text="x",
         )
-        path = agent_reports.write_agent_report(tmp_path, report)
+        path = reports.write_agent_report(tmp_path, report)
         assert path is not None
         assert ":" not in path.name  # ts colons sanitized
         # blank turn_id cannot be looked up by id
-        assert agent_reports.read_agent_report(tmp_path, "") is None
-        assert agent_reports.has_agent_report(tmp_path, "") is False
+        assert reports.read_agent_report(tmp_path, "") is None
+        assert reports.has_agent_report(tmp_path, "") is False
 
     def test_read_missing_returns_none(self, tmp_path):
-        assert agent_reports.read_agent_report(tmp_path, "NOPE") is None
-        assert agent_reports.has_agent_report(tmp_path, "NOPE") is False
+        assert reports.read_agent_report(tmp_path, "NOPE") is None
+        assert reports.has_agent_report(tmp_path, "NOPE") is False
 
     def test_write_is_atomic_no_tmp_left(self, tmp_path):
-        report = agent_reports.build_report(
+        report = reports.build_report(
             turn_id="R1", ts="2026-06-02T10:00:00+09:00", mode="sequential",
             agents=[], synthesis_text="s",
         )
-        agent_reports.write_agent_report(tmp_path, report)
-        d = agent_reports.reports_dir(tmp_path)
+        reports.write_agent_report(tmp_path, report)
+        d = reports.reports_dir(tmp_path)
         assert not list(d.glob("*.tmp"))
 
     def test_text_not_truncated(self, tmp_path):
         long_text = "x" * 50_000
-        report = agent_reports.build_report(
+        report = reports.build_report(
             turn_id="R1", ts="2026-06-02T10:00:00+09:00", mode="sequential",
-            agents=[agent_reports.make_eval(index=0, label="a", role="b", text=long_text)],
+            agents=[reports.make_eval(index=0, label="a", role="b", text=long_text)],
             synthesis_text="s",
         )
-        agent_reports.write_agent_report(tmp_path, report)
-        back = agent_reports.read_agent_report(tmp_path, "R1")
+        reports.write_agent_report(tmp_path, report)
+        back = reports.read_agent_report(tmp_path, "R1")
         assert len(back["agents"][0]["text"]) == 50_000
 
 
@@ -114,7 +114,7 @@ class TestSequentialCapture:
         assert "AAPL" in rows[-1]["summary"]
 
         # FR-1: agent report persisted; agents = non-synthesis rounds.
-        report = agent_reports.read_agent_report(tmp_path, rows[-1]["turn_id"])
+        report = reports.read_agent_report(tmp_path, rows[-1]["turn_id"])
         assert report is not None
         assert report["mode"] == "sequential"
         assert [a["label"] for a in report["agents"]] == ["Round 1 · Initial", "Round 2 · Debate"]
@@ -133,7 +133,7 @@ class TestSequentialCapture:
         )
         loop.run_morning_research()
         assert calls[0] == 2  # initial + synthesis, no debate
-        report = agent_reports.read_agent_report(tmp_path, loop.last_turn_id)
+        report = reports.read_agent_report(tmp_path, loop.last_turn_id)
         assert [a["label"] for a in report["agents"]] == ["Round 1 · Initial"]
 
 
@@ -151,7 +151,7 @@ class TestParallelCapture:
             research_timeout=600,
         )
         loop.run_morning_research()
-        report = agent_reports.read_agent_report(tmp_path, loop.last_turn_id)
+        report = reports.read_agent_report(tmp_path, loop.last_turn_id)
         assert report is not None
         assert report["mode"] == "parallel"
         assert report["n_agents"] >= 2
@@ -181,7 +181,7 @@ class TestParallelCapture:
 
         loop._run_sub_agent = _one_fails  # type: ignore[assignment]
         loop.run_morning_research()
-        report = agent_reports.read_agent_report(tmp_path, loop.last_turn_id)
+        report = reports.read_agent_report(tmp_path, loop.last_turn_id)
         statuses = {a["index"]: a["status"] for a in report["agents"]}
         assert statuses.get(0) == "error"
 
@@ -196,7 +196,7 @@ class TestBestEffort:
             research_timeout=600,
         )
         monkeypatch.setattr(
-            "src.agent.agent_reports.os.replace",
+            "src.agent.reports.os.replace",
             lambda *a, **k: (_ for _ in ()).throw(OSError("boom")),
         )
         # Turn must still complete and record telemetry.

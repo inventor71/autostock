@@ -8,9 +8,9 @@ from datetime import date, timedelta
 from hypothesis import given
 from hypothesis import strategies as st
 
-from src.agent.efficacy import LessonEfficacy
+from src.agent.learning.efficacy import LessonEfficacy
 from src.agent.journal import LessonRecord
-from src.agent.recall import (
+from src.agent.learning.recall import (
     RecallWeights,
     SituationFingerprint,
     build_fingerprint,

@@ -50,12 +50,12 @@ def test_rollback_skips_rewrite_in_same_eod(tmp_path, monkeypatch):
     # (don't grow a new generation off the abandoned child — #7).
     monkeypatch.setattr("src.agent.quality.collector.collect_outcomes",
                         lambda journal: [])
-    monkeypatch.setattr("src.agent.self_rewrite.maybe_rollback",
+    monkeypatch.setattr("src.agent.learning.self_rewrite.maybe_rollback",
                         lambda hist, ver_excess: True)  # rollback fired
     proposed = []
-    monkeypatch.setattr("src.agent.self_rewrite.propose_rewrite",
+    monkeypatch.setattr("src.agent.learning.self_rewrite.propose_rewrite",
                         lambda *a, **k: proposed.append(1))
-    monkeypatch.setattr("src.agent.self_rewrite.save_history", lambda *a, **k: None)
+    monkeypatch.setattr("src.agent.learning.self_rewrite.save_history", lambda *a, **k: None)
 
     loop = _loop(tmp_path)
     loop._rewrite_fn = lambda *a, **k: "x"  # would-be active rewriter
@@ -67,12 +67,12 @@ def test_rewrite_runs_when_no_rollback(tmp_path, monkeypatch):
     # Control: with no rollback and a rewrite_fn set, the gate is consulted.
     monkeypatch.setattr("src.agent.quality.collector.collect_outcomes",
                         lambda journal: [])
-    monkeypatch.setattr("src.agent.self_rewrite.maybe_rollback",
+    monkeypatch.setattr("src.agent.learning.self_rewrite.maybe_rollback",
                         lambda hist, ver_excess: False)  # no rollback
     consulted = []
-    monkeypatch.setattr("src.agent.self_rewrite.should_rewrite",
+    monkeypatch.setattr("src.agent.learning.self_rewrite.should_rewrite",
                         lambda hist, sample, **k: consulted.append(sample) or False)
-    monkeypatch.setattr("src.agent.self_rewrite.save_history", lambda *a, **k: None)
+    monkeypatch.setattr("src.agent.learning.self_rewrite.save_history", lambda *a, **k: None)
 
     loop = _loop(tmp_path)
     loop._rewrite_fn = lambda *a, **k: "x"

@@ -99,7 +99,7 @@ def default_path() -> Path:
 
 
 def main() -> None:
-    """Record one snapshot of the live (paper) account now: python -m src.agent.equity_log"""
+    """Record one snapshot of the live (paper) account now: python -m src.agent.logs.equity"""
     from config.config import get_settings
     from src.execution.brokers.alpaca_broker import AlpacaBroker
 

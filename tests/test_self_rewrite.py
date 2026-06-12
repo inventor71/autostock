@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from src.agent.constitution import AGENT_CONSTITUTION
-from src.agent.self_rewrite import (
+from src.agent.learning.constitution import AGENT_CONSTITUTION
+from src.agent.learning.self_rewrite import (
     GuidanceHistory,
     GuidanceVersion,
     build_guidance,

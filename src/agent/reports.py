@@ -22,7 +22,7 @@ from typing import Literal
 
 from loguru import logger
 
-from src.agent.turn_log import compute_et_date
+from src.agent.logs.turn import compute_et_date
 
 EvalStatus = Literal["ok", "error", "timeout"]
 

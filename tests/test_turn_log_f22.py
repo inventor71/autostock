@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.turn_log import build_turn_summary, generate_turn_id, record_turn
+from src.agent.logs.turn import build_turn_summary, generate_turn_id, record_turn
 
 
 @pytest.fixture

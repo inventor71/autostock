@@ -642,7 +642,7 @@ class TestEquityLog:
         )
 
     def test_record_and_read(self, tmp_path):
-        from src.agent.equity_log import record_equity, read_equity
+        from src.agent.logs.equity import record_equity, read_equity
         path = tmp_path / "equity.jsonl"
         snap = record_equity(self._portfolio(), path)
         assert snap["equity"] == 100000.0
@@ -658,7 +658,7 @@ class TestEquityLog:
         assert records[0]["equity"] == 100000.0
 
     def test_read_missing_is_empty(self, tmp_path):
-        from src.agent.equity_log import read_equity
+        from src.agent.logs.equity import read_equity
         assert read_equity(tmp_path / "nope.jsonl") == []
 
 

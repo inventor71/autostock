@@ -6,7 +6,7 @@ from pathlib import Path
 from loguru import logger
 
 from src.agent.intraday.records import FillEvent
-from src.agent.trades_log import record_trades
+from src.agent.logs.trades import record_trades
 from src.core.exceptions import BrokerError
 from src.core.models import FilledOrder, Order
 from src.core.types import OrderSide

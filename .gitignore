@@ -37,6 +37,8 @@ models/*.pth
 
 # Logs
 logs/
+# source subpackage, not runtime logs — keep tracked (don't let runtime artifacts land here)
+!src/agent/logs/
 *.log
 
 # Notebooks checkpoints

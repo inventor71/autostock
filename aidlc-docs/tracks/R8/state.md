@@ -8,12 +8,12 @@
 - **Track ID**: R8
 - **Title**: `src/agent/` 최상위 잡탕 파일을 성격별 서브패키지로 재구조화
 - **Type**: refactor
-- **Status**: backlog  <!-- not started; pick up via /ai-dlc-refactor R8 -->
-- **Branch**: refactor/R8 (TBD)
-- **Worktree**: .claude/worktrees/R8 (TBD)
+- **Status**: merge-awaiting  <!-- B&T green (1073) 2026-06-11; code on refactor/R8 -->
+- **Branch**: refactor/R8
+- **Worktree**: .claude/worktrees/R8
 - **Submodule branch**: — (Python only)
-- **Base commit**: 2a4e02f (survey point; rebase when picked up)
-- **Start Date**: TBD
+- **Base commit**: 76ff7b6 (R9–R12 머지 후 main HEAD)
+- **Start Date**: 2026-06-11
 
 ## Extension Configuration
 - **Security Baseline**: Applicable — 자가학습/세션 경로가 포함되나 **이동/개명만** 한다.
@@ -52,8 +52,9 @@
   **R8**→R13 (R8은 큰 구조 변경이라 뒤쪽, R13은 최후).
 
 ## Stage Progress (skill: ai-dlc-refactor)
-- [ ] Stage 1 — Baseline + characterization (이동 전 import/심볼 인벤토리; 기존 agent 테스트 green)
-- [ ] Stage 2 — Tier ledger (all-T1 예상; 이동/개명만)
-- [ ] Stage 3 — Redesign (서브패키지 경계 + 개명 매핑표 + 호출부 전수 목록 확정)
-- [ ] Stage 4 — Implementation (이동 + 전수 호출부 갱신)
-- [ ] Build & Test
+- [x] Stage 1 — Baseline (`1-baseline.md`; 9모듈 ~50참조 전수(문자열 7·모듈객체 import 2 포함); agent 테스트 158 green)
+- [x] Stage 2 — Tier ledger (`2-tier-ledger.md`) — T1 7항목 + T3 1(기승인 -m 클린브레이크)
+- [x] Stage 3 — Redesign (`3-redesign.md`) — logs/·learning/ 구조 + _log 접미사 제거 + 마이그레이션 순서
+- [x] Stage 4 — Implementation — git mv 9 + import ~50(문자열 7·모듈객체 3) + gitignore negation + 이름충돌(orchestrator 로컬 reports) 함수직접import로 해소
+- [x] post-merge-guide — -m 클린브레이크 + gitignore negation 노트
+- [x] Build & Test — 전체 **1073 passed**; py_compile + 신규 9경로 import smoke OK

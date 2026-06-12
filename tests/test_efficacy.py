@@ -8,7 +8,7 @@ import pandas as pd
 from hypothesis import given
 from hypothesis import strategies as st
 
-from src.agent.efficacy import (
+from src.agent.learning.efficacy import (
     LessonEfficacy,
     applied_counts,
     lesson_efficacy,

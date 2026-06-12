@@ -404,7 +404,7 @@ class SteeringRuntime:
     def _account_block(ps) -> dict:
         """F6 FR-2: compact account summary. Reuses equity_log.snapshot (critic #5)
         so the sidebar and the equity track record never diverge."""
-        from src.agent.equity_log import snapshot as equity_snapshot
+        from src.agent.logs.equity import snapshot as equity_snapshot
         full = equity_snapshot(ps)
         return {k: full[k] for k in ("equity", "cash", "invested", "open_pnl", "position_count")}
 
@@ -781,7 +781,7 @@ def _interventions_tail(path: Path, et_date: str | None = None) -> list[dict]:
     first entry from a different date (lines are roughly chronological).
     This replaces the old fixed 150-line window that silently dropped older
     same-day interventions as the file grew (F32 bugfix)."""
-    from src.agent.turn_log import compute_et_date
+    from src.agent.logs.turn import compute_et_date
     if not path.exists():
         return []
     out: list[dict] = []
@@ -862,7 +862,7 @@ def _turns_summary(path: Path, session: str | None = None) -> dict:
     ``session`` (ET date) defaults to the live/upcoming session; the TUI reads
     turns.jsonl directly for other dates.
     """
-    from src.agent.turn_log import compute_et_date, read_turns
+    from src.agent.logs.turn import compute_et_date, read_turns
     rows = read_turns(path)
     if session is None:
         session = _resolve_session_et_date()
@@ -921,7 +921,7 @@ def _build_turn_index(turns_path: Path | None) -> list[tuple[str, str, str]]:
     """Build [(started_at, ts_end, turn_id), ...] for timestamp correlation."""
     if not turns_path:
         return []
-    from src.agent.turn_log import read_turns
+    from src.agent.logs.turn import read_turns
     return [
         (r.get("started_at", ""), r.get("ts", ""), r.get("turn_id", ""))
         for r in read_turns(turns_path)
