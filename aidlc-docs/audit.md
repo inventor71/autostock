@@ -270,3 +270,4 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-11 — **R10 merged** → main 2245def (data/intraday 서브패키지 + -m 클린브레이크; 1073 passed + -m smoke; rebase clean)
 - 2026-06-12 — **/ai-dlc-merge 시작** (큐: R8→F71→F72, 사용자 승인 — F72는 rebase 시 screening_log→logs/screening 동일방향 정돈 포함). Triage: 공유 registry 노이즈(F72 행) + tracks/F71/inception/(active) → 통과.
 - 2026-06-12 — **R8 merged** → main d065ed6 (agent logs/·learning/ 재구조화; main verify 1073 passed) ※ 1차 merge가 registry 노이즈에 막혀 실패→복구(stash-merge-pop); close 커밋에 F72 등록행 동승
+- 2026-06-12 — **F71 merged** → main fdfc041 (모바일 기반: opencode serve+WebAuthn+PWA addon; typecheck 19/19 + 테스트 38 green; UI는 후속 트랙)

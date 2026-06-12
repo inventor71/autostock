@@ -95,7 +95,7 @@
 | R11 | strategy 네이밍 일관화 — `_strategy` 접미사 제거 + `llm_strategy` stutter 해소 (구조점검 #5) | merged | refactor/R11 → main 37fc0b2 | — | — (monorepo) | 3297de5 | 2026-06-11 |
 | R12 | execution/brokers 네이밍 — `account_farm_broker` 개명 + `simulated_broker` 통일 + `kis/` 서브패키지 (구조점검 #6) | merged | refactor/R12 → main 018c59e | — | — (monorepo) | 0106a8b | 2026-06-11 |
 | R13 | tests 네이밍·구조 정비 — 트랙ID 테스트명→행동기반 + `src/` 미러링 (구조점검 #2+#7) | backlog | refactor/R13 (TBD) | — | — (monorepo) | 2a4e02f | 2026-06-08 |
-| F71 | autostock 모바일(안드로이드) 앱 — 경로 A (Tailscale + opencode serve + PWA, 대화형 operator) | active | feat/F71 (TBD) | .claude/worktrees/F71 (TBD) | — (TBD: opencode/cli) | TBD | 2026-06-10 |
+| F71 | autostock 모바일(안드로이드) 앱 — 경로 A (Tailscale + opencode serve + PWA, 대화형 operator) | merged | feat/F71 → main fdfc041 | — | — (monorepo) | 76ff7b6 | 2026-06-12 |
 | F72 | research 스크리닝→필터링 결과 로깅 + TUI(steer_read) 노출 | active | feat/F72 (TBD) | .claude/worktrees/F72 (TBD) | — (TBD) | TBD | 2026-06-11 |
 | F73 | viz-shell — 읽기 전용 생성형 대시보드 사이드카 (vibeOS 패턴 방향 A, 장기 브랜치) | active | vibeshell (사용자 지정, TBD) | .claude/worktrees/F73 (TBD) | — (신규 viz-shell/) | TBD | 2026-06-12 |
 | F74 | Prompt Eval & Regression Framework — promptfoo 기반 합성 시나리오 행동 채점/회귀 게이트 | active | feat/F74 | .claude/worktrees/F74 | — (monorepo) | 76ff7b6 | 2026-06-12 |

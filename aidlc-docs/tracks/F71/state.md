@@ -8,7 +8,7 @@
 - **Track ID**: F71
 - **Title**: 폰에서 autostock operator 콘솔 — Tailscale + `opencode serve` + PWA(packages/app)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- 선택 A: 기반(U1+U2+U3로직) green 2026-06-12; UI는 F72 후속 -->
+- **Status**: merged → main fdfc041 (2026-06-12)
 - **Branch**: feat/F71
 - **Worktree**: .claude/worktrees/F71
 - **Submodule branch**: — (monorepo; operator-console/* 변경 포함)
