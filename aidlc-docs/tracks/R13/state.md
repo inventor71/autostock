@@ -8,7 +8,7 @@
 - **Track ID**: R13
 - **Title**: 트랙ID 기반 테스트명을 행동/모듈 기반으로 + `src/` 구조 미러링 규칙 수립
 - **Type**: refactor
-- **Status**: merge-awaiting  <!-- 순수 T1, 1087 pass 보존, green 2026-06-13 -->
+- **Status**: merged → main 401d1de (2026-06-13)  <!-- 순수 T1, 1087 pass 보존 -->
 - **Branch**: refactor/R13
 - **Worktree**: .claude/worktrees/R13
 - **Submodule branch**: — (Python only, 테스트)

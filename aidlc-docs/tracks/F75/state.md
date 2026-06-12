@@ -8,7 +8,7 @@
 - **Track ID**: F75
 - **Title**: F71 모바일 보안 게이트 후속 — code-review 5건 (토폴로지 우회·fail-open·챌린지·타이밍·등록통제)
 - **Type**: feature (security hardening)
-- **Status**: merge-awaiting  <!-- B&T green 2026-06-12; 라이브 스모크는 post-merge-guide -->
+- **Status**: merged → main 25bcb28 (2026-06-13)  <!-- B&T green; 라이브 스모크는 post-merge-guide -->
 - **Branch**: feat/F75
 - **Worktree**: .claude/worktrees/F75
 - **Submodule branch**: — (monorepo; opencode fork 코드)

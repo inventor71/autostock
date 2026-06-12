@@ -272,3 +272,10 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-12 — **R8 merged** → main d065ed6 (agent logs/·learning/ 재구조화; main verify 1073 passed) ※ 1차 merge가 registry 노이즈에 막혀 실패→복구(stash-merge-pop); close 커밋에 F72 등록행 동승
 - 2026-06-12 — **F71 merged** → main fdfc041 (모바일 기반: opencode serve+WebAuthn+PWA addon; typecheck 19/19 + 테스트 38 green; UI는 후속 트랙)
 - 2026-06-12 — **F72 merged** → main 7b4b409 (스크리닝 퍼널 로깅+/screening 뷰; 1087 passed; 머지 시 R8 구조 정합 fixup: logs/screening + turn_log 참조 3곳)
+
+## /ai-dlc-merge — triage + queue (2026-06-13)
+- Triage PASS: work-tree noise = shared `aidlc-state.md` (M) + untracked `tracks/F73/`,`tracks/F76/` (both active-owned). No foreign/non-active paths.
+- Merge queue (merge-awaiting): R13 (feat/R13 ↑2, pure tests/ reorg, post-F35, no registry touch), F75 (feat/F75 ↑1, opencode WebAuthn hardening, post-F35, self-registers row). No file overlap → independent. Excluded: none. Left as noise: F73/F76/F74 active docs.
+- 사용자 승인 (2026-06-13): 큐 [R13, F75] 제안 순서·근거 승인 ("승인"). 이후 자율 진행 — 멈춤 조건에서만 정지.
+- 2026-06-13 — **R13 merged** → main 401d1de (feat/R13, tests/ 네이밍·구조 정비; verify 1087 pass green).
+- 2026-06-13 — **F75 merged** → main 25bcb28 (feat/F75, WebAuthn 게이트 강화 F71 후속; verify 33 pass green). 라이브 스모크는 post-merge-guide 참조.
