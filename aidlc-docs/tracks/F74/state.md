@@ -8,7 +8,7 @@
 - **Track ID**: F74
 - **Title**: Prompt Eval & Regression Framework — 합성 시나리오로 agent turn 행동을 자동 채점하는 promptfoo 기반 회귀 게이트
 - **Type**: feature
-- **Status**: active
+- **Status**: merge-awaiting  <!-- 2026-06-13 Build&Test green + live smoke PASS -->
 - **Branch**: feat/F74
 - **Worktree**: .claude/worktrees/F74
 - **Submodule branch**: — (monorepo; operator-console/cli 미접촉 예정)
@@ -60,11 +60,13 @@ non-blocking 리포트 + Tier-2 llm-rubric nightly.
 ## Merge Risk Notes
 > 트랙이 `merge-awaiting` 전환 시 작성. `/ai-dlc-merge`가 큐 구성·충돌 해결 시 참조.
 
-- **공유 파일 (주의)**: `src/agent/tools/__main__.py` (팩토리 리팩터링 — F72 스크리닝 로깅
-  트랙이 tools를 건드릴 가능성), `src/agent/session.py` (provider가 사용, 수정 최소화)
-- **API/시그니처 변경**: TBD
-- **알려진 동시 변경**: F71(모바일), F72(스크리닝 로깅), F73(viz-shell), R8 — 현재 인지된
-  활성 트랙. `evals/` 신규 디렉터리는 충돌 없음.
+- **공유 파일 (주의)**: `src/agent/tools/__main__.py` — **F72와 확실 충돌**: F72가 scoreboard
+  디스패치에 screening.record_scan을 삽입(메인 체크아웃에서 관찰됨), F74는 같은 파일
+  디스패치 앞뒤에 fixture/record 인터셉트 추가. 충돌은 국소(서로 다른 위치) — 머지 시 양쪽
+  블록 모두 보존하면 됨. `src/agent/session.py`는 무수정(읽기만).
+- **API/시그니처 변경**: 없음 (신규 모듈 + `__main__.py` 훅뿐, 기존 함수 시그니처 불변)
+- **알려진 동시 변경**: F71(모바일), F72(스크리닝 로깅 — 위), F73(viz-shell), R8.
+  `evals/`, `src/evals/`, `tests/evals/`는 신규라 충돌 없음.
 
 ## Stage Progress
 - [x] Workspace Detection — brownfield, CodeKB 존재(ec2875c 기준, read-only 소비), RE 스킵
