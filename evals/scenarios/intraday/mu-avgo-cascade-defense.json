@@ -1,0 +1,168 @@
+{
+  "id": "mu-avgo-cascade-defense",
+  "turn_type": "intraday",
+  "origin": "lesson #16 / 2026-06-06 AVGO guidance-miss cascade",
+  "description": "First-order AI-infra name (AVGO) misses AI-revenue guidance; the supply chain cascades within the session. Held MU -8.5%. Correct = defend (tighten/exit), and do NOT add into the cascade.",
+  "universe": [
+    "MU",
+    "AVGO",
+    "AAPL"
+  ],
+  "brief": "Cascade alert: AVGO -12.3% on AI-revenue deceleration guidance; memory/storage following (MU -8.5% to 117.1, below stop level 119 intraday; WDC -7%, SMCI -9%). Held: MU 30 @ 128.00, stop 119 resting.",
+  "wake_reasons": [],
+  "eod_outcomes": null,
+  "tool_fixtures": {
+    "quote": {
+      "MU": {
+        "symbol": "MU",
+        "asof": "2026-06-08 16:00:00-04:00",
+        "price": 117.1,
+        "open": 126.0,
+        "high": 126.4,
+        "low": 116.2,
+        "volume": 86000000,
+        "change_1d_pct": -8.5,
+        "change_5d_pct": -9.8,
+        "change_20d_pct": -4.1,
+        "bars": 90
+      },
+      "AVGO": {
+        "symbol": "AVGO",
+        "asof": "2026-06-08 16:00:00-04:00",
+        "price": 1490.0,
+        "open": 1610.0,
+        "high": 1615.0,
+        "low": 1480.0,
+        "volume": 12000000,
+        "change_1d_pct": -12.3,
+        "change_5d_pct": -11.0,
+        "change_20d_pct": -8.0,
+        "bars": 90
+      }
+    },
+    "indicators": {
+      "MU": {
+        "symbol": "MU",
+        "close": 117.1,
+        "rsi_14": 28.0,
+        "macd": -4.2,
+        "macd_signal": -2.1,
+        "macd_hist": -2.1,
+        "bb_pct_b": 0.04,
+        "price_to_sma20_pct": -3.2,
+        "price_to_sma50_pct": -1.2000000000000002,
+        "sma20_to_sma50_pct": 2.0,
+        "volatility_20d_pct": 1.6,
+        "volume_ratio": 3.8,
+        "atr_pct": 3.76,
+        "atr_abs": 4.4
+      }
+    },
+    "news": {
+      "MU": {
+        "symbol": "MU",
+        "news": [
+          {
+            "title": "Micron drags as Broadcom's AI guidance miss hits the memory complex",
+            "publisher": "Reuters",
+            "published_at": "2026-06-08T17:30:00+00:00",
+            "link": "",
+            "sentiment": -1.0
+          }
+        ]
+      },
+      "AVGO": {
+        "symbol": "AVGO",
+        "news": [
+          {
+            "title": "Broadcom guides AI revenue below consensus; shares plunge",
+            "publisher": "Bloomberg",
+            "published_at": "2026-06-08T17:30:00+00:00",
+            "link": "",
+            "sentiment": -1.0
+          }
+        ]
+      }
+    },
+    "readthrough": {
+      "AVGO": {
+        "symbol": "AVGO",
+        "peers": [
+          "MU",
+          "WDC",
+          "SMCI",
+          "LRCX"
+        ],
+        "note": "AI-capex supply chain cascade"
+      }
+    },
+    "account": {
+      "_": {
+        "equity": 99200.0,
+        "cash": 95360.0,
+        "invested": 3840.0,
+        "invested_pct": 3.9,
+        "position_count": 1,
+        "positions": [
+          {
+            "symbol": "MU",
+            "side": "long",
+            "qty": 30.0,
+            "avg_entry": 128.0,
+            "price": 117.1,
+            "unrealized_pnl": -327.0,
+            "unrealized_pct": -8.52,
+            "market_value": 3513.0
+          }
+        ],
+        "open_orders": [
+          {
+            "order_id": "po-2",
+            "symbol": "MU",
+            "side": "sell",
+            "type": "stop",
+            "qty": 30.0,
+            "limit": null,
+            "stop": 119.0
+          }
+        ]
+      }
+    }
+  },
+  "workspace_files": {
+    "positions/MU.md": "# MU — Micron\n\n## Thesis\nHBM supply tightness; holding 30 @ $128.00. Stop $119 (just below SMA20 ~121), target $150.\n\n## Plan\nArmed: defend on any AI-capex cascade signal (lesson #16) — do not dip-buy the first day.\n",
+    "lessons.md": "# Lessons (발췌 — 시나리오 시점 기준)\n\n## 13 — Integrate news sentiment, valuation, and structural vs. noise diagnosis into every decision\nEvery decision must weigh: (1) news sentiment, (2) overbought/oversold, (3) valuation vs targets,\n(4) noise vs structural change — alongside technicals.\n\n## 15 — The same analyst making the same point is ONE signal, not three\nRepeated headlines re-stating one analyst's view do not warrant repeated action.\nIf the answer is \"it's the same analyst making the same point,\" filter it out.\n\n## 16 — AI/semi supply chain sells off as a coordinated unit on hyperscaler capex doubt\nA first-order AI-infra guidance miss (AVGO/MRVL) cascades 7-14% across every layer within\n1-2 sessions. Do NOT dip-buy the initial cascade; defend exposed holdings first.\n\n## 17 — On binary-catalyst days, pre-empt the armed exit when the adverse resolution confirms in real time\nIf (1) adverse news confirmed, (2) 3x+ volume distribution from the session high, (3) MACD hist\nnegative throughout, (4) price within 1 ATR of the formal trigger — pre-empt; don't wait for the close.\n"
+  },
+  "decisions_history": [
+    {
+      "ts": "2026-06-05T14:00:00",
+      "symbol": "MU",
+      "action": "HOLD",
+      "stop": 119.0,
+      "target": 150.0,
+      "reason": "HBM thesis intact",
+      "prompt_version": "seed"
+    }
+  ],
+  "held": {
+    "MU": {
+      "qty": 30,
+      "avg_entry_price": 128.0,
+      "side": "long"
+    }
+  },
+  "prices": {
+    "MU": 117.1,
+    "AVGO": 1490.0
+  },
+  "expectation": {
+    "no_churn": false,
+    "allowed_actions": [
+      "SELL",
+      "ADJUST_STOP"
+    ],
+    "focus_symbol": "MU",
+    "note": "defend into the cascade; BUY here would violate lesson #16"
+  },
+  "rubric": null
+}

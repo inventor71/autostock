@@ -1,0 +1,163 @@
+{
+  "id": "quiet-no-trigger",
+  "turn_type": "intraday",
+  "origin": "no-churn discipline (intraday prompt: if nothing triggered, do nothing)",
+  "description": "All four holdings mid-range, normal volume, no notable news. Correct = no new decisions (HOLD carries acceptable).",
+  "universe": [
+    "AAPL",
+    "GOOGL",
+    "RTX",
+    "TSLA"
+  ],
+  "brief": "Intraday book: AAPL 310.0 (+0.2%, vol 0.7x, SMA20 304), GOOGL 391.9 (+0.3%), RTX 176.6 (flat), TSLA 437.9 (-0.2%). All stops resting, none within 1.5 ATR. No new headlines.",
+  "wake_reasons": [],
+  "eod_outcomes": null,
+  "tool_fixtures": {
+    "quote": {
+      "AAPL": {
+        "symbol": "AAPL",
+        "asof": "2026-06-08 16:00:00-04:00",
+        "price": 310.0,
+        "open": 309.6,
+        "high": 311.0,
+        "low": 309.0,
+        "volume": 19000000,
+        "change_1d_pct": 0.2,
+        "change_5d_pct": 0.5,
+        "change_20d_pct": 4.0,
+        "bars": 90
+      }
+    },
+    "indicators": {
+      "AAPL": {
+        "symbol": "AAPL",
+        "close": 310.0,
+        "rsi_14": 61.0,
+        "macd": 0.4,
+        "macd_signal": 0.2,
+        "macd_hist": 0.2,
+        "bb_pct_b": 0.5,
+        "price_to_sma20_pct": 2.0,
+        "price_to_sma50_pct": 4.0,
+        "sma20_to_sma50_pct": 2.0,
+        "volatility_20d_pct": 1.6,
+        "volume_ratio": 0.7,
+        "atr_pct": 1.9,
+        "atr_abs": 5.9
+      }
+    },
+    "news": {
+      "AAPL": {
+        "symbol": "AAPL",
+        "news": [
+          {
+            "title": "Apple supplier roundup: nothing new",
+            "publisher": "Benzinga",
+            "published_at": "2026-06-08T17:30:00+00:00",
+            "link": "",
+            "sentiment": 0.0
+          }
+        ]
+      }
+    },
+    "account": {
+      "_": {
+        "equity": 100049.0,
+        "cash": 87406.0,
+        "invested": 12643.0,
+        "invested_pct": 12.6,
+        "position_count": 4,
+        "positions": [
+          {
+            "symbol": "AAPL",
+            "side": "long",
+            "qty": 10.0,
+            "avg_entry": 309.0,
+            "price": 306.2,
+            "unrealized_pnl": -28.0,
+            "unrealized_pct": -0.91,
+            "market_value": 3062.0
+          },
+          {
+            "symbol": "GOOGL",
+            "side": "long",
+            "qty": 8.0,
+            "avg_entry": 388.52,
+            "price": 391.9,
+            "unrealized_pnl": 27.0,
+            "unrealized_pct": 0.87,
+            "market_value": 3135.2
+          },
+          {
+            "symbol": "RTX",
+            "side": "long",
+            "qty": 19.0,
+            "avg_entry": 176.34,
+            "price": 176.6,
+            "unrealized_pnl": 4.9,
+            "unrealized_pct": 0.15,
+            "market_value": 3355.4
+          },
+          {
+            "symbol": "TSLA",
+            "side": "long",
+            "qty": 7.0,
+            "avg_entry": 438.68,
+            "price": 437.9,
+            "unrealized_pnl": -5.5,
+            "unrealized_pct": -0.18,
+            "market_value": 3065.3
+          }
+        ],
+        "open_orders": [
+          {
+            "order_id": "po-1",
+            "symbol": "AAPL",
+            "side": "sell",
+            "type": "stop",
+            "qty": 10.0,
+            "limit": null,
+            "stop": 300.0
+          }
+        ]
+      }
+    }
+  },
+  "workspace_files": {
+    "positions/AAPL.md": "# AAPL — Apple Inc.\n\n## Thesis\nAgentic-AI re-rating story; broke the $315 triple-top to a new ATH on 6/3 (Evercore PT raise,\nmargins 27%, EPS +21.8%). Holding 10 @ $309.00.\n\n## Plan\n| Level | Price |\n|-------|-------|\n| Stop | **$300.00** (hard order, just below SMA20 ~$304) |\n| Target | $350.00 |\n| ATR (20d) | $5.90 |\n\n**Armed exit trigger:** a >1.0x-volume close below SMA20 (~$304) = exit. A failed breakout\n(close back below $315 on volume) = first warning, already fired 6/4.\n**No add** above mean target; respect the hard $300 stop.\n\n## Call vs. Outcome Log\n| Date | Call | Result |\n|------|------|--------|\n| 6/3 | HOLD stop $300 / target $350 — ATH breakout confirmed | Closed $314.84. Correct. |\n| 6/4 | HOLD — failed breakout on light vol = warning, not exit | Closed $311.62. Watching armed trigger. |\n",
+    "lessons.md": "# Lessons (발췌 — 시나리오 시점 기준)\n\n## 13 — Integrate news sentiment, valuation, and structural vs. noise diagnosis into every decision\nEvery decision must weigh: (1) news sentiment, (2) overbought/oversold, (3) valuation vs targets,\n(4) noise vs structural change — alongside technicals.\n\n## 15 — The same analyst making the same point is ONE signal, not three\nRepeated headlines re-stating one analyst's view do not warrant repeated action.\nIf the answer is \"it's the same analyst making the same point,\" filter it out.\n\n## 16 — AI/semi supply chain sells off as a coordinated unit on hyperscaler capex doubt\nA first-order AI-infra guidance miss (AVGO/MRVL) cascades 7-14% across every layer within\n1-2 sessions. Do NOT dip-buy the initial cascade; defend exposed holdings first.\n\n## 17 — On binary-catalyst days, pre-empt the armed exit when the adverse resolution confirms in real time\nIf (1) adverse news confirmed, (2) 3x+ volume distribution from the session high, (3) MACD hist\nnegative throughout, (4) price within 1 ATR of the formal trigger — pre-empt; don't wait for the close.\n",
+    "regime.md": "# Regime\nRisk-on but narrow AI leadership; 10Y 4.5%; VIX 16.4.\n"
+  },
+  "decisions_history": [
+    {
+      "ts": "2026-06-03T14:00:00",
+      "symbol": "AAPL",
+      "action": "ADJUST_STOP",
+      "stop": 300.0,
+      "target": 350.0,
+      "confidence": 0.66,
+      "reason": "trail stop under risen SMA20",
+      "prompt_version": "seed"
+    }
+  ],
+  "held": {
+    "AAPL": {
+      "qty": 10,
+      "avg_entry_price": 309.0,
+      "side": "long"
+    }
+  },
+  "prices": {
+    "AAPL": 310.0,
+    "GOOGL": 391.9,
+    "RTX": 176.6,
+    "TSLA": 437.9
+  },
+  "expectation": {
+    "no_churn": true,
+    "allowed_actions": [],
+    "focus_symbol": null,
+    "note": "nothing triggered — do not churn"
+  },
+  "rubric": null
+}

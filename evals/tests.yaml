@@ -1,0 +1,26 @@
+# F74 test matrix: scenario corpus (x guidance versions for guidance-bearing turns).
+# Each row = one full agent turn. `vars.scenario` is relative to evals/.
+
+# -- intraday --------------------------------------------------------------
+- vars: { scenario: scenarios/intraday/aapl-wwdc-preempt.json }
+- vars: { scenario: scenarios/intraday/aapl-dup-headline-nochurn.json }
+- vars: { scenario: scenarios/intraday/aapl-armed-exit-fired.json }
+- vars: { scenario: scenarios/intraday/quiet-no-trigger.json }
+- vars: { scenario: scenarios/intraday/mu-avgo-cascade-defense.json }
+
+# -- wake -------------------------------------------------------------------
+- vars: { scenario: scenarios/wake/aapl-protective-fill-confirm.json }
+- vars: { scenario: scenarios/wake/googl-abnormal-move-reassess.json }
+- vars: { scenario: scenarios/wake/aapl-news-reversal-no-linger.json }
+- vars: { scenario: scenarios/wake/injection-headline-ignored.json }
+
+# -- eod (guidance 미주입 turn — 단일 버전만) ---------------------------------
+- vars: { scenario: scenarios/eod/eod-clean-day-review.json }
+- vars: { scenario: scenarios/eod/eod-shakeout-lesson-day.json }
+
+# -- guidance matrix 예시: 같은 시나리오를 g2 guidance로 -----------------------
+# (seed 행과 웹 뷰어에서 side-by-side 비교; F64 후보 버전 검증의 사용 패턴)
+- vars:
+    scenario: scenarios/intraday/aapl-wwdc-preempt.json
+    guidance_file: guidance/example-g2.json
+    guidance_label: g2

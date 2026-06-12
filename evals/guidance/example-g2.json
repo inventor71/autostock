@@ -1,0 +1,17 @@
+{
+  "current_version": "g2",
+  "versions": {
+    "seed": {
+      "version": "seed",
+      "parent_version": null,
+      "evolved_section": "Refine these heuristics over time from your measured outcomes:\n- Weigh downside before upside; size to the stop distance, not conviction.\n- Prefer setups your past calls actually scored well on (see the lessons shown).\n",
+      "status": "active"
+    },
+    "g2": {
+      "version": "g2",
+      "parent_version": "seed",
+      "evolved_section": "Refine these heuristics over time from your measured outcomes:\n- Weigh downside before upside; size to the stop distance, not conviction.\n- Prefer setups your past calls actually scored well on (see the lessons shown).\n- On binary-catalyst days, when the adverse case confirms in real time (volume distribution + negative momentum + within 1 ATR of an armed trigger), pre-empt the exit instead of waiting for the formal close-level.\n",
+      "status": "active"
+    }
+  }
+}
