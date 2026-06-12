@@ -1,0 +1,33 @@
+# F74 Tier-1 eval: scenario corpus x guidance versions, deterministic asserts.
+#
+# Subject agent = local `claude` CLI (subscription); this config spends NO API
+# tokens. Run: cd evals && bun run eval   (view: bun run view)
+#
+# Asserts here are the HARD layer only (extraction integrity, provider
+# errors). Behavioral match / no-churn / executor-replay verdicts are part of
+# the output JSON — reported and diffed, deliberately NOT gated (LLM
+# nondeterminism; see tracks/F74 requirements NFR-3).
+
+description: "autostock F74 — prompt eval & regression (Tier-1)"
+
+prompts:
+  - "{{scenario}}"
+
+providers:
+  - id: "file://provider.py"
+    config:
+      model: sonnet
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: "output.error === undefined"
+    - type: javascript
+      value: "output.tier1.hard.extraction_ok === true"
+
+tests: file://tests.yaml
+
+# Keep turns serialized by default: each case is a full agent turn (minutes);
+# parallel turns contend for the subscription rate limit.
+evaluateOptions:
+  maxConcurrency: 1

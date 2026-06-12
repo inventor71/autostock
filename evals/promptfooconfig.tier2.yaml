@@ -1,0 +1,28 @@
+# F74 Tier-2 eval: LLM-as-judge rubric grading. SPENDS API TOKENS
+# (ANTHROPIC_API_KEY) — run explicitly, on demand, never from CI:
+#   cd evals && bun run eval:tier2
+#
+# Judge quality dimensions live in rubrics/<turn_type>.md, versioned in git.
+
+description: "autostock F74 — prompt eval (Tier-2 LLM judge)"
+
+prompts:
+  - "{{scenario}}"
+
+providers:
+  - id: "file://provider.py"
+    config:
+      model: sonnet
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: "output.error === undefined"
+    - type: llm-rubric
+      # The judged text: the agent's prose plus its journal actions.
+      value: file://rubrics/common.md
+
+tests: file://tests.yaml
+
+evaluateOptions:
+  maxConcurrency: 1
