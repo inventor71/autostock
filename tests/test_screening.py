@@ -14,8 +14,9 @@ from datetime import datetime, timezone
 from hypothesis import given
 from hypothesis import strategies as st
 
-from src.agent import prompts, screening_log
-from src.agent.turn_log import compute_et_date
+from src.agent import prompts
+from src.agent.logs import screening
+from src.agent.logs.turn import compute_et_date
 
 TS = datetime(2026, 6, 11, 9, 31, tzinfo=timezone.utc)
 
@@ -31,7 +32,7 @@ def _rows() -> list[dict]:
 
 class TestRecordScan:
     def test_writes_snapshot_keyed_by_et_date(self, tmp_path):
-        path = screening_log.record_scan(_rows(), root=tmp_path, ts=TS)
+        path = screening.record_scan(_rows(), root=tmp_path, ts=TS)
         et_date = compute_et_date(TS)
         assert path == tmp_path / "screening" / f"{et_date}.scan.json"
         doc = json.loads(path.read_text())
@@ -41,10 +42,10 @@ class TestRecordScan:
         assert doc["rows"] == _rows()  # error rows included
 
     def test_same_day_rerun_overwrites_with_latest(self, tmp_path):
-        screening_log.record_scan(_rows(), root=tmp_path, ts=TS)
+        screening.record_scan(_rows(), root=tmp_path, ts=TS)
         later = TS.replace(hour=15)
         rows2 = [{"symbol": "MSFT", "close": 500.0}]
-        path = screening_log.record_scan(rows2, root=tmp_path, ts=later)
+        path = screening.record_scan(rows2, root=tmp_path, ts=later)
         doc = json.loads(path.read_text())
         assert doc["ts"] == later.isoformat()
         assert doc["rows"] == rows2
@@ -52,11 +53,11 @@ class TestRecordScan:
     def test_save_failure_returns_none_without_raising(self, tmp_path):
         # a *file* where the screening dir should be → mkdir fails
         (tmp_path / "screening").write_text("not a directory")
-        assert screening_log.record_scan(_rows(), root=tmp_path, ts=TS) is None
+        assert screening.record_scan(_rows(), root=tmp_path, ts=TS) is None
 
     def test_env_root_fallback(self, tmp_path, monkeypatch):
         monkeypatch.setenv("AGENT_JOURNAL_ROOT", str(tmp_path))
-        path = screening_log.record_scan(_rows(), ts=TS)
+        path = screening.record_scan(_rows(), ts=TS)
         assert path is not None and path.is_relative_to(tmp_path)
 
 
@@ -78,21 +79,21 @@ class TestScanRoundTrip:
     @given(rows=st.lists(_row_st, max_size=8))
     def test_record_then_read_preserves_rows(self, rows, tmp_path_factory):
         root = tmp_path_factory.mktemp("ws")
-        screening_log.record_scan(rows, root=root, ts=TS)
-        doc = screening_log.read_scan(root, compute_et_date(TS))
+        screening.record_scan(rows, root=root, ts=TS)
+        doc = screening.read_scan(root, compute_et_date(TS))
         assert doc is not None and doc["rows"] == rows
 
     def test_read_missing_or_corrupt_is_none(self, tmp_path):
-        assert screening_log.read_scan(tmp_path, "2026-06-11") is None
-        p = screening_log.scan_path(tmp_path, "2026-06-11")
+        assert screening.read_scan(tmp_path, "2026-06-11") is None
+        p = screening.scan_path(tmp_path, "2026-06-11")
         p.parent.mkdir(parents=True)
         p.write_text("{torn")
-        assert screening_log.read_scan(tmp_path, "2026-06-11") is None
+        assert screening.read_scan(tmp_path, "2026-06-11") is None
 
 
 class TestReadVerdicts:
     def test_lenient_parse_skips_corrupt_lines(self, tmp_path):
-        p = screening_log.verdicts_path(tmp_path, "2026-06-11")
+        p = screening.verdicts_path(tmp_path, "2026-06-11")
         p.parent.mkdir(parents=True)
         p.write_text(
             '{"ts": "t1", "symbol": "NVDA", "verdict": "passed", "reason": "RSI 82"}\n'
@@ -101,13 +102,13 @@ class TestReadVerdicts:
             '"not a dict"\n'
             '{"ts": "t2", "symbol": "TMO", "verdict": "custom-word", "reason": "x"}\n'
         )
-        recs = screening_log.read_verdicts(tmp_path, "2026-06-11")
+        recs = screening.read_verdicts(tmp_path, "2026-06-11")
         assert [r["symbol"] for r in recs] == ["NVDA", "TMO"]
         # unknown verdict values are kept as-is (journal is evidence, not schema)
         assert recs[1]["verdict"] == "custom-word"
 
     def test_missing_file_is_empty(self, tmp_path):
-        assert screening_log.read_verdicts(tmp_path, "2026-06-11") == []
+        assert screening.read_verdicts(tmp_path, "2026-06-11") == []
 
 
 class TestScoreboardCliGuard:

@@ -25,7 +25,7 @@ from pathlib import Path
 from loguru import logger
 
 from src.agent.journal import DEFAULT_ROOT
-from src.agent.turn_log import compute_et_date
+from src.agent.logs.turn import compute_et_date
 from src.core.jsonl import atomic_write_text
 
 SCREENING_DIR = "screening"

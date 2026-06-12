@@ -30,7 +30,7 @@ def _screening_journal_block() -> str:
     keyed by the ET trading date — NOT the prompt's local `today` — so it lands
     in the same file the scan snapshot uses (critic #2: on a non-ET host the
     two dates diverge around midnight and the /screening join silently splits)."""
-    from src.agent.turn_log import compute_et_date
+    from src.agent.logs.turn import compute_et_date
 
     record = ('{"ts": "<ISO>", "symbol": "<SYM>", '
               '"verdict": "entered|watchlist|passed", "reason": "<one line>"}')
