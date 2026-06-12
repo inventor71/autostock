@@ -8,7 +8,7 @@
 - **Track ID**: F71
 - **Title**: 폰에서 autostock operator 콘솔 — Tailscale + `opencode serve` + PWA(packages/app)
 - **Type**: feature
-- **Status**: active
+- **Status**: merge-awaiting  <!-- 선택 A: 기반(U1+U2+U3로직) green 2026-06-12; UI는 F72 후속 -->
 - **Branch**: feat/F71
 - **Worktree**: .claude/worktrees/F71
 - **Submodule branch**: — (monorepo; operator-console/* 변경 포함)
@@ -43,7 +43,7 @@ application-design.md`(C1~C11, D1~D5, R1~R4) · 조사 `aidlc-docs/research/mobi
 
 - **공유 파일 (주의)**: `operator-console/launcher/*`(cli/config/unit-template/install),
   opencode fork `packages/opencode/src/server/*`(라우트 추가), `packages/app/*`(PWA addon).
-- **API/시그니처 변경**: 없음 예정(추가형 — 신규 서브커맨드/라우트/페이지).
+- **API/시그니처 변경**: 없음(추가형). permission.reply/session.permissionRespond 핸들러에 게이트 한 블록 추가(로직 보존, 원격에만 동작). server.ts fetch에 라우트 1개 prepend.
 - **알려진 동시 변경**: 현재 operator-console를 만지는 활성 트랙 없음(F33 paused).
 
 ## Stage Progress
@@ -57,4 +57,4 @@ application-design.md`(C1~C11, D1~D5, R1~R4) · 조사 `aidlc-docs/research/mobi
   - [x] U1 server-runtime — serve/qr 서브커맨드 + systemd 유닛 + QR (테스트 13, launcher 스위트 144 pass)
   - [x] U2 security-gate — WebAuthn 라우트+양쪽 reply 게이트(원격 한정)+fail-closed 분류 (23 pass, tsgo 19/19)
   - [~] U3 pwa-client — 클라이언트 로직(페어링/WebAuthn confirm/대시보드 변환) +테스트 15 pass; SolidJS 뷰 배선은 실기기 검증분으로 분리
-- [ ] Build & Test (+ post-merge-guide)
+- [x] Build & Test — 51 pass(U1 13/U2 23/U3로직 15) + 인접 회귀, tsgo 19/19, post-merge-guide 작성
