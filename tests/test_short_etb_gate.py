@@ -151,7 +151,7 @@ def test_cover_on_short_position_accepted():
     assert order is not None and order.side == OrderSide.BUY_TO_COVER
 
 
-def test_account_farm_broker_gets_side_from_f54_parity():
+def test_account_farm_broker_gets_side_parity():
     """AccountFarmBroker.position_side mirrors AlpacaBroker (code-review finding #1).
     We test the static helper directly — it's shared across get_position/get_all_positions.
     This ensures a short held via account_farm is visible as SHORT, not defaulted to LONG."""

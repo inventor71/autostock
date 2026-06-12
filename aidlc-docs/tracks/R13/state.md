@@ -8,12 +8,12 @@
 - **Track ID**: R13
 - **Title**: 트랙ID 기반 테스트명을 행동/모듈 기반으로 + `src/` 구조 미러링 규칙 수립
 - **Type**: refactor
-- **Status**: backlog  <!-- not started; pick up via /ai-dlc-refactor R13 -->
-- **Branch**: refactor/R13 (TBD)
-- **Worktree**: .claude/worktrees/R13 (TBD)
+- **Status**: merge-awaiting  <!-- 순수 T1, 1087 pass 보존, green 2026-06-13 -->
+- **Branch**: refactor/R13
+- **Worktree**: .claude/worktrees/R13
 - **Submodule branch**: — (Python only, 테스트)
-- **Base commit**: 2a4e02f (survey point; rebase when picked up)
-- **Start Date**: TBD
+- **Base commit**: cf9869b
+- **Start Date**: 2026-06-13
 
 ## Extension Configuration
 - **Security Baseline**: N/A (테스트 파일 개명·이동만).
@@ -42,8 +42,8 @@
   **R13은 최후에 실행**(앞 트랙들이 정리한 최종 테스트 집합 위에서 명명·구조만 마감).
 
 ## Stage Progress (skill: ai-dlc-refactor)
-- [ ] Stage 1 — Baseline (각 트랙ID 테스트의 실제 검증 대상 조사 → 리네임 매핑; 현 수집 수 기록)
-- [ ] Stage 2 — Tier ledger (all-T1 — 이름/위치만)
-- [ ] Stage 3 — Redesign (명명 규칙 + 서브디렉터리 미러링 규칙 + 리네임 매핑표 확정)
-- [ ] Stage 4 — Implementation (개명/이동 + 수집·import·CI 참조 전수 갱신)
-- [ ] Build & Test (수집 수 동일·전체 green 확인)
+- [x] Stage 1 — Baseline (각 트랙ID 테스트의 실제 검증 대상 조사 → 리네임 매핑; 현 수집 수 기록)
+- [x] Stage 2 — Tier ledger (all-T1, T3 없음) (all-T1 — 이름/위치만)
+- [x] Stage 3 — Redesign (명명 규칙 + 서브디렉터리 미러링 규칙 + 리네임 매핑표 확정)
+- [x] Stage 4 — Implementation (9 리네임 + 2 이름정합 + intraday/kis/surge 그룹화) (개명/이동 + 수집·import·CI 참조 전수 갱신)
+- [x] Build & Test — 1087 passed(수집 동일·green), 잔존 참조 0(역사 문서 제외) (수집 수 동일·전체 green 확인)
