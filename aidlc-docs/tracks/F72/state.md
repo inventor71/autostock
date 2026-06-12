@@ -8,7 +8,7 @@
 - **Track ID**: F72
 - **Title**: research turn 스크리닝→필터링 결과(검토 종목 + 패스 사유)를 로깅하고 operator TUI(steer_read)에서 조회 가능하게
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- critic round 반영 + 재검증 green 2026-06-12 -->
+- **Status**: merged → main 7b4b409 (2026-06-12)
 - **Branch**: feat/F72
 - **Worktree**: .claude/worktrees/F72
 - **Submodule branch**: — (monorepo; operator-console/src는 메인 repo, cli 서브모듈 무접촉)
