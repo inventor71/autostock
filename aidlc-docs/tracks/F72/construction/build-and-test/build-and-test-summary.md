@@ -30,3 +30,20 @@
 F53이 read-only verb(thesis/theses)를 file-drop SteeringVerb union/ALL_VERBS에 넣었고(golden엔 없음),
 F52가 Python/golden에 추가한 `exec_outcome` event kind가 TS 미러에 누락. 본 트랙에서
 read verb를 union에서 제거(codebase/ui-legend 선례와 일치)하고 exec_outcome을 미러에 추가해 복구.
+
+## Critic Round (2026-06-12, 머지 전)
+
+critic 서브에이전트 검토 → 유효 지적 3건 반영 (커밋 별도):
+
+1. **[HIGH] 부분 스캔 클로버**: `scoreboard --symbols`가 그날의 전체 스냅샷을 덮어씀 →
+   전체 유니버스 실행(`args.symbols is None`)만 `record_scan` 호출.
+2. **[MEDIUM] verdicts/scan 날짜 키 분리**: verdicts 파일명이 로컬 `date.today()` 기반 →
+   `_screening_journal_block()`이 `compute_et_date()`로 ET 날짜 직접 산출 (비ET 호스트
+   자정 경계에서 /screening 조인 분리 방지).
+3. **[MEDIUM] screening/ 디렉터리 부재**: 에이전트 Bash가 mkdir 불가 → `Journal.init()`이
+   `screening/` 생성 (그날 첫 scan 전 verdict 기록 순서에서도 안전).
+
+LOW 1건(`screeningDir`의 steering/../workspace 형제 배치 가정)은 F53 positionsDir과 동일한
+기존 규약으로 비반영(기록만).
+
+재검증: pytest **1057 passed** (신규 가드 테스트 3건 포함), 콘솔 측 변경 없음(168 pass 유지).

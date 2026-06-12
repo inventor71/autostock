@@ -12,7 +12,10 @@ workspace/screening/
 └── 2026-06-11.verdicts.jsonl   # LLM verdict (LLM 서브프로세스가 append, decisions.jsonl 패턴)
 ```
 
-- 날짜 키 = **ET trading date** (`src/agent/turn_log.compute_et_date` 재사용, NFR-2).
+- 날짜 키 = **ET trading date** (`src/agent/turn_log.compute_et_date` 재사용, NFR-2) —
+  scan(코드)과 verdicts(프롬프트 문구) **양쪽 모두** 이 키를 쓴다 (critic #2).
+- `workspace/screening/`은 `Journal.init()`이 생성 (critic #3: 에이전트의 제한된
+  Bash로는 mkdir 불가 — 그날 첫 scan 전에 verdict를 쓰는 순서에서도 안전).
 - 워크스페이스 루트 = `AGENT_JOURNAL_ROOT` env → 없으면 `Journal().root`
   (기존 `watch` 도구와 동일한 writer/reader 일치 규약).
 
@@ -74,7 +77,9 @@ elif args.cmd == "scoreboard":
 
 - `market.scoreboard()` 자체는 무변경(순수 유지) — 부수효과는 CLI 경계에만.
 - `record_scan` 실패해도 `out`은 정상 출력 (수용기준 4).
-- research 외 턴/수동 실행도 동일하게 기록 — 무해하고 "최신 스캔" 의미 유지.
+- **전체 유니버스 실행만 기록** (`--symbols` 부분 실행은 저장 안 함 — critic #1:
+  부분 스캔이 그날의 131종목 레코드를 덮어쓰는 사고 방지). research 외 턴/수동
+  전체 실행은 동일하게 기록 — "최신 전체 스캔" 의미 유지.
 
 ### 2.3 프롬프트 의무 — `src/agent/prompts.py`
 
@@ -82,7 +87,9 @@ elif args.cmd == "scoreboard":
 
 > For EVERY candidate you actually examined this turn (dug into or consciously
 > rejected after a look), append one JSON line to
-> `screening/{today}.verdicts.jsonl`:
+> `screening/{ET날짜}.verdicts.jsonl` (critic #2: 프롬프트 헤더의 로컬 `today`가
+> 아니라 `compute_et_date()` — 비ET 호스트의 자정 경계에서 scan 파일과 날짜가
+> 갈라지는 것을 방지):
 > `{"ts": "<ISO>", "symbol": "<SYM>", "verdict": "entered|watchlist|passed", "reason": "<one line>"}`.
 > Do NOT write lines for names you never looked at.
 

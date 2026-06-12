@@ -2,9 +2,11 @@
 
 ## 무엇이 바뀌나 (prod 브랜치)
 
-1. **scoreboard 실행 시 자동 저장**: `python -m src.agent.tools scoreboard`가 돌 때마다
-   (research turn 포함) `workspace/screening/<ET날짜>.scan.json`에 전 유니버스 quant
-   스냅샷이 저장된다 (같은 날 재실행 = 덮어쓰기, 최신 실행 기준).
+1. **scoreboard 실행 시 자동 저장**: `python -m src.agent.tools scoreboard`가 **전체
+   유니버스로** 돌 때마다 (research turn 포함) `workspace/screening/<ET날짜>.scan.json`에
+   quant 스냅샷이 저장된다 (같은 날 재실행 = 덮어쓰기, 최신 실행 기준).
+   `--symbols` 부분 실행은 **저장하지 않는다** — 부분 스캔이 그날의 전체 레코드를
+   덮어쓰지 않게 하기 위함 (critic 반영).
 2. **research 프롬프트에 verdict 의무**: 다음 research turn부터 에이전트가 실제 검토한
    후보별로 `workspace/screening/<ET날짜>.verdicts.jsonl`에
    `{ts, symbol, verdict(entered|watchlist|passed), reason}` 한 줄씩 남긴다.
@@ -21,7 +23,7 @@
 
 1. 머지 + 데몬/콘솔 재시작 후, 다음 research turn(또는 TUI에서 `/research` 트리거)을 기다린다.
 2. `ls workspace/screening/` → 오늘 ET 날짜의 `*.scan.json` 존재, `count`가 유니버스
-   크기(~131)와 일치하는지. (턴 전에라도 수동 `python -m src.agent.tools scoreboard`로 확인 가능)
+   크기(~131)와 일치하는지. (턴 전에라도 수동 `python -m src.agent.tools scoreboard`로 — 단 `--symbols` 없이 — 확인 가능)
 3. 같은 날짜의 `*.verdicts.jsonl` 존재 + 후보별 한 줄 (LLM 준수 — **첫 턴은 직접 확인 권장**;
    비어 있으면 에이전트가 의무 문구를 무시한 것이므로 프롬프트 강화 필요 신호).
 4. TUI에서 `/screening` → "verdicts (n): ..." + "scan (...): 131행" 출력.

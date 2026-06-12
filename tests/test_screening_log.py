@@ -110,12 +110,42 @@ class TestReadVerdicts:
         assert screening_log.read_verdicts(tmp_path, "2026-06-11") == []
 
 
+class TestScoreboardCliGuard:
+    """critic #1: a partial --symbols run must not clobber the day's record."""
+
+    def _run(self, argv, tmp_path, monkeypatch):
+        from src.agent.tools import __main__ as tools_main
+        monkeypatch.setenv("AGENT_JOURNAL_ROOT", str(tmp_path))
+        monkeypatch.setattr(tools_main, "_provider", lambda: object())
+        monkeypatch.setattr(tools_main, "_universe", lambda: ["AAPL", "MSFT"])
+        monkeypatch.setattr(
+            tools_main.market, "scoreboard", lambda symbols, provider: _rows())
+        tools_main.main(argv)
+        return (tmp_path / "screening").glob("*.scan.json")
+
+    def test_full_universe_run_persists(self, tmp_path, monkeypatch, capsys):
+        assert list(self._run(["scoreboard"], tmp_path, monkeypatch))
+
+    def test_partial_symbols_run_does_not_persist(self, tmp_path, monkeypatch, capsys):
+        assert not list(self._run(
+            ["scoreboard", "--symbols", "AAPL"], tmp_path, monkeypatch))
+
+
+class TestJournalInitCreatesScreeningDir:
+    def test_init_creates_screening_dir(self, tmp_path):
+        from src.agent.journal import Journal
+        Journal(tmp_path).init()
+        assert (tmp_path / "screening").is_dir()
+
+
 class TestPromptMandate:
     def test_morning_research_includes_screening_journal(self):
         p = prompts.morning_research_prompt(["AAPL", "MSFT"], held=["NVDA"])
         assert "Screening journal" in p
-        assert ".verdicts.jsonl" in p
         assert "entered|watchlist|passed" in p
+        # critic #2: the journal filename must be keyed by the ET trading date
+        # (same key the scan snapshot uses), not the machine-local prompt date.
+        assert f"screening/{compute_et_date()}.verdicts.jsonl" in p
 
     def test_multi_agent_round1_includes_screening_journal(self):
         p = prompts.multi_research_initial_prompt(["AAPL"], held=["NVDA"])

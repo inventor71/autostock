@@ -8,7 +8,7 @@
 - **Track ID**: F72
 - **Title**: research turn 스크리닝→필터링 결과(검토 종목 + 패스 사유)를 로깅하고 operator TUI(steer_read)에서 조회 가능하게
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test ALL GREEN 2026-06-11 -->
+- **Status**: merge-awaiting  <!-- critic round 반영 + 재검증 green 2026-06-12 -->
 - **Branch**: feat/F72
 - **Worktree**: .claude/worktrees/F72
 - **Submodule branch**: — (monorepo; operator-console/src는 메인 repo, cli 서브모듈 무접촉)
@@ -43,4 +43,5 @@ LLM 턴 컨텍스트에서 휘발됨. 이를 구조화 로깅하고 operator TUI
   - [x] Functional Design — 승인 2026-06-11
   - [x] Code Generation Part 1 (계획)
   - [x] Code Generation Part 2 — 구현+테스트, 커밋 47fa1e8
-- [x] Build & Test — ALL GREEN (py 1054, console 168, live smoke) + post-merge guide
+- [x] Build & Test — ALL GREEN (py 1054→critic round 후 1057, console 168, live smoke) + post-merge guide
+- [x] Critic round — HIGH 1(부분스캔 클로버)·MEDIUM 2(날짜 키 분리, screening/ 미생성) 반영

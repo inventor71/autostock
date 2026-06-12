@@ -21,18 +21,23 @@ _ADVISOR_REMINDER = (
 )
 
 
-def _screening_journal_block(today: date) -> str:
+def _screening_journal_block() -> str:
     """F72: per-candidate screening journal mandate for discovery steps.
 
     The operator's /screening view joins this with the auto-saved scoreboard
     snapshot, so 'which names were examined and why they were dropped' survives
-    the turn instead of evaporating with the session context."""
+    the turn instead of evaporating with the session context. The filename is
+    keyed by the ET trading date — NOT the prompt's local `today` — so it lands
+    in the same file the scan snapshot uses (critic #2: on a non-ET host the
+    two dates diverge around midnight and the /screening join silently splits)."""
+    from src.agent.turn_log import compute_et_date
+
     record = ('{"ts": "<ISO>", "symbol": "<SYM>", '
               '"verdict": "entered|watchlist|passed", "reason": "<one line>"}')
     return (
         "   Screening journal (mandatory): for EVERY candidate you actually\n"
         "   examined this turn — dug into, or consciously rejected after a look —\n"
-        f"   append one JSON line to `screening/{today.isoformat()}.verdicts.jsonl`:\n"
+        f"   append one JSON line to `screening/{compute_et_date()}.verdicts.jsonl`:\n"
         f"   {record}\n"
         "   (entered = you added a decision; watchlist = still tracking; passed =\n"
         "   examined and dropped). Do NOT write lines for names you never looked at."
@@ -67,7 +72,7 @@ def morning_research_prompt(
         if shorting_enabled else ""
     )
     short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
-    screening_journal = _screening_journal_block(today)
+    screening_journal = _screening_journal_block()
     return f"""{prefix}Morning research turn — {today.isoformat()}.
 Start by reading CLAUDE.md, lessons.md, regime.md, watchlist.md, and the thesis
 file for every held/tracked name.
@@ -267,7 +272,7 @@ signal_brief: str | None = None,) -> str:
         "4. Discovery: scan scoreboard, dig into promising long candidates."
     )
     short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
-    screening_journal = _screening_journal_block(today)
+    screening_journal = _screening_journal_block()
     prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
     return f"""{prefix}Morning research turn — {today.isoformat()} (multi-agent, round 1 of {n_rounds + 1}).
 
