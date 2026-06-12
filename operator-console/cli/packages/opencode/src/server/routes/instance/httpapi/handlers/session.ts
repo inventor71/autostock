@@ -368,6 +368,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           checkReply({
             reply: ctx.payload.response,
             remoteAddress: Option.getOrUndefined(request.remoteAddress),
+            tailscaleUserLogin: request.headers["tailscale-user-login"],
             permission: info?.permission,
             header: request.headers["x-autostock-webauthn"],
           }),

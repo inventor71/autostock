@@ -1,10 +1,13 @@
 // F71 U2 — autostock mobile security gate (fork-isolated; keep upstream-rebase surface small).
 //
-// What this enforces (US-5, Security Baseline):
-//   A *remote* (non-loopback) approval of a MUTATING autostock permission requires a fresh
-//   WebAuthn (passkey) assertion, verified SERVER-SIDE. The desktop TUI talks to the embedded
-//   server over loopback and is untouched. A phone client (PWA over the tailnet) must attach
-//   the assertion in the `x-autostock-webauthn` header of the permission-reply request.
+// What this enforces (US-5, Security Baseline; F75 hardening):
+//   A *remote* approval of a MUTATING autostock permission requires a fresh WebAuthn
+//   (passkey) assertion, verified SERVER-SIDE. "Remote" is decided by origin classification
+//   (see isRemoteOrigin): non-loopback sockets, and loopback sockets carrying a Tailscale
+//   identity header (the tailscale-serve proxy hop — so a phone proxied to loopback is still
+//   gated). In-process calls (embedded TUI) and plain host-local loopback (attach-mode TUI)
+//   are trusted: the host is the trust boundary. A phone client (PWA over the tailnet) must
+//   attach the assertion in the `x-autostock-webauthn` header of the permission-reply request.
 //
 // Mutating classification is FAIL-CLOSED: any `autostock_*` permission key that is not in the
 // known read-only set counts as mutating — a future tool added without updating this file
@@ -16,6 +19,7 @@
 // from AUTOSTOCK_WEBAUTHN_ORIGIN (e.g. https://pc.tailnet.ts.net); verification fails closed
 // when it is unset.
 
+import { createHash, timingSafeEqual } from "node:crypto"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { Global } from "@opencode-ai/core/global"
@@ -47,15 +51,29 @@ export function isMutatingAutostockPermission(permission: string): boolean {
   return !READONLY_AUTOSTOCK_KEYS.has(permission)
 }
 
-// ── loopback detection (pure) ────────────────────────────────────────────────
+// ── request-origin classification (pure) ─────────────────────────────────────
+//
+// Trust boundary = the HOST. Three origins, decided from the socket address plus the
+// Tailscale identity header that `tailscale serve` injects at the proxy hop:
+//   in-process — no socket (embedded TUI via app.fetch)                    → trusted
+//   host-local — loopback socket WITHOUT a Tailscale identity header        → trusted
+//                (attach-mode TUI and anything else already on the host; a process
+//                 that can open a loopback socket owns the box anyway)
+//   remote     — non-loopback socket, OR loopback WITH a Tailscale identity header
+//                (= the tailscale-serve proxy dialing in from the tailnet; the proxy
+//                 overwrites client-sent Tailscale-* headers, so a phone cannot strip
+//                 it to masquerade as host-local)                           → gated
 
 export function isLoopbackAddress(addr: string | undefined): boolean {
-  // undefined = no socket behind the request — i.e. an IN-PROCESS call (the desktop TUI's
-  // embedded client goes through app.fetch directly). A phone always arrives through the
-  // node listener, which stamps the socket address, so it can never appear as undefined.
-  if (!addr) return true
+  if (!addr) return false // no socket is classified separately (in-process)
   const a = addr.replace(/^::ffff:/, "")
   return a === "127.0.0.1" || a === "::1" || a.startsWith("127.")
+}
+
+export function isRemoteOrigin(remoteAddress: string | undefined, tailscaleIdentity: boolean): boolean {
+  if (remoteAddress === undefined) return false // in-process (embedded TUI)
+  if (!isLoopbackAddress(remoteAddress)) return true
+  return tailscaleIdentity // loopback: only the tailscale-serve proxy hop is remote
 }
 
 // ── gate decision (pure core — unit-tested without crypto/Effect) ───────────
@@ -63,6 +81,8 @@ export function isLoopbackAddress(addr: string | undefined): boolean {
 export type GateInput = {
   reply: "once" | "always" | "reject"
   remoteAddress: string | undefined
+  /** true when the request carries a Tailscale identity header (tailscale-serve hop). */
+  tailscaleIdentity: boolean
   permission: string | undefined // undefined = pending request not found (let reply 404 itself)
   assertionValid: boolean
 }
@@ -70,7 +90,7 @@ export type GateInput = {
 /** null = allow through; string = deny with this reason. */
 export function decideGate(input: GateInput): string | null {
   if (input.reply === "reject") return null // rejecting is always safe
-  if (isLoopbackAddress(input.remoteAddress)) return null // desktop TUI path untouched
+  if (!isRemoteOrigin(input.remoteAddress, input.tailscaleIdentity)) return null
   if (input.permission === undefined) return null
   if (!isMutatingAutostockPermission(input.permission)) return null
   if (input.assertionValid) return null
@@ -108,25 +128,50 @@ export function saveStore(store: Store, path = storePath()): void {
   writeFileSync(path, JSON.stringify(store, null, 2), "utf8")
 }
 
-// ── challenge store (in-memory, single-use, TTL) ─────────────────────────────
+// ── challenge store (in-memory, single-use, TTL, value-keyed) ────────────────
+//
+// Keyed by the challenge VALUE (not a global per-kind slot) so two approvals in
+// flight don't invalidate each other's challenge. The client tells us which
+// challenge it signed via clientDataJSON; we consume exactly that one.
 
 export const CHALLENGE_TTL_MS = 2 * 60 * 1000
+export const CHALLENGE_MAX = 256 // cap: a basic-auth holder spamming *-options can't grow memory unboundedly
 
-type Challenge = { value: string; expires: number }
+type Challenge = { kind: "register" | "assert"; expires: number }
 const challenges = new Map<string, Challenge>()
 
 export function issueChallenge(kind: "register" | "assert", now = Date.now(), value?: string): string {
+  for (const [v, c] of challenges) if (c.expires < now) challenges.delete(v) // sweep expired
+  while (challenges.size >= CHALLENGE_MAX) {
+    // evict oldest (Map preserves insertion order) — flooding only invalidates the
+    // flooder's own pending ceremonies, never grows memory
+    const oldest = challenges.keys().next().value
+    if (oldest === undefined) break
+    challenges.delete(oldest)
+  }
   const v = value ?? crypto.randomUUID().replaceAll("-", "")
-  challenges.set(kind, { value: v, expires: now + CHALLENGE_TTL_MS })
+  challenges.set(v, { kind, expires: now + CHALLENGE_TTL_MS })
   return v
 }
 
-/** Single-use: consuming removes it. Returns null when absent/expired. */
-export function consumeChallenge(kind: "register" | "assert", now = Date.now()): string | null {
-  const c = challenges.get(kind)
-  challenges.delete(kind)
-  if (!c || c.expires < now) return null
-  return c.value
+/** Single-use: consuming removes it. Returns false when absent/expired/wrong-kind. */
+export function consumeChallenge(kind: "register" | "assert", value: string | null, now = Date.now()): boolean {
+  if (!value) return false
+  const c = challenges.get(value)
+  challenges.delete(value)
+  return !!c && c.kind === kind && c.expires >= now
+}
+
+/** The base64url challenge the client actually signed, from clientDataJSON. */
+export function extractClientChallenge(response: unknown): string | null {
+  try {
+    const cdj = (response as { response?: { clientDataJSON?: string } })?.response?.clientDataJSON
+    if (!cdj) return null
+    const parsed = JSON.parse(Buffer.from(cdj, "base64url").toString("utf8"))
+    return typeof parsed?.challenge === "string" ? parsed.challenge : null
+  } catch {
+    return null
+  }
 }
 
 // ── expected origin / rpID (env-driven; fail-closed) ────────────────────────
@@ -178,8 +223,9 @@ export async function verifyAssertionHeader(
     return { ok: false, reason: "header is not base64 JSON" }
   }
 
-  const challenge = consume("assert")
-  if (!challenge) return { ok: false, reason: "no fresh challenge (request /autostock/webauthn/assert-options first)" }
+  const challenge = extractClientChallenge(response)
+  if (!challenge || !consume("assert", challenge))
+    return { ok: false, reason: "no fresh challenge (request /autostock/webauthn/assert-options first)" }
 
   const store = load()
   const credId = (response as { id?: string })?.id
@@ -214,10 +260,18 @@ export async function verifyAssertionHeader(
 export async function checkReply(input: {
   reply: "once" | "always" | "reject"
   remoteAddress: string | undefined
+  /** value of the `tailscale-user-login` request header, if any (proxy hop marker). */
+  tailscaleUserLogin: string | undefined
   permission: string | undefined
   header: string | undefined
 }): Promise<string | null> {
-  const wouldDeny = decideGate({ ...input, assertionValid: false })
+  const wouldDeny = decideGate({
+    reply: input.reply,
+    remoteAddress: input.remoteAddress,
+    tailscaleIdentity: input.tailscaleUserLogin !== undefined,
+    permission: input.permission,
+    assertionValid: false,
+  })
   if (wouldDeny === null) return null
   const v = await verifyAssertionHeader(input.header)
   return v.ok ? null : `${wouldDeny} [${v.reason}]`
@@ -245,7 +299,11 @@ export function checkBasicAuth(
   try {
     const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf8")
     const idx = decoded.indexOf(":")
-    return idx >= 0 && decoded.slice(idx + 1) === password
+    if (idx < 0) return false
+    // Constant-time compare (hash both sides so length differences don't leak either).
+    const a = createHash("sha256").update(decoded.slice(idx + 1)).digest()
+    const b = createHash("sha256").update(password).digest()
+    return timingSafeEqual(a, b)
   } catch {
     return false
   }
@@ -284,10 +342,38 @@ export async function route(request: Request): Promise<Response | null> {
   }
 
   if (action === "register") {
-    const challenge = consumeChallenge("register")
-    if (!challenge) return Response.json({ error: "no fresh challenge" }, { status: 400 })
+    // Enrollment lock: once a passkey exists, adding another requires a fresh assertion
+    // from an EXISTING passkey (x-autostock-webauthn) — the server password alone must
+    // not be able to mint new signing credentials.
+    //
+    // Bootstrap (no passkey yet): the FIRST enrollment must not come through the
+    // tailscale-serve proxy hop (identity header present) — otherwise a phished server
+    // password alone could mint the first signing credential remotely. route() has no
+    // socket info (plain Request), so this covers the proxied path; enroll the first key
+    // from the host (see post-merge-guide).
+    {
+      const store = loadStore()
+      if (store.credentials.length === 0 && request.headers.get("tailscale-user-login") !== null) {
+        return Response.json(
+          { error: "첫 패스키 등록은 원격(tailscale 프록시)에서 불가 — 호스트에서 등록하세요." },
+          { status: 403 },
+        )
+      }
+      if (store.credentials.length > 0) {
+        const v = await verifyAssertionHeader(request.headers.get("x-autostock-webauthn") ?? undefined)
+        if (!v.ok) {
+          return Response.json(
+            { error: `패스키가 이미 등록돼 있어 추가 등록에는 기존 패스키 서명이 필요합니다 [${v.reason}]` },
+            { status: 403 },
+          )
+        }
+      }
+    }
     const body = await request.json().catch(() => null)
     if (!body) return Response.json({ error: "invalid body" }, { status: 400 })
+    const challenge = extractClientChallenge(body)
+    if (!challenge || !consumeChallenge("register", challenge))
+      return Response.json({ error: "no fresh challenge" }, { status: 400 })
     try {
       const { verifyRegistrationResponse } = await import("@simplewebauthn/server")
       const verification = await verifyRegistrationResponse({

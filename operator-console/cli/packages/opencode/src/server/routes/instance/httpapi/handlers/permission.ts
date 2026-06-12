@@ -29,6 +29,7 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
         AutostockWebAuthn.checkReply({
           reply: ctx.payload.reply,
           remoteAddress: Option.getOrUndefined(request.remoteAddress),
+            tailscaleUserLogin: request.headers["tailscale-user-login"],
           permission: info?.permission,
           header: request.headers["x-autostock-webauthn"],
         }),
