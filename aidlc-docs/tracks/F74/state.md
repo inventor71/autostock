@@ -73,5 +73,10 @@ non-blocking 리포트 + Tier-2 llm-rubric nightly.
 - [x] Workflow Planning — `inception/plans/execution-plan.md` (2026-06-12 승인)
 - [x] Application Design — `inception/application-design/application-design.md` C1~C8 + D1~D6 (승인 대기)
 - [ ] Units Generation — execute (U1 tools 팩토리 → U2 harness → U3 시나리오)
-- [ ] Construction (per-unit Code Generation)
-- [ ] Build and Test
+- [x] Construction — U1 `95e9b5e`(tools fixture/record 인터셉트) → U2 `2f0de7c`(harness:
+      sandbox/orchestrator 경유/Tier-1 채점/promptfoo 글루) → U3 `6de01eb`(추출기+코퍼스 11종).
+      FD 정제 2건 기록: R1(디스패치 인터셉트 — market.py에 주입 파라미터 기존재 확인),
+      R2(equity.jsonl 일자별 스냅샷 → 보유/계좌 자동 추출 승격)
+- [x] Build and Test — **전체 1200 passed 토큰-0** (신규 127 포함), promptfoo 0.121.15 설치
+      검증, 격리/동작보존/guidance 주입 증명. `construction/build-and-test/` +
+      `post-merge-guide.md`. **실 LLM 스모크는 사용자 확인 대기** (구독 토큰 비용)
