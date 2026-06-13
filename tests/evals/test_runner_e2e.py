@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.agent.constitution import AGENT_CONSTITUTION
+from src.agent.learning.constitution import AGENT_CONSTITUTION
 
 from src.evals.runner import evaluate_scenario
 from src.evals.scenario import Expectation, Scenario
