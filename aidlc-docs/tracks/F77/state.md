@@ -6,11 +6,11 @@
 - **Track ID**: F77
 - **Title**: StockTwits 자가 라벨(Bull/Bear) 집계 — 시간당 유니버스 스윕 + 베이스라인 + research/intraday 브리프 (F61 소스)
 - **Type**: feature
-- **Status**: active
-- **Branch**: feat/F77 (TBD)
-- **Worktree**: .claude/worktrees/F77 (TBD)
+- **Status**: merge-awaiting  <!-- Build & Test ALL GREEN 2026-06-13 -->
+- **Branch**: feat/F77
+- **Worktree**: .claude/worktrees/F77
 - **Submodule branch**: — (monorepo; operator-console 무접촉 예정)
-- **Base commit**: TBD (worktree 생성 시)
+- **Base commit**: bacd341
 - **Start Date**: 2026-06-13
 
 ## Extension Configuration
@@ -27,7 +27,7 @@ research/intraday 브리프 섹션. **wake 트리거/고빈도 폴링/본문 분
 > merge-awaiting 전환 시 작성.
 
 - **공유 파일 (주의)**: `src/signals/{settings,collector,brief}.py`, `src/trading/modes/agent.py`(스케줄러 잡), `config/settings.yaml`
-- **API/시그니처 변경**: TBD
+- **API/시그니처 변경**: `assemble_brief()`에 keyword `sentiment_outliers` 추가(기존 호출 호환), `MarketSignalBrief.sentiment_outliers` 필드+`is_empty()` 포함, `BriefAssembler.__init__`에 `sentiment_lines_fn` 키워드 추가(기본 None), `SignalsConfig.sentiment` 서브모델 추가
 - **알려진 동시 변경**: F74(prompt eval — prompts 인접 가능), F76(filedrop — 무관 예상)
 
 ## Stage Progress
@@ -37,8 +37,8 @@ research/intraday 브리프 섹션. **wake 트리거/고빈도 폴링/본문 분
 - [x] Workflow Planning — 승인 2026-06-13
 - [x] Application Design — SKIP (F61 플러그인 경계 내)
 - [x] Units Generation — SKIP (단일 유닛)
-- [ ] Construction — unit "stocktwits-sentiment"
-  - [ ] Functional Design (문서 작성 완료, 승인 대기)
-  - [ ] Code Generation Part 1 (계획)
-  - [ ] Code Generation Part 2 (구현+테스트, worktree feat/F77)
-- [ ] Build & Test (+ post-merge guide)
+- [x] Construction — unit "stocktwits-sentiment"
+  - [x] Functional Design — 승인 2026-06-13
+  - [x] Code Generation Part 1 (계획)
+  - [x] Code Generation Part 2 — 구현+테스트, 커밋 13365c1
+- [x] Build & Test — ALL GREEN (py 1210, 신규 25 + 브리프 렌더, 라이브 스모크 실데이터) + post-merge guide
