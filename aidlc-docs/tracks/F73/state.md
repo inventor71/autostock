@@ -79,10 +79,10 @@ vibeOS(caffeinum/vibeOS) 패턴의 "방향 A"를 autostock에 이식: 레포에 
 - [ ] NFR Requirements — SKIP (requirements NFR-1~7로 확정)
 - [ ] NFR Design — SKIP (Application Design에 통합)
 - [ ] Infrastructure Design — SKIP (로컬 dev 서버 단일 프로세스)
-- [~] Code Generation — Part 1 계획 작성 완료 (`construction/plans/viz-shell-code-generation-plan.md`), **승인 대기** / Part 2 생성 (worktree 게이트: `vibeshell` 브랜치, 최신 main 분기)
+- [~] Code Generation — Part 1 승인(2026-06-13) + Part 2 생성 완료 (28/28 step, vibeshell 109f631, 테스트 100/100 + 라이브 스모크) — **코드 승인 대기**
 - [ ] Build & Test — green이어도 merge-awaiting 전환 금지 (Merge Policy 참조)
 
 ## Current Status
 - **Lifecycle Phase**: CONSTRUCTION (단일 유닛: viz-shell)
-- **Current Stage**: Code Generation Part 1 (계획 승인 대기)
-- **Next Stage**: Code Generation Part 2 (생성 — Phase 0 worktree 생성부터)
+- **Current Stage**: Code Generation Part 2 완료 (코드 승인 대기)
+- **Next Stage**: Build & Test (green이어도 merge-awaiting 전환 금지 — Merge Policy)
