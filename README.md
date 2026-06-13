@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg">
+  <img alt="License: GPL v3" src="https://img.shields.io/badge/License-GPLv3-blue.svg">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white">
   <img alt="Markets: US + KR" src="https://img.shields.io/badge/markets-US%20(Alpaca)%20%2B%20KR%20(KIS)-2ea043.svg">
   <img alt="Status: paper trading" src="https://img.shields.io/badge/status-paper%20trading-e3b341.svg">
@@ -231,19 +231,19 @@ autostock/
 
 ## License
 
-Copyright 2026 Jihoon Park. Licensed under the **Apache License 2.0** — see
+Copyright 2026 Jihoon Park. Licensed under the **GNU General Public License v3.0** — see
 [`LICENSE`](LICENSE) for the full text.
 
-You are free to fork and build on this project. If you distribute or publish a fork or
-derivative, you must:
+You are free to use, study, fork, and build on this project. GPLv3 is a **strong copyleft**
+license: if you distribute or publish a fork, derivative, or modified version, you must:
 
-- retain the copyright notice and the [`NOTICE`](NOTICE) file,
-- state any files you changed, and
-- include a copy of the Apache-2.0 license.
+- release the **complete corresponding source** under GPLv3 (no closed-source derivatives),
+- retain the copyright and license notices, and
+- state the changes you made.
 
 The `operator-console/` subdirectory is a fork of
 [opencode](https://github.com/sst/opencode) and retains its original MIT license
-(see `operator-console/LICENSE`).
+(see `operator-console/LICENSE`); MIT is GPL-compatible.
 
 > **Citing this project**: if you reference autostock in research or writing, please cite it
 > via the [`CITATION.cff`](CITATION.cff) metadata — GitHub shows a *"Cite this repository"*

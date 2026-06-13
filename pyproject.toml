@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "autostock"
 version = "0.1.0"
 description = "Automated stock trading system for US markets (NYSE/NASDAQ)"
-license = {text = "Apache-2.0"}
+license = {text = "GPL-3.0-only"}
 requires-python = ">=3.11"
 dependencies = [
     "alpaca-py>=0.21.0",
