@@ -292,7 +292,11 @@ Tradeable universe: {universe_str}
 
 Ground every call in fresh data pulled THIS turn. Do the following:
 1. Account truth: run `python -m src.agent.tools account`
-2. Regime: refresh regime.md using tools and web research.
+2. Regime: refresh regime.md using tools and web research. Also scan top-down for
+   market-moving catalysts not yet tied to a ticker — imminent IPOs (see the
+   brief's IPO list / `ipo_calendar`), M&A, regulatory, macro — and note their
+   sector/sentiment impact and read-through to held/universe names. Awareness
+   only: you may NOT trade a name outside the tradeable universe.
 3. Held positions: for EACH held name, pull indicators + news, update thesis.
 {discovery}
 {screening_journal}

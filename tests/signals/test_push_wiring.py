@@ -34,3 +34,16 @@ def test_parallel_synthesis_prompt_prepends_brief():
     out = prompts.parallel_synthesis_prompt(["report A"], signal_brief=_BRIEF)
     assert _BRIEF in out
     assert _BRIEF not in prompts.parallel_synthesis_prompt(["report A"])
+
+
+# F78: the IPO/catalyst Regime nudge (FR-5) must reach EVERY primary research
+# prompt — not just the single-session path. The daemon runs multi-agent by
+# default, so a nudge only in morning_research_prompt would be inert in prod.
+def test_ipo_catalyst_nudge_on_all_primary_research_prompts():
+    morning = prompts.morning_research_prompt(_UNI, [])
+    multi = prompts.multi_research_initial_prompt(_UNI, [], None, [], 2)
+    for out in (morning, multi):
+        assert "ipo_calendar" in out
+        assert "catalyst" in out.lower()
+        # the awareness guard (no trading outside the universe) travels with it
+        assert "universe" in out.lower()
