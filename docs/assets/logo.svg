@@ -1,0 +1,37 @@
+<svg width="720" height="180" viewBox="0 0 720 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="autostock">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="720" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="up" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#56d364"/>
+      <stop offset="1" stop-color="#2ea043"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="1" y="1" width="718" height="178" rx="18" fill="url(#bg)" stroke="#30363d" stroke-width="2"/>
+
+  <circle cx="34" cy="32" r="6" fill="#f85149"/>
+  <circle cx="54" cy="32" r="6" fill="#e3b341"/>
+  <circle cx="74" cy="32" r="6" fill="#3fb950"/>
+
+  <g transform="translate(44,66)">
+    <line x1="14" y1="58" x2="14" y2="86" stroke="#f85149" stroke-width="3"/>
+    <rect x="6"  y="64" width="16" height="20" rx="2" fill="#f85149"/>
+    <line x1="46" y1="36" x2="46" y2="78" stroke="url(#up)" stroke-width="3"/>
+    <rect x="38" y="44" width="16" height="28" rx="2" fill="url(#up)"/>
+    <line x1="78" y1="14" x2="78" y2="60" stroke="url(#up)" stroke-width="3"/>
+    <rect x="70" y="20" width="16" height="34" rx="2" fill="url(#up)"/>
+    <line x1="0" y1="6"  x2="98" y2="6"  stroke="#3fb950" stroke-width="2" stroke-dasharray="5 5" opacity="0.7"/>
+    <line x1="0" y1="92" x2="98" y2="92" stroke="#f85149" stroke-width="2" stroke-dasharray="5 5" opacity="0.7"/>
+  </g>
+
+  <text x="178" y="92" font-family="ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace" font-size="52" font-weight="700" fill="#e6edf3">auto<tspan fill="#58a6ff">stock</tspan></text>
+
+  <rect x="612" y="58" width="14" height="44" rx="2" fill="#58a6ff">
+    <animate attributeName="opacity" values="1;0;1" dur="1.1s" repeatCount="indefinite"/>
+  </rect>
+
+  <text x="180" y="126" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="18" fill="#8b949e">the model decides &#183; the machine holds the keys</text>
+</svg>

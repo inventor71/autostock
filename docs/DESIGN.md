@@ -1,464 +1,494 @@
-# Autostock 설계 문서
+# Autostock — Design Document
 
-> 미국 주식(NYSE/NASDAQ) 자동 매매 시스템의 아키텍처 설계 문서.
-> 사용법은 [README.md](../README.md)를, 본 문서는 내부 구조·설계 의도·확장 방법을 다룬다.
-
----
-
-## 1. 개요
-
-Autostock은 **데이터 수집 → 신호 생성 → 리스크 관리 → 주문 실행**의 파이프라인을 추상화한 자동 매매 프레임워크다. 두 가지 오케스트레이션 경로를 제공한다:
-
-- **전략 경로**(원형): 동일한 전략 코드를 **백테스트 / 페이퍼 트레이딩 / 실시간 매매** 모드에서 그대로 재사용. `TradingEngine`이 심볼별로 전략을 돌린다.
-- **에이전트 경로**(신규): LLM "포트폴리오 매니저"가 책 전체를 매일 추론해 결정을 저널에 쓰고, 결정론적 `DecisionExecutor`가 이를 브래킷 주문으로 체결한다(`--mode agent`). → §5.8 참고.
-
-핵심 특징:
-
-- **플러그형 추상화**: 데이터 제공자, 브로커, 전략이 각각 추상 베이스 클래스(`BaseDataProvider`, `BaseBroker`, `BaseStrategy`)를 구현하므로 교체·확장이 자유롭다.
-- **전략 다양성**: 기술적 분석 4종, ML 2종, LLM, 앙상블을 동일 인터페이스로 제공.
-- **백테스트-실거래 일관성**: `RiskManager`와 전략 로직을 백테스트와 실거래가 공유하여 결과 괴리를 최소화.
-- **LLM 자기개선 루프**: 백테스트 결과를 LLM이 분석해 트레이딩 프롬프트를 자동으로 버전업.
-- **에이전트 PM**: 두 번째 경로로, LLM이 자문(저널 작성)을 맡고 실행은 결정론적 Python(RiskManager → Broker)이 전담하는 brain/body 분리 구조.
+> Architecture and design rationale for the autostock automated trading system.
+> For usage, see [README.md](../README.md); this document covers internal structure,
+> design intent, and how to extend the system.
+> 한국어 보존본: [DESIGN_KO.md](DESIGN_KO.md) (may lag this canonical English version).
 
 ---
 
-## 2. 설계 원칙
+## 1. Overview
 
-| 원칙 | 적용 방식 |
-|------|-----------|
-| **관심사 분리** | data / strategy / risk / execution / trading / backtest 레이어로 디렉토리 분리 |
-| **인터페이스 우선** | 각 레이어는 ABC로 계약을 정의하고, 구현체는 `providers/`·`brokers/` 하위에 격리 |
-| **의존성 역전** | `TradingEngine`은 구체 클래스가 아닌 베이스 추상화에만 의존 (DI로 주입) |
-| **타입 안정성** | 모든 도메인 객체는 Pydantic 모델(`src/core/models.py`), 열거형은 `src/core/types.py` |
-| **설정 외부화** | 코드 변경 없이 YAML/환경변수로 동작 제어 (`config/`) |
-| **레지스트리 패턴** | 전략은 데코레이터로 자가 등록되어 이름 문자열만으로 인스턴스화 가능 |
+Autostock is an automated equities trading platform for **US markets** (NYSE/NASDAQ via
+Alpaca) and **Korean markets** (KIS — 한국투자증권). It abstracts a single pipeline —
+**market data → signal/strategy → risk gate → order execution → telemetry & journaling** —
+and exposes **two orchestration paths** over a shared domain core:
 
----
+- **Strategy path** (original): the same strategy code runs unchanged across **backtest /
+  paper / realtime** modes. `TradingEngine` evaluates pluggable strategies per symbol.
+- **Agent path** (newer, most actively developed): an agentic LLM **portfolio manager**
+  reasons over the whole book each trading day, writes machine-readable `Decision` lines to a
+  file journal, and a deterministic `DecisionExecutor` turns them into resting bracket orders
+  (`--mode agent`). See §5.8.
 
-## 3. 시스템 아키텍처
+The defining stance is **safety-first**: shorting is off by default, position sizing is
+risk-budget driven, and a deterministic `RiskManager` gates *every* order — from a strategy,
+the LLM, or a human console command — before it reaches a broker.
 
-```
-                          ┌──────────────┐
-                          │   main.py    │  CLI 진입점 / 모드 분기
-                          └──────┬───────┘
-                                 │ DI (provider, broker, strategies, risk)
-                ┌────────────────┼────────────────────────┐
-                ▼                ▼                         ▼
-        ┌───────────────┐  ┌──────────────┐       ┌────────────────┐
-        │  Backtest     │  │   Trading    │       │  LLM 자기개선   │
-        │  Engine       │  │   Engine     │       │  (auto_improver)│
-        └───────┬───────┘  └──────┬───────┘       └────────┬───────┘
-                │                  │ run_cycle()            │
-                │      ┌───────────┴───────────┐            │
-                │      ▼           ▼           ▼            │
-                │  [Batch모드]  [Realtime모드] [Scheduler]   │
-                │      └───────────┬───────────┘            │
-                │                  │                        │
-        ════════╪══════════════════╪════════════════════════╪═══════
-                ▼                  ▼                        ▼
-        ┌──────────────────────────────────────────────────────────┐
-        │                    공유 파이프라인                          │
-        │                                                            │
-        │  DataProvider ──▶ Strategy ──▶ RiskManager ──▶ Broker      │
-        │   (get_bars)    (generate_   (evaluate_       (submit_     │
-        │                  signal)      signal)          order)      │
-        └──────────────────────────────────────────────────────────┘
-                │                  │                        │
-                ▼                  ▼                        ▼
-        yfinance/Alpaca    technical/ml/llm/        Simulated /
-                            ensemble                 Alpaca Broker
-```
+Core characteristics:
 
-> 위 다이어그램은 **전략 경로**(backtest/paper/realtime)를 나타낸다. **에이전트 경로**(`--mode agent`)는
-> `TradingEngine`을 거치지 않고 별도 루프를 돈다 — LLM PM(brain)이 저널에 결정을 쓰고, `DecisionExecutor`(body)가
-> 같은 `RiskManager`·`Broker`로 체결한다. 상세는 §5.8.
-
-**레이어 의존 방향**: `trading`·`backtest`·`agent` → `strategy`·`risk`·`execution`·`data` → `core`
-(상위 레이어만 하위를 참조하며, `core`는 누구에게도 의존하지 않는다.)
+- **Pluggable abstractions** — data providers, brokers, and strategies each implement an
+  abstract base (`BaseDataProvider`, `BaseBroker`, `BaseStrategy`), so they swap freely.
+- **Strategy variety** — 4 technical, 2 ML, LLM, and ensemble strategies behind one interface.
+- **Backtest/live consistency** — backtest and live share the same `RiskManager` and strategy
+  logic, minimizing result divergence.
+- **LLM prompt self-improvement** — the LLM analyzes backtest results and version-bumps its
+  own trading prompt.
+- **Agentic PM** — a second path with a **brain/body split**: the LLM advises (journals) and
+  deterministic Python (`RiskManager → Broker`) is the sole actuator.
 
 ---
 
-## 4. 핵심 도메인 모델
+## 2. Design Principles
 
-`src/core/`는 전 레이어가 공유하는 타입의 단일 출처(single source of truth)다.
+| Principle | How it's applied |
+|---|---|
+| **Separation of concerns** | Directory split: data / strategy / risk / execution / trading / backtest / agent / signals |
+| **Interface-first** | Each layer defines its contract as an ABC; implementations are isolated under `providers/` · `brokers/` |
+| **Dependency inversion** | `TradingEngine` depends on base abstractions, not concrete classes (injected via `main.py`) |
+| **Type safety** | All domain objects are Pydantic v2 models (`src/core/models.py`); enums in `src/core/types.py` |
+| **Externalized config** | Behavior controlled by YAML / env vars with no code changes (`config/`) |
+| **Registry pattern** | Strategies self-register via decorator; instantiated by name string |
+| **Single risk gate** | One enforcement point — `RiskManager.validate_order()` — that nothing bypasses |
 
-### 4.1 열거형 (`types.py`)
+---
 
-- `Signal`: `BUY / SELL / HOLD` — 전략 출력
-- `OrderSide`: `buy / sell` — 브로커 주문 방향
-- `OrderType`: `market / limit / stop / stop_limit`
-- `TimeFrame`: `1m ~ 1mo` — 봉 주기
-- `TradingMode`: `paper / live / backtest`
-- `PositionSide`: `long / short`
+## 3. System Architecture
 
-### 4.2 데이터 모델 (`models.py`)
+Autostock has **two orchestration paths** sharing the same domain core (`src/core/`), risk
+gate (`src/risk/`), and broker abstraction (`src/execution/`):
 
-```
-Bar              OHLCV 단일 봉
-TradeSignal      전략 출력 (signal, confidence 0~1, sell_pct, metadata)
-Order            브로커 제출용 주문 (side, qty, order_type, ...)
-FilledOrder      체결 결과 (filled_price, filled_at, commission)
-Position         보유 포지션 (qty, avg_entry_price, unrealized_pnl)
-                 └ update_price()로 시가평가 갱신, cost_basis 프로퍼티
-PortfolioState   계좌 스냅샷 (cash, equity, positions dict)
-                 └ equity가 계좌가치 단일 출처(브로커 권위값), position_count 프로퍼티
-BacktestResult   백테스트 성과 (수익률, Sharpe, MDD, 승률, equity_curve)
+```text
+                         main.py  (CLI mode dispatch)
+                             |
+       +---------------------+--------------------------+
+       |                     |                          |
+       v                     v                          v
+  backtest mode        paper / realtime modes       agent mode
+       |                     |                          |
+       v                     v                          v
+ BacktestEngine        TradingEngine             AgentTradingMode
+ (SimulatedBroker)     (per-symbol cycle)        +----------------------------+
+       |                     |                   | AgentTradingLoop           | brain
+       |                     |                   |  -> SignalCollector        |
+       |                     |                   |  -> AgentSession           | (claude CLI)
+       |                     |                   |  -> Journal (files)        |
+       |                     |                   +---------+------------------+
+       |                     |                             | decisions.jsonl
+       |                     |                             v
+       |                     |                   DecisionExecutor              body
+       |                     |                   (cursor-idempotent)
+       |                     |                             |
+       |                     |   [SteeringRuntime + CommandBus — optional]
+       |                     |                             |
+       +---------+-----------+--------------+--------------+
+                 v                          v
+           RiskManager  <----------->  BaseBroker
+         (signal -> Order)     (Simulated / Alpaca / KIS / Broker API)
+                 ^
+                 |
+           src/core/  (models, enums, exceptions — depended on by all)
 ```
 
-**설계 포인트**: `TradeSignal`은 단순 방향이 아니라 `confidence`(포지션 사이징에 활용)와 `sell_pct`(부분 청산 지원)를 함께 전달한다. `metadata`로 LLM의 추론 근거 등 전략별 부가정보를 실어 보낼 수 있다.
+**Layer dependency rule**: `trading / backtest / agent` → `strategy / risk / execution /
+data / signals` → `core`. Only higher layers reference lower ones; `core` depends on nothing.
 
 ---
 
-## 5. 레이어별 상세 설계
+## 4. Core Domain Model
 
-### 5.1 Data 레이어 (`src/data/`)
+`src/core/` is the single source of truth for types shared across every layer.
+
+### 4.1 Enums (`types.py`)
+
+- `Signal`: `BUY / SELL / HOLD / SELL_SHORT / BUY_TO_COVER` (F54 added short signals)
+- `OrderSide`: `buy / sell / sell_short / buy_to_cover` (maps 1:1 to Alpaca's native short sides)
+- `OrderType`: `MARKET / LIMIT / STOP / STOP_LIMIT / TRAILING_STOP` (F9 trailing via `trail_price`/`trail_percent`)
+- `OrderClass`: `SIMPLE / BRACKET / OCO / OTO`
+- `PositionSide`: `LONG / SHORT`
+- `TimeFrame`: `1m / 5m / 15m / 30m / 1h / 4h / 1d / 1w / 1mo`
+- `TradingMode`: `backtest / paper / live / agent`
+
+### 4.2 Data Models (`models.py`)
+
+```
+Bar              Single OHLCV candlestick
+TradeSignal      Strategy output (signal, confidence 0-1, sell_pct, metadata)
+Order            Broker-bound instruction (side, qty, order_type, bracket/trail legs, ...)
+FilledOrder      Confirmed execution (filled_price, filled_at, commission)
+OpenOrder        Resting (unexecuted) order at the broker
+Position         Open exposure (qty, entry_price, current_price, unrealized_pnl, side)
+PortfolioState   Account snapshot (cash, equity, buying_power, positions dict)
+                 └ equity is the single source of account value (broker-authoritative)
+BacktestResult   Backtest performance (return, Sharpe, MDD, win rate, profit factor, ...)
+```
+
+**Design point**: `TradeSignal` carries more than a direction — `confidence` (drives position
+sizing) and `sell_pct` (partial liquidation), plus a `metadata` dict for per-strategy context
+(e.g. the LLM's rationale).
+
+### 4.3 Agent journal entities (`src/agent/journal.py`)
+
+```
+Decision         Machine-readable trade decision; the unit of brain/body hand-off.
+                 └ symbol, action, qty, rationale, lessons_cited, prompt_version
+                 └ persisted append-only to decisions.jsonl; consumed once (cursor-tracked)
+Thesis           LLM conviction for a position — rationale + entry/stop/target levels
+LessonRecord     A lesson learned from an outcome; written at EOD, recalled by regime/sector
+```
+
+`DecisionAction` literal: `BUY / SELL / HOLD / ADJUST_STOP / SELL_SHORT / BUY_TO_COVER`.
+
+### 4.4 Exceptions (`exceptions.py`)
+
+`AutostockError` (base) → `DataProviderError`, `BrokerError`, `StrategyError`,
+`RiskLimitError`, `ConfigurationError`, `InsufficientDataError`.
+
+---
+
+## 5. Layer Detail
+
+### 5.1 Data layer (`src/data/`)
 
 ```
 BaseDataProvider (ABC)
-├─ get_bars(symbol, timeframe, start, end, limit) -> DataFrame  [추상]
-├─ get_latest_price(symbol) -> float                            [추상]
-└─ get_multiple_bars(...)  -> dict[symbol, DataFrame]           [기본구현]
+├─ get_bars(symbol, timeframe, start, end, limit) -> DataFrame   [abstract]
+├─ get_latest_price(symbol) -> float                             [abstract]
+├─ get_latest_prices(symbols) -> dict   best-effort, partial on failure (NFR-4)
+└─ get_multiple_bars(...) -> dict[symbol, DataFrame]             [default]
 
-구현체:
-├─ YFinanceProvider        무료, 기본값. 백테스트 데이터 소스
-├─ AlpacaProvider          실시간/페이퍼 트레이딩용
-└─ YFinanceNewsProvider    LLM 전략의 뉴스 컨텍스트 (news_provider.py)
+Implementations:
+├─ AlpacaProvider          US realtime/paper data (REST + WebSocket)
+├─ YFinanceProvider        free fallback / backtest source
+├─ KIS provider            Korean equities market data
+└─ YFinanceNewsProvider    news context for LLM strategy
 ```
 
-모든 봉 데이터는 `[open, high, low, close, volume]` 컬럼 + `DatetimeIndex` 규약을 따른다. 이 규약 덕분에 전략은 데이터 출처를 몰라도 동작한다.
+All bars follow the `[open, high, low, close, volume]` + `DatetimeIndex` convention, so
+strategies are agnostic to the data source. **Best-effort multi-symbol fetch (NFR-4)**:
+`get_latest_prices()` returns a partial dict when some symbols fail — one bad symbol must not
+block a whole scan; callers tolerate missing keys.
 
-### 5.2 Strategy 레이어 (`src/strategy/`)
+### 5.2 Strategy layer (`src/strategy/`)
 
-모든 전략은 `BaseStrategy`를 구현하며, **핵심 계약은 단 하나**다:
+Every strategy implements `BaseStrategy`; the core contract is a single method:
 
 ```python
 generate_signal(symbol, bars, portfolio) -> TradeSignal
 ```
 
-추가로 두 가지 선택적 훅을 제공한다:
+Two optional hooks support dynamic symbol selection (momentum screening, sector rotation):
+`supports_selection() -> bool` and `select_symbols(universe, market_data, portfolio)`.
 
-- `supports_selection() -> bool`: 동적 심볼 선정 지원 여부
-- `select_symbols(universe, market_data, portfolio) -> list[str]`: universe에서 거래할 심볼을 동적 선정 (모멘텀 스크리닝, 섹터 로테이션 등). 기본값은 전체 universe.
+**Registry** (`registry.py`): `@register_strategy("rsi")` self-registers a class;
+`create_strategy("rsi", params)` resolves by name. `main.py` imports strategy modules to
+trigger registration, then instantiates the `active_strategies` list from `strategies.yaml`.
 
-#### 전략 레지스트리 (`registry.py`)
+| Category | Location | Members |
+|---|---|---|
+| Technical | `technical/` | MA Crossover, RSI, MACD, Bollinger Bands |
+| ML | `ml/` | Random Forest, LSTM (+ `feature_eng.py`) |
+| LLM | `llm/` | Claude / OpenAI analysis strategy |
+| Ensemble | `ensemble/` | Voting (majority), Weighted |
 
-```python
-@register_strategy("rsi")          # 데코레이터로 _REGISTRY에 자가 등록
-class RSIStrategy(BaseStrategy): ...
+**ML (`BaseMLStrategy`)** adds `build_features / train / predict / save_model / load_model`;
+the base implements the common "load → build features → predict last row" flow. Weights persist
+under `models/`.
 
-create_strategy("rsi", params)     # 이름 문자열 → 인스턴스 (팩토리)
-```
+**Ensemble (`VotingEnsemble`)** collects sub-strategy signals and takes a majority vote, adopting
+a signal only above `min_agreement` (default 0.6); confidence = mean confidence × agreement.
 
-`main.py`는 전략 모듈을 import하여 등록을 트리거한 뒤, `strategies.yaml`의 `active_strategies` 목록을 이름으로 인스턴스화한다.
-
-#### 전략 분류
-
-| 분류 | 위치 | 종류 |
-|------|------|------|
-| 기술적 | `technical/` | MA Crossover, RSI, MACD, Bollinger Bands |
-| 머신러닝 | `ml/` | RandomForest, LSTM (+ `feature_eng.py`) |
-| LLM | `llm/` | Claude/OpenAI 기반 분석 전략 |
-| 앙상블 | `ensemble/` | Voting(다수결), Weighted(가중치) |
-
-**ML 전략 (`BaseMLStrategy`)**: `BaseStrategy`를 확장하여 `build_features / train / predict / save_model / load_model`을 추가 계약으로 둔다. `generate_signal`은 베이스에서 "모델 로드 확인 → 피처 빌드 → 마지막 행 예측" 흐름을 공통 구현하고, 서브클래스는 모델 세부만 채운다. 모델 가중치는 `models/`에 영속화되며 `model_path` 파라미터로 로드.
-
-**앙상블 (`VotingEnsemble`)**: 내부에 여러 전략을 담고(`add_strategy`), 각 전략의 신호를 수집해 다수결 투표. `min_agreement`(기본 0.6) 이상 합의 시에만 해당 신호를 채택하고, 신뢰도는 `평균 신뢰도 × 합의율`로 산출한다.
-
-#### LLM 전략 서브시스템 (`src/strategy/llm/`)
-
-가장 복잡한 모듈로, 6개 컴포넌트로 구성된다:
+**LLM subsystem (`src/strategy/llm/`)** — the most complex module:
 
 ```
-strategy.py    LLMStrategy — generate_signal 구현. 데이터 포맷 → LLM 호출
-                   → JSON 파싱(3단계 폴백) → TradeSignal 변환
-client.py          BaseLLMClient + ClaudeClient / OpenAIClient
-                   └ create_llm_client() 팩토리, 지수 백오프 재시도 내장
-data_formatter.py  OHLCV·뉴스를 LLM 프롬프트용 텍스트로 변환, 토큰 절단
-prompt_manager.py  프롬프트 버전 관리 (v1, v2, ...). JSON 히스토리 영속화,
-                   버전별 백테스트 성과 기록, latest/best 조회
-auto_improver.py   백테스트 결과 분석 → LLM에 개선 요청 → 새 프롬프트 버전 생성
-prompt_manager.py  PromptVersion / PromptHistory / BacktestMetrics 모델
+strategy.py        LLMStrategy — format data → call LLM → parse JSON → TradeSignal
+client.py          BaseLLMClient + ClaudeClient / OpenAIClient; factory + exp. backoff retry
+data_formatter.py  OHLCV + news → prompt text, token truncation
+prompt_manager.py  Prompt versioning (v1, v2, ...), per-version backtest metrics, latest/best
+auto_improver.py   Analyze backtest results → ask LLM to improve → new prompt version
 ```
 
-**견고성 설계**: LLM 응답은 비결정적이므로 `_parse_llm_response`가 ①직접 JSON 파싱 ②마크다운 코드펜스 추출 ③정규식 객체 추출 ④키워드 폴백(낮은 신뢰도) 순으로 단계적으로 처리한다. 어떤 단계에서도 실패하면 `HOLD`를 반환해 안전하게 작동한다.
+**Robustness**: LLM output is non-deterministic, so `_parse_llm_response` cascades — ①direct
+JSON, ②markdown code-fence extraction, ③regex object extraction, ④keyword fallback (low
+confidence). Any failure returns `HOLD` — fail-safe.
 
-### 5.3 Risk 레이어 (`src/risk/`)
+### 5.3 Risk layer (`src/risk/`) — the gatekeeper
 
-신호를 실제 주문으로 변환하는 **게이트키퍼**다. 전략과 브로커 사이에 위치한다.
+Converts signals/decisions into actual orders; sits between strategy/agent and broker. **This
+is the one enforcement point in the system.**
 
 ```
 RiskManager
-├─ evaluate_signal(signal, price, portfolio) -> Order | None
-│   ├─ BUY:  최대 포지션 수 체크 → 중복 보유 차단 → 사이징 → Order
-│   └─ SELL: 보유 확인 → sell_pct 적용(부분청산) → Order
-├─ check_stop_loss(portfolio)   -> list[Order]   손절 트리거
-└─ check_take_profit(portfolio) -> list[Order]   익절 트리거
+├─ validate_order(...) -> Order | None   single gate from signal/decision to Order
+├─ check_stop_loss(portfolio)   -> list[Order]
+└─ check_take_profit(portfolio) -> list[Order]
 
 PositionSizer
-└─ calculate_shares(...) -> int
-    min(최대배분, 리스크기반배분) × confidence, 가용현금 한도
+└─ calculate_shares(...) -> int   min(fixed-pct alloc, risk-based alloc) × confidence, capped by cash
 ```
 
-**리스크 파라미터** (config 기본값):
-- `max_position_pct=0.1` — 종목당 최대 10%
-- `max_portfolio_risk=0.02` — 거래당 포트폴리오 리스크 2%
-- `stop_loss_pct=0.05` / `take_profit_pct=0.15`
-- `max_open_positions=10`
+Defaults: `max_position_pct=0.1`, `max_portfolio_risk=0.02`, `stop_loss_pct=0.05`,
+`take_profit_pct=0.15`, `max_open_positions=10`. **Sizing formula**: take the smaller of
+fixed-fraction (`equity × max_position_pct`) and risk-based (`equity × max_portfolio_risk /
+stop_loss_pct`), scale by signal confidence, then cap by available cash.
 
-**포지션 사이징 공식**: 고정비율 배분(`equity × max_position_pct`)과 리스크기반 배분(`equity × max_portfolio_risk / stop_loss_pct`) 중 작은 값을 택하고, 신호 신뢰도로 스케일한 뒤 가용 현금으로 한 번 더 제한한다.
+**Dual-mode (structural debt S-2)**: `use_bracket_orders` selects legacy market-order +
+polled-exits vs. resting **BRACKET/OCO** orders whose protective legs rest at the exchange.
+See §9.
 
-### 5.4 Execution 레이어 (`src/execution/`)
+See [§6 Business Rules](#6-key-business-rules) for the shorting switch, circuit breaker, and
+bracket-leg validation rules enforced here.
+
+### 5.4 Execution layer (`src/execution/`)
 
 ```
 BaseBroker (ABC)
 ├─ submit_order(order) -> FilledOrder
 ├─ get_position / get_all_positions / get_portfolio_state
-├─ cancel_order / close_position
+├─ get_open_orders / cancel_order / close_position
 
-구현체:
-├─ SimulatedBroker   백테스트용. 즉시 체결, 평단가 갱신, 현금/포지션 장부 관리
-│                    └ set_current_price()로 봉마다 시세 주입, reset()으로 초기화
-└─ AlpacaBroker      실거래/페이퍼. Alpaca API 래핑
+Implementations:
+├─ SimulatedBroker    backtest — immediate fill, cash/position ledger, set_current_price()
+├─ AlpacaBroker       US paper/live (Alpaca Trading API)
+├─ BrokerApiBroker    Alpaca Broker API sandbox account farm (shares logic via AlpacaShapedBroker)
+└─ KisPaperBroker     Korean equities (KIS / pykis)
 ```
 
-`SimulatedBroker`는 매수 시 현금 부족·매도 시 미보유/수량초과를 `BrokerError`로 막아 백테스트의 현실성을 보장한다. 동일한 `BaseBroker` 계약 덕분에 `TradingEngine`은 시뮬레이션인지 실거래인지 구분하지 않는다.
+The shared `BaseBroker` contract means callers never know whether they're simulating or
+trading live. `BrokerApiBroker` shares request-building / fill-polling / position-mapping with
+`AlpacaBroker` via `AlpacaShapedBroker`; **R7** fixed short-cover side mapping
+(`sell` → `buy_to_cover`) and made TIF handling fail-closed (unsupported TIF raises rather than
+silently downgrading).
 
-### 5.5 Trading 오케스트레이션 (`src/trading/`)
+**Multi-broker routing**: US → Alpaca, KR → KIS, backtest → Simulated. Broker is selected at
+startup via config (`main.py:create_broker()`), not at order time.
 
-#### TradingEngine — 실거래 파이프라인의 심장
+### 5.5 Trading orchestration (`src/trading/`)
 
-```python
-run_cycle() -> list[FilledOrder]:
-    1. 포트폴리오 조회
-    2. _check_risk_exits()        # 손절/익절 먼저 검사·실행
-    3. _load_market_data()        # universe 전체 봉 로드
-    4. for 전략 in strategies:
-         selected = 전략.select_symbols(...) if supports_selection else universe
-         for 심볼 in selected:
-             signal = 전략.generate_signal(심볼, bars, portfolio)
-             _process_signal()    # 시세조회 → 리스크평가 → 주문제출
-         포트폴리오 갱신
-```
+`TradingEngine.run_cycle()`: fetch portfolio → check risk exits (stop/take first) → load
+universe bars → for each strategy, `select_symbols()` then `generate_signal()` per symbol →
+risk-evaluate → submit. Each step is try/except-isolated so one symbol/strategy failure
+doesn't abort the cycle.
 
-각 단계가 try/except로 격리되어 한 심볼·전략의 실패가 전체 사이클을 중단시키지 않는다.
+| Mode (`modes/`) | Trigger | Use |
+|---|---|---|
+| `BatchTradingMode` | APScheduler interval (default 60m) | periodic rebalancing |
+| `RealtimeTradingMode` | Alpaca WebSocket bar events | reactive trading (per-symbol `run_cycle_for_symbol`) |
+| `AgentTradingMode` | market-time schedule (see §5.8) | agentic LLM PM |
 
-#### 실행 모드 (`modes/`)
+`TradingScheduler` (`scheduler.py`) wraps APScheduler and supports US-market cron jobs
+(09:30 ET open, 15:55 ET close) in addition to interval jobs.
 
-| 모드 | 트리거 | 용도 |
-|------|--------|------|
-| `BatchTradingMode` | APScheduler 주기 실행(기본 60분) | 정기 리밸런싱 |
-| `RealtimeTradingMode` | Alpaca WebSocket 봉 수신 | 실시간 반응 매매 (봉마다 `run_cycle_for_symbol`로 해당 심볼만 처리) |
+### 5.6 Backtest layer (`src/backtest/`)
 
-#### TradingScheduler (`scheduler.py`)
-
-APScheduler 래퍼. 인터벌 작업뿐 아니라 미국장 개장(09:30 ET)·마감(15:55 ET) cron 잡을 지원한다.
-
-### 5.6 Backtest 레이어 (`src/backtest/`)
-
-```
-BacktestEngine
-└─ run(universe, bars, warmup_period) -> BacktestResult
-    워밍업 이후 봉 단위로 순회:
-      ├ 전 심볼 시세 갱신 (broker.set_current_price)
-      ├ 손절/익절 검사
-      ├ market_data = 각 심볼의 iloc[:i+1]  (룩어헤드 방지)
-      ├ 전략 신호 생성 → 리스크 평가 → 시뮬 체결
-      └ equity 기록
-    → generate_report()로 성과 지표 산출
-
-metrics.py    Sharpe / Sortino / Calmar / MDD / 승률 / Profit Factor
-optimizer.py  ParameterOptimizer — param_grid 전수조합 그리드서치
-```
-
-**룩어헤드 편향 방지**: 백테스트는 시점 `i`에서 `bars.iloc[:i+1]`만 전략에 전달하여 미래 데이터 누수를 차단한다. 단일/다중 심볼 모두 지원하며(`run("AAPL", df)` 또는 `run([...], dict)`), 실거래 엔진과 동일한 `RiskManager`·전략을 사용해 백테스트-실거래 일관성을 확보한다.
+`BacktestEngine.run(...)` iterates bars after a warmup, updating prices, checking stops/takes,
+and passing only `bars.iloc[:i+1]` to the strategy (**look-ahead bias prevention**). It uses the
+same `RiskManager` and strategies as live for consistency. `metrics.py` computes
+Sharpe/Sortino/Calmar/MDD/win-rate/profit-factor (round-trip based, shared via
+`src/core/trades.py::match_round_trips`); `optimizer.py` does grid-search over a param grid.
 
 ### 5.7 Monitoring (`src/monitoring/`)
 
-- `logger.py`: loguru 기반 로깅 설정 (`setup_logging`)
-- `alerts.py`: Slack/Telegram 알림 (config의 `monitoring`에서 토글)
+`logger.py` (loguru setup), `alerts.py` (Slack/Telegram, toggled in config), plus health
+checkers (account, broker, LLM, process, disk, risk).
 
-### 5.8 Agent 경로 (`src/agent/`) — LLM 포트폴리오 매니저
+### 5.8 Agent path (`src/agent/`) — the LLM portfolio manager
 
-전략 경로와 별개의 두 번째 오케스트레이션 경로다. `TradingEngine`이 심볼별로 도는 것과 달리,
-LLM PM이 **책 전체를 한 턴에** 추론한다. **brain/body 분리**가 핵심 설계다: LLM은 자문(저널 작성)만 하고,
-주문은 결정론적 Python만 넣는다.
-
-```
-AgentTradingMode (trading/modes/agent.py)   장중 인식 스케줄로 두 축을 합성
-├─ AgentTradingLoop (orchestrator.py)   brain: 일일 턴(리서치/장중/EOD) 시퀀싱
-│   └─ AgentSession (session.py)        로컬 `claude -p` CLI를 하루 단위 세션으로 래핑
-│        └─ Journal (journal.py)        파일 기반 영속 메모리(durable memory)
-│             ├─ decisions.jsonl        기계 실행용 Decision 라인(append-only)
-│             ├─ positions/<SYM>.md     종목별 논지(thesis)·계획(entry/stop/target)
-│             └─ regime/watchlist/lessons.md
-└─ DecisionExecutor (executor.py)       body: 결정을 읽어 실행 — 유일한 주문 경로
-     ├─ 풀 제약·만료·서킷브레이커 검사
-     ├─ RiskManager(브래킷 모드) → Broker
-     └─ 커서(.executor_state.json)로 멱등 실행
-```
-
-**핵심 설계 포인트**:
-
-- **brain/body 분리**: 에이전트는 `decisions.jsonl`에 제안을 append할 뿐, 실행기만 주문을 넣는다.
-  실행기는 모든 결정을 다른 경로와 **동일한 게이트**(`RiskManager` → `Broker`)에 통과시킨다.
-- **저널 = 단일 진실 출처**: 일일 CLI 세션은 하루 안의 연속성만 담당하고, 날짜가 바뀌면 새 세션을 쓴다.
-  durable state는 전부 `workspace/`의 파일(gitignore된 런타임 상태).
-- **멱등 실행**: 커서가 처리한 결정 라인 수를 기록해, 재실행해도 동일 브래킷을 한 번만 제출한다
-  (이후엔 거래소가 OCO를 보유).
-- **자문-실행 시간 분리**: 리서치는 장 시작 전에 앞서 돌 수 있지만(`is_market_open`이 False면 결정은 pending 유지),
-  실행은 정규장에서만 일어난다.
-- **텔레메트리/장부**: `logs.turn`(턴별 비용), `logs.equity`(일일 자산 vs 벤치마크), `logs.trades`(완료된 라운드트립),
-  `review.py`(EOD 셀프리뷰 → lessons.md).
-
-> 참고: 실행기가 Alpaca에 한해 trade-ledger를 재구성할 때 브로커의 비공개 속성에 접근하는 등 일부 누수가 있다 —
-> §9 및 `aidlc-docs/inception/reverse-engineering/code-quality-assessment.md`(S-4) 참고.
-
-#### 5.8.1 장중 루프 재설계 (F3, `src/agent/intraday/`)
-
-15분 스케줄 장중 턴은 유지하되 **(1) 구조화 brief 주입으로 재계산을 없애고, (2) 판단이 필요한 시장
-이벤트에서 우선 발화하는 이벤트 기반 wake 턴을 추가**한다. `--steering`일 때만 활성(스냅샷/RunState/
-ReconcileWorker에 의존). 없으면 레거시 프롬프트로 폴백(동작 보존).
+A second orchestration path. Unlike `TradingEngine`'s per-symbol loop, the LLM PM reasons over
+**the whole book in one turn**. The **brain/body split** is the central design: the LLM only
+advises (journals); only deterministic Python places orders.
 
 ```
-agent_wake(5s, 캐시만)   WakeDetector ─ WakeEvent[] ─┐ coalesce(버퍼는 fire 시 drain)
- data_provider→BarCache   ▲ last_snapshot(fills/pos)  ▼
- watch.jsonl ────────────┘   ReconcileWorker.trigger(kind="wake") → reconcile_turn(turn_lock)
- agent_intraday(15m)   BriefAssembler → run_intraday(brief)   [try_scheduled_turn=skip-if-busy]
-                        LLM 턴 ─ decisions.jsonl ─ gate ─ RiskManager ─ Broker   (불변)
+AgentTradingMode (trading/modes/agent.py)   composes the market-time schedule
+├─ AgentTradingLoop (orchestrator.py)   brain: sequences daily turns (research / intraday / EOD)
+│   └─ AgentSession (session.py)        wraps local `claude -p` CLI as a per-day session
+│        └─ Journal (journal.py)        durable file-based memory
+│             ├─ decisions.jsonl        append-only machine-executable Decision lines
+│             ├─ positions/<SYM>.md     per-symbol thesis + plan (entry/stop/target)
+│             └─ regime / watchlist / lessons
+└─ DecisionExecutor (executor.py)       body: reads decisions and executes — the only order path
+     ├─ pool / expiry / circuit-breaker checks
+     ├─ RiskManager (bracket mode) → Broker
+     └─ cursor (.executor_state.json) for idempotent execution
 ```
 
-- **brief**(`brief.py`): 시장데이터=데몬 `BarCache`(캐시), account/체결/락/대기승인=in-proc `last_snapshot`만
-  (브로커 직접호출 없음), 사람 directive=SteeringState. held는 스냅샷 positions에서. 스냅샷 없으면 account
-  섹션 생략(fail-closed).
-- **wake 감지**(`wake.py`): new_fill(활동내역 커서)·abnormal_move(`abnormal.py`: ATR k 또는 vol m)·watch_trigger·
-  protective_reassess. 캐시만 읽어 스케줄러 스레드 비블로킹. `paused`면 전체 보류, `entries_halted`면
-  `entry_inducing` wake만 억제(게이트는 halt를 막지 않으므로 발화 단계에서).
-- **watch**(`watch_store.py` + agent `watch set/clear/list` 도구): append-only `watch.jsonl`(도구가 유일 writer),
-  fired 상태는 별도 `watch_fired.json{et_date,fired_ids}`(ET-자정 sweep).
-- **체결 진실**(`get_fills`): Alpaca `/account/activities`(raw GET, 활동 id 기준 멱등)를 bus 워커에서 조회해
-  스냅샷 `fills`로 — 시세 추론이 아닌 broker 권위.
-- **동시성**: 새 프리미티브 없음. `ReconcileWorker`는 per-kind 타이머로 바뀌어 wake 폭주가 human reconcile을
-  굶기지 않음. 단일 `turn_lock`은 유지 — human reconcile은 진행 중 wake 턴 1회분만 대기(세션 무결성의 본질 비용).
-- 튜닝: `config/settings.yaml`의 `intraday:` 블록(abnormal_move/wake/news/bars/price).
+**Key design points**:
 
-### 5.9 오퍼레이터 콘솔 / 스티어링 (`operator-console/`, `src/agent/steering/`)
+- **Brain/body split** — the agent only appends proposals to `decisions.jsonl`; the executor is
+  the sole actuator and routes every decision through the **same gate** (`RiskManager → Broker`)
+  as the other paths.
+- **Journal = single source of truth** — the daily CLI session handles intra-day continuity only;
+  a new day starts a new session. All durable state lives in `workspace/` files (gitignored).
+- **Idempotent execution** — the cursor records how many decision lines were processed, so a
+  restart re-submits each bracket exactly once (the exchange then holds the OCO).
+- **Advisory/execution time-split** — research can run pre-open (decisions stay pending while
+  `is_market_open` is False); execution only happens in regular hours.
+- **Telemetry/ledger** — `turn_log` (per-turn cost), `equity_log` (daily equity vs benchmark),
+  `trades_log` (closed round-trips), `review.py` (EOD self-review → lessons).
 
-돌고 있는 에이전트를 사람이 **자연어로 개입**하기 위한 계층이다. 무엇을 위한 것인지가 핵심이고
-세부는 각 컴포넌트의 README/코드에 있다.
+#### 5.8.1 Intraday loop redesign (F3, `src/agent/intraday/`)
 
-- **무엇을/왜**: 에이전트(및 콘솔의 LLM)는 **주문 권한이 없다**. 운영자가 "AAPL 절반 팔아" 같은
-  의도를 콘솔에 주면, **사람이 확인**한 명령만 레포 루트 `steering/` 파일드롭 채널(commands/events/
-  snapshot)로 데몬에 전달되고, 데몬은 그것도 다른 경로와 **동일한 `RiskManager→Broker` 게이트**로만
-  체결한다. 즉 advisor-only 불변을 유지하면서 사람-개입을 더한다.
-- **데몬 측 엔진**(`src/agent/steering/`, F4): 파일드롭 채널 읽기/스냅샷 발행 + 단일 워커
-  CommandBus(브로커/커서 직렬화) + TurnCoordinator(모든 LLM 턴 직렬화) + RunState(pause/halt).
-  F3 wake 루프(§5.8.1)가 이 엔진 위에 올라간다.
-- **콘솔**(`operator-console/`, F4): trader용으로 리브랜드한 **opencode 하드포크**. LLM은 제안만 하고
-  실제 쓰기는 사람이 확인하는 결정론 계층이 담당(권한 구조적 분리). 데몬과는 파일드롭 채널로만 통신.
-- **런처/데몬 관리**(F5): `~/.local/bin/autostock` 런처(설치 `operator-console/launcher/install.ts`).
-  실행 시 fail-closed preflight → **systemd --user** 데몬을 자동 기동(이미 떠 있으면 attach) → 콘솔 인계.
-- **사이드바**(F6): run-state·시장·포지션·대기승인 + 계좌/라운드트립(승률·실현손익) 요약, 마우스 드래그
-  리사이즈. `scripts/monitor.sh` 모니터링 일부를 흡수.
+Keeps the 15-minute scheduled turn but **(1) injects a structured brief** (eliminating
+recompute) and **(2) adds event-driven wake turns** that fire first on market events needing
+judgment. Active only with `--steering` (depends on snapshot / RunState / ReconcileWorker);
+otherwise falls back to the legacy prompt (behavior-preserving).
+
+- **brief** (`brief.py`): market data from the daemon `BarCache`; account/fills/locks/pending
+  approvals from the in-proc `last_snapshot` only (no direct broker calls); human directives
+  from SteeringState. Fail-closed: no snapshot → omit the account section.
+- **wake detection** (`wake.py`): `new_fill` / `abnormal_move` (ATR×k or volume×m) /
+  `watch_trigger` / `protective_reassess`. Reads cache only, non-blocking on the scheduler
+  thread. `paused` holds everything; `entries_halted` suppresses only entry-inducing wakes.
+- **watch** (`watch_store.py` + agent `watch set/clear/list` tools): append-only `watch.jsonl`;
+  fired state tracked separately with an ET-midnight sweep.
+- **fill truth** (`get_fills`): Alpaca `/account/activities` (idempotent by activity id) read on
+  the bus worker — broker-authoritative, not inferred from prices.
+- **concurrency**: one `turn_lock`; per-kind reconcile timers prevent a wake storm from
+  starving human reconcile. Tuning under `config/settings.yaml` `intraday:`.
+
+### 5.9 Operator console / steering (`operator-console/`, `src/agent/steering/`)
+
+The layer for a human to **intervene in a running agent in natural language**. The *what/why*
+matters most; details live in each component's code.
+
+- **What/why**: the agent (and the console's own LLM) have **no order authority**. When an
+  operator gives intent ("trim AAPL by half"), only a **human-confirmed** command travels via
+  the repo-root `steering/` file-drop channel (commands/events/snapshot) to the daemon, which
+  executes it through the **same `RiskManager → Broker` gate** as every other path. This
+  preserves the advisor-only invariant while adding human intervention.
+- **Daemon engine** (`src/agent/steering/`, F4): file-drop channel read + snapshot publish +
+  single-worker **CommandBus** (broker/cursor serialization, NFR-2) + TurnCoordinator (serializes
+  all LLM turns) + RunState (pause/halt). The F3 wake loop (§5.8.1) runs atop this engine.
+- **Console** (`operator-console/`, F4): a hard fork of
+  [opencode](https://github.com/sst/opencode) rebranded for trading. The LLM only proposes;
+  human-confirmed writes are handled by a deterministic layer (structural separation of
+  authority). Talks to the daemon only via the file-drop channel.
+- **Launcher / daemon management** (F5): the `~/.local/bin/autostock` launcher (install via
+  `operator-console/launcher/install.ts`) runs a fail-closed preflight, auto-starts a
+  **systemd --user** daemon (or attaches if up), then hands off to the console.
+- **Sidebar** (F6): run-state, market, positions, pending approvals, plus account/round-trip
+  (win-rate, realized P&L) summary, mouse-drag resizable.
+
+### 5.10 Research signals (`src/signals/`)
+
+`SignalCollector` assembles a pre-research **brief** injected into the agent's research prompt
+(TTL-cached so the push path and the agent's pull tools share one fetch). Sources, all
+**fail-honest** (a failing source returns an error annotation; the turn proceeds with partial
+signals):
+
+- **Movers** — price % / volume-multiple scan.
+- **Peer read-through** — propagates a mover to sector peers via a static `PeerMap` (R6/R7).
+- **Earnings & IPO calendars** — Finnhub (F61 / F78).
+- **Retail sentiment** — StockTwits self-labeled bull/bear, surfaced only as **baseline z-score
+  outliers** vs. a symbol's own rolling history (F77; the crowd is ~75% bullish by default, so
+  raw ratios carry no signal).
+
+### 5.11 Self-learning (`src/agent/`, charter-bounded)
+
+EOD `review.py` produces `LessonRecord`s; lessons are attributed to decisions via
+`lessons_cited` + `prompt_version` on each `Decision`. Guidance prompts may **self-rewrite —
+only within an immutable `CONSTITUTION`** (`constitution.py`), with a compliance check and
+automatic rollback. Constitution changes require user approval; prompt swaps stay automatic.
+The machinery ships **inert** by default (`AgentTradingLoop._rewrite_fn` is `None`).
 
 ---
 
-## 6. 주요 데이터 흐름
+## 6. Key Business Rules
 
-### 6.1 실거래 한 사이클 (Batch/Realtime 공통)
+These invariants are enforced in code, not prompts (full catalog:
+`aidlc-docs/codekb/business-rules.md`):
 
-```
-DataProvider          Strategy           RiskManager         Broker
-     │                   │                    │                 │
-     │ get_bars()        │                    │                 │
-     │◀──────────────────┤                    │                 │
-     │  OHLCV DataFrame   │                    │                 │
-     │──────────────────▶│ generate_signal()  │                 │
-     │                   │── TradeSignal ────▶│ evaluate_signal()│
-     │                   │                    │── Order ────────▶│ submit_order()
-     │                   │                    │                 │── FilledOrder ─▶
-```
-
-### 6.2 LLM 프롬프트 자기개선 루프
-
-```
-백테스트 실행 (llm 전략)
-     │  BacktestResult[]
-     ▼
-PromptManager.record_backtest_result()   ← 버전별 성과 누적
-     │
-     ▼
-PromptAutoImprover.analyze_and_improve()
-     ├─ 성과 집계 + 이슈 자동 진단 (_identify_issues: 음수수익/낮은Sharpe/과매매 등)
-     ├─ LLM에 "현재 프롬프트 + 성과 + 이슈" 전달
-     └─ 개선된 프롬프트 JSON 수신 → 파싱
-     │
-     ▼
-PromptManager.save_prompt(parent_version=...)   ← v2, v3 ... 으로 버전업
-     │
-     ▼
-(재백테스트하여 개선 검증 — 현재는 수동/반복 호출)
-```
-
-`main.py --improve-prompt --improvement-iterations N`으로 구동한다.
+- **Single risk gate** — no `BaseBroker.submit_order()` without a `RiskManager`-produced
+  `Order`. LLM, strategy, and human commands all pass through it.
+- **Position size limit** — no position exceeds `max_position_pct` of equity.
+- **Portfolio circuit breaker** — drawdown past `circuit_breaker_pct` blocks *new* entries
+  (closing/reducing is never blocked).
+- **Agent order authority** — only `DecisionExecutor` places orders in agent mode; decisions are
+  consumed exactly once (cursor + atomic `os.replace()`).
+- **Shorting off by default** — `shorting_enabled=false`; new shorts rejected when off, but
+  covering an existing short is always allowed. Short market halt (SPY up ≥3%) and individual
+  stock halt (symbol up ≥10%) further gate new shorts.
+- **Bracket-leg validation** — long: stop below / take above entry; short: inverse.
+- **Fail-closed TIF (R7)** — unsupported `time_in_force` raises rather than silently
+  downgrading (supported: `day`, `gtc`, `ioc`, `fok`).
+- **Advisor-only console** — every human command goes through the same risk gate; the console
+  LLM is advisory.
+- **Single writer for broker ops (NFR-2)** — all broker mutations on one CommandBus worker
+  thread.
 
 ---
 
-## 7. 확장 가이드
+## 7. Extension Guides
 
-### 새 전략 추가
-1. `src/strategy/<분류>/my_strategy.py` 생성
-2. `BaseStrategy` 상속 + `@register_strategy("my_strategy")`
-3. `generate_signal()` 구현 (필요 시 `select_symbols()` 오버라이드)
-4. `main.py`의 import 목록에 추가 (등록 트리거)
-5. `config/strategies.yaml`의 `strategies`에 정의 + `active_strategies`에 추가
+### Add a strategy
+1. Create `src/strategy/<category>/my_strategy.py`.
+2. Subclass `BaseStrategy` + `@register_strategy("my_strategy")`.
+3. Implement `generate_signal()` (override `select_symbols()` if needed).
+4. Add the import to `main.py` (triggers registration).
+5. Define it in `config/strategies.yaml` and add to `active_strategies`.
 
-### 새 데이터 제공자 추가
-1. `src/data/providers/my_provider.py`에서 `BaseDataProvider` 구현
-2. `get_bars` / `get_latest_price` 구현 (OHLCV+DatetimeIndex 규약 준수)
-3. `main.py:create_data_provider()`에 분기 추가
+### Add a data provider
+1. Implement `BaseDataProvider` in `src/data/providers/my_provider.py`.
+2. Implement `get_bars` / `get_latest_price` (honor the OHLCV + DatetimeIndex convention).
+3. Add a branch in `main.py:create_data_provider()`.
 
-### 새 브로커 추가
-1. `src/execution/brokers/my_broker.py`에서 `BaseBroker` 구현
-2. 6개 추상 메서드 모두 구현
-3. `main.py:create_broker()`에 분기 추가
+### Add a broker
+1. Implement `BaseBroker` in `src/execution/brokers/my_broker.py`.
+2. Implement all abstract methods.
+3. Add a branch in `main.py:create_broker()`.
 
 ---
 
-## 8. 설정 체계 (`config/`)
+## 8. Configuration (`config/`)
 
 ```
-config.py          Pydantic Settings — YAML + .env + 환경변수 병합
-                   └ get_settings() (lru_cache로 싱글톤)
-settings.yaml      앱/브로커/데이터/트레이딩/리스크/백테스트/LLM 설정
-strategies.yaml    전략 정의·파라미터·active 목록·앙상블 구성
-prompts/           트레이딩 프롬프트 텍스트 + 버전 히스토리 JSON
-.env               API 키 (alpaca/anthropic/openai) — 커밋 금지
+config.py        Pydantic Settings — merges YAML + .env + env vars; get_settings() (lru_cache singleton)
+settings.yaml    app / broker / data / trading / risk / backtest / LLM / signals / intraday
+strategies.yaml  strategy definitions, params, active list, ensemble composition
+.env             API keys (Alpaca / Anthropic / OpenAI / Finnhub / KIS) — never committed
 ```
 
-**우선순위**: CLI 인자 > 환경변수 > `.env` > YAML > 코드 기본값.
-환경변수는 `env_nested_delimiter="__"`로 중첩 설정 접근 (예: `RISK__STOP_LOSS_PCT`).
+**Precedence**: CLI args > env vars > `.env` > YAML > code defaults. Nested keys via
+`env_nested_delimiter="__"` (e.g. `RISK__STOP_LOSS_PCT`). `AUTOSTOCK_ENV_FILE` lets the test
+harness load a separate `.env.test`.
+
+### External integrations
+
+| Integration | Purpose | Auth |
+|---|---|---|
+| Alpaca Trading API | US order execution, portfolio (paper + live) | `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` |
+| Alpaca Broker API | Sandbox account-farm creation/funding | `BROKER_API_KEY` / `BROKER_SECRET_KEY` |
+| Alpaca Data API | US bars, quotes, news (REST + WebSocket) | same as Trading |
+| KIS OpenAPI (`pykis` 2.1.6) | Korean equities paper broker + data | `KIS_APP_KEY` / `KIS_APP_SECRET` / `KIS_ACCOUNT_NO` |
+| local `claude` CLI | Agent brain (AgentSession) | OAuth subscription (`~/.claude/`) |
+| Anthropic / OpenAI SDK | LLM strategy signals | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` |
+| Finnhub | Earnings + IPO calendars (signals) | `FINNHUB_API_KEY` |
+| StockTwits | Retail sentiment (unauthenticated, ~200 req/hr) | none |
+| Yahoo Finance | Fallback data + news | none |
+
+All persistence is **file-based** (JSONL logs, journal files, file-drop IPC) — no relational
+or NoSQL database. KIS specifics: 모의투자 (paper) has no stop-limit (`ORD_DVSN=22`, live-only);
+KIS live trading is pending.
 
 ---
 
-## 9. 알려진 이슈 / 개선 포인트
+## 9. Known Structural Debt
 
-> 설계 검토 중 발견된 사항. 향후 작업 시 참고. 상세·증거·수정안은
-> `aidlc-docs/inception/reverse-engineering/code-quality-assessment.md` 참고.
+> Found during design review. See `aidlc-docs/codekb/` for current detail.
 
-**열린 이슈 (보류)**:
+- **S-2** — `RiskManager` is dual-mode (`use_bracket_orders`): legacy market-order + polled exits
+  vs. resting BRACKET/OCO; the two modes diverge in behavior.
+- **S-3** — some `src/` modules reach into the config singleton directly (layer violation vs.
+  injection through `main.py`).
+- **Short logic** — `PositionSide.SHORT` and short signals exist (F54/F60), but some risk/execution
+  paths still assume long-only in places.
 
-1. **`get_status()`의 하드코딩** (`trading/engine.py:278` 부근): `"mode": "live"` 고정. (Q-3)
-2. **LLM 개선 루프의 재백테스트 미자동화**: `_run_prompt_improvement`가 새 프롬프트로 자동 재백테스트하지 않아, 반복 개선 시 동일 성과 데이터를 재사용한다.
-3. **테스트 공백** (Q-4): `TradingEngine`·LLM 서브시스템·데이터 제공자·`AgentSession`은 아직 무테스트.
-4. **숏 포지션 미지원** (H-1): `PositionSide.SHORT` 열거형은 있으나 리스크/실행 로직은 롱 온리 가정.
-
-> **해결됨**:
-> - `RealtimeTradingMode`의 `engine.symbols` → `engine.universe` 속성 불일치, 및 봉 수신마다 universe 전체를 재로드하던 비효율(`run_cycle_for_symbol`로 틱된 단일 심볼만 처리).
-> - 구조 리팩터링 S-5/S-3/S-1+S-2/S-4 (위 1~4번) 완료.
-> - **백테스트 정합성 (B-1/B-2)**: 메트릭이 라운드트립 기반(`src/core/trades.py::match_round_trips` 공유), 스탑/익절이 봉 high/low로 장중 트리거(resting OCO)되어 실거래와 일치. `BacktestResult.trades`도 채워짐.
-> - **소수 포지션 매도 (B-3)**: `_handle_sell`의 int 절삭·최소 1주 강제 제거 — 전량청산은 정확한 보유수량, fractional 안전.
-> - **계좌가치 단일화 (M-1)**: 죽은 `PortfolioState.total_value` 프로퍼티 제거 — `equity`(브로커 권위값)가 유일 출처.
+> **Resolved** (historical): realtime `engine.symbols`→`universe` mismatch and per-bar universe
+> reload (now `run_cycle_for_symbol`); backtest fidelity (round-trip metrics + intraday OCO
+> triggers via bar high/low); fractional-position sell truncation; single account-value source
+> (`PortfolioState.equity`).
 
 ---
 
-*이 문서는 코드베이스(`src/`, `config/`, `main.py`) 분석을 바탕으로 작성되었다. 구조 변경 시 함께 갱신할 것.*
+*This document is derived from the codebase knowledge base (`aidlc-docs/codekb/`) and source
+(`src/`, `config/`, `main.py`). Update it alongside structural changes.*
