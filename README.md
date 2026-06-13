@@ -282,3 +282,22 @@ autostock/
 ```
 
 > 자세한 내부 구조·설계 의도는 [docs/DESIGN.md](docs/DESIGN.md) 참고.
+
+---
+
+## License
+
+Copyright 2026 Jihoon Park. Licensed under the **Apache License 2.0** — see [`LICENSE`](LICENSE) for the full text.
+
+You are free to fork and build on this project. If you distribute or publish a fork or derivative,
+you must:
+- Retain the copyright notice and `NOTICE` file.
+- Note any files you modified.
+- Include a copy of the Apache-2.0 license.
+
+The `operator-console/` subdirectory is a fork of [opencode](https://github.com/sst/opencode) and
+retains its original MIT license (see `operator-console/LICENSE`).
+
+> **Citation**: If you reference this project in research or publication, please cite it using
+> the [`CITATION.cff`](CITATION.cff) metadata (GitHub shows a "Cite this repository" button in
+> the sidebar).

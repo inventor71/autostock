@@ -1,0 +1,9 @@
+autostock
+Copyright 2026 Jihoon Park
+
+This product is licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+The operator-console/ subdirectory contains a fork of opencode
+(https://github.com/sst/opencode), which is licensed under the MIT License.
+See operator-console/LICENSE for details.
