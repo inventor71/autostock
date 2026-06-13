@@ -277,6 +277,34 @@ export async function checkReply(input: {
   return v.ok ? null : `${wouldDeny} [${v.reason}]`
 }
 
+// ── F79 S1: session-prompt gate (remote agent steering = mutating) ───────────
+//
+// Sending a prompt to a session STEERS the agent — a mutating action. F75 gated only
+// permission *replies*; F71's "input allowed + WebAuthn gate" decision (FR-4) extends the
+// gate to remote prompts so a phone client can't steer without a passkey signature, and
+// the client is not the sole line of defense (SECURITY-08/11). Host-local / in-process
+// (embedded & attach-mode TUI, and the daemon's own in-process sends) carry no remote
+// socket and pass through untouched — same trust boundary as the reply gate.
+
+/** Pure: true => this prompt comes from a remote origin and needs a valid assertion. */
+export function promptNeedsAssertion(remoteAddress: string | undefined, tailscaleIdentity: boolean): boolean {
+  return isRemoteOrigin(remoteAddress, tailscaleIdentity)
+}
+
+/** One-call gate for session-prompt handlers: null = proceed, string = deny reason. */
+export async function checkPrompt(input: {
+  remoteAddress: string | undefined
+  tailscaleUserLogin: string | undefined
+  header: string | undefined
+}): Promise<string | null> {
+  if (!promptNeedsAssertion(input.remoteAddress, input.tailscaleUserLogin !== undefined)) return null
+  const v = await verifyAssertionHeader(input.header)
+  return v.ok
+    ? null
+    : `autostock: 원격 세션 입력(프롬프트)은 WebAuthn 패스키 서명이 필요합니다 ` +
+        `(x-autostock-webauthn 누락/무효) [${v.reason}]`
+}
+
 // ── HTTP routes (mounted ahead of the HttpApi app in server.ts) ──────────────
 //
 // POST /autostock/webauthn/register-options  → registration options (challenge, rp, user)

@@ -14,8 +14,8 @@
 - [x] C3 SignedMutationGateway (`signed-mutation.ts`: withWebAuthn, WEBAUTHN_HEADER, LockedError)
 - [x] C3 테스트 (서명통과/취소/4xx/잠금 fail-closed) — `signed-mutation.test.ts`
 - [x] fast-check 직접 devDependency 추가 (PBT-09)
-- [ ] S1 서버 게이트 확장 — 원격 `session.prompt` 서명 강제 (`opencode/.../autostock/webauthn.ts`)
-- [ ] S1 서버 테스트 (`autostock-webauthn.test.ts` 보강: 원격 prompt 무서명 거부 / 서명 통과 / loopback trusted)
+- [x] S1 서버 게이트 확장 — 원격 `session.prompt` 서명 강제 (webauthn.ts `checkPrompt`/`promptNeedsAssertion` + session.ts `gateRemotePrompt` 배선: prompt + promptAsync)
+- [x] S1 서버 테스트 (autostock-webauthn.test.ts +7: 원격 prompt 무서명 거부 / loopback·in-process trusted / tailscale hop 거부) — 40 pass
 - [ ] C4 ApprovalQueueController (배지 + 자동 시트 트리거; permission.tsx 위)
 - [ ] C5 ConfirmSheet 뷰 (승인→C3 서명 전송 / 거절 무서명)
 - [ ] C9 LockController (비활성 타이머 → 클라 잠금 → 재인증)
