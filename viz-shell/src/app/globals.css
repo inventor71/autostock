@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Single dark design token set — keep the seed UI to these tokens. */
+@theme {
+  --color-surface-0: #0b0e14; /* app background */
+  --color-surface-1: #11151f; /* panel background */
+  --color-surface-2: #1a2030; /* card / hover */
+  --color-edge: #232b3d; /* borders */
+  --color-ink: #d7dce6; /* primary text */
+  --color-ink-dim: #8b93a7; /* secondary text */
+  --color-up: #34d399; /* positive PnL */
+  --color-down: #f87171; /* negative PnL */
+  --color-accent: #7aa2f7; /* interactive */
+  --color-warn: #fbbf24; /* boundary-denied, stale */
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface-0);
+  color: var(--color-ink);
+  font-feature-settings: "tnum"; /* tabular numerals for prices */
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-edge);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
