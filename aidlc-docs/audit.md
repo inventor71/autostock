@@ -281,3 +281,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-13 — **F75 merged** → main 25bcb28 (feat/F75, WebAuthn 게이트 강화 F71 후속; verify 33 pass green). 라이브 스모크는 post-merge-guide 참조.
 - 2026-06-13 — **/ai-dlc-merge** (큐: F74 단독, 사용자 승인; F75는 타 세션이 기머지). Triage: F73/F76/F77 docs+F77 registry행 노이즈 → 통과.
 - 2026-06-13 — **F74 merged** → main 962b2e1 (promptfoo evals 프레임워크; 1214 passed; rebase 후 R8 stale-import 1건 fixup — sweep의 zsh 변수분리 버그도 교정)
+- 2026-06-13 — **/ai-dlc-merge** (큐: F77 단독, 사용자 승인). Triage: foreign 0바이트 깨진이름 파일 1개 → 사용자 승인 삭제; F76/F78 docs+registry행 노이즈 → 통과.
+- 2026-06-13 — **F77 merged** → main e06368e (StockTwits 리테일 sentiment — 시간당 스윕+baseline z-outlier+브리프; 1212 passed; critic 2라운드 5건 반영). 라이브 검증은 post-merge-guide 참조 (데몬 재시작 + 베이스라인 ~12h 필요).

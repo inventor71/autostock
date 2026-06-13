@@ -6,7 +6,7 @@
 - **Track ID**: F77
 - **Title**: StockTwits 자가 라벨(Bull/Bear) 집계 — 시간당 유니버스 스윕 + 베이스라인 + research/intraday 브리프 (F61 소스)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- critic round 반영 + 재검증 green 2026-06-13 -->
+- **Status**: merged → main e06368e (2026-06-13)
 - **Branch**: feat/F77
 - **Worktree**: .claude/worktrees/F77
 - **Submodule branch**: — (monorepo; operator-console 무접촉 예정)
