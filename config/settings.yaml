@@ -150,11 +150,16 @@ signals:
   max_peers: 8
   # Earnings (R3): surface universe/held earnings within this many days.
   earnings_horizon_days: 2
+  # Imminent IPOs / catalysts (F78): awareness channel, NOT universe-filtered.
+  # Surface upcoming US IPOs within this horizon, size-ranked, capped at max_ipos.
+  ipo_horizon_days: 5
+  max_ipos: 8
   # Source toggles (R8).
   sources:
     news_primary: alpaca       # alpaca | yfinance
     news_fallback: yfinance    # yfinance | none
     earnings_provider: finnhub # finnhub | none
+    ipo_provider: finnhub      # finnhub | none (F78)
   cache_ttl_seconds: 300
   http_connect_timeout: 3.0
   http_read_timeout: 5.0

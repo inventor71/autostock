@@ -8,6 +8,7 @@ from src.agent.tools import market
 from src.signals.peer_map import PeerMap
 from src.signals.records import (
     ImminentEarnings,
+    ImminentIpo,
     MarketSignalBrief,
     Mover,
     ReadThroughAlert,
@@ -17,11 +18,13 @@ from src.signals.records import (
 class _FakeCollector:
     def __init__(self, brief):
         self._brief = brief
-        self.config = type("C", (), {"earnings_horizon_days": 2})()
+        self.config = type("C", (), {"earnings_horizon_days": 2, "ipo_horizon_days": 5})()
         self.last_horizon_days = "unset"
+        self.last_ipo_horizon_days = "unset"
 
-    def collect(self, *, horizon_days=None):
+    def collect(self, *, horizon_days=None, ipo_horizon_days=None):
         self.last_horizon_days = horizon_days
+        self.last_ipo_horizon_days = ipo_horizon_days
         return self._brief
 
 
@@ -34,6 +37,8 @@ def _brief():
                                              affected_peers=["NVDA"], groups=["semis"])],
         imminent_earnings=[ImminentEarnings(symbol="NVDA", earnings_date=date(2026, 6, 6),
                                             when="amc")],
+        imminent_ipos=[ImminentIpo(name="SpaceX", symbol="SPCX", ipo_date=date(2026, 6, 6),
+                                   status="priced", est_value=75e9, exchange="NASDAQ")],
         degraded_sources=["earnings:finnhub"],
     )
 
@@ -72,3 +77,19 @@ def test_movers_does_not_override_horizon():
     collector = _FakeCollector(_brief())
     market.movers(collector)
     assert collector.last_horizon_days is None
+
+
+def test_ipo_calendar_tool():
+    out = market.ipo_calendar(_FakeCollector(_brief()))
+    assert [i["symbol"] for i in out["imminent_ipos"]] == ["SPCX"]
+    assert out["imminent_ipos"][0]["name"] == "SpaceX"
+    assert out["degraded_sources"] == ["earnings:finnhub"]
+
+
+def test_ipo_calendar_days_override_passed_through_not_mutated():
+    collector = _FakeCollector(_brief())
+    market.ipo_calendar(collector, days=10)
+    # days flows to collect() as ipo_horizon_days, NOT onto the shared config
+    assert collector.last_ipo_horizon_days == 10
+    assert collector.last_horizon_days is None
+    assert collector.config.ipo_horizon_days == 5

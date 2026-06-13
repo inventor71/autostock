@@ -114,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     rt.add_argument("symbol")
     ec = sub.add_parser("earnings_calendar")
     ec.add_argument("--days", type=int, default=None, help="Horizon override (default: config)")
+    ic = sub.add_parser("ipo_calendar")
+    ic.add_argument("--days", type=int, default=None, help="IPO horizon override (default: config)")
 
     args = parser.parse_args(argv)
 
@@ -218,6 +220,8 @@ def main(argv: list[str] | None = None) -> int:
         out = market.readthrough(args.symbol, PeerMap.from_config(cfg.peer_groups), _universe())
     elif args.cmd == "earnings_calendar":
         out = market.earnings_calendar(_signal_collector(), days=args.days)
+    elif args.cmd == "ipo_calendar":
+        out = market.ipo_calendar(_signal_collector(), days=args.days)
     elif args.cmd == "surge-list":
         out = market.surge_list(args.date)
     elif args.cmd == "surge-analyze":

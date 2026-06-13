@@ -11,6 +11,7 @@ from datetime import datetime
 
 from src.signals.records import (
     ImminentEarnings,
+    ImminentIpo,
     MarketSignalBrief,
     Mover,
     ReadThroughAlert,
@@ -24,6 +25,7 @@ def assemble_brief(
     imminent_earnings: list[ImminentEarnings],
     degraded_sources: list[str] | None = None,
     *,
+    imminent_ipos: list[ImminentIpo] | None = None,
     sentiment_outliers: list[SentimentOutlier] | None = None,
     as_of: datetime | None = None,
 ) -> MarketSignalBrief:
@@ -33,6 +35,7 @@ def assemble_brief(
         movers=movers,
         readthrough_alerts=readthrough_alerts,
         imminent_earnings=imminent_earnings,
+        imminent_ipos=list(imminent_ipos or []),
         sentiment_outliers=list(sentiment_outliers or []),
         degraded_sources=list(degraded_sources or []),
     )
@@ -40,6 +43,17 @@ def assemble_brief(
 
 def _fmt_pct(v: float) -> str:
     return f"{v:+.1f}%"
+
+
+def _fmt_size(v: float | None) -> str:
+    """Human size for an IPO's expected deal value (``totalSharesValue``)."""
+    if v is None:
+        return ""
+    if v >= 1e9:
+        return f" ~${v / 1e9:.1f}B"
+    if v >= 1e6:
+        return f" ~${v / 1e6:.0f}M"
+    return f" ~${v:,.0f}"
 
 
 def to_prompt_text(brief: MarketSignalBrief) -> str:
@@ -81,6 +95,20 @@ def to_prompt_text(brief: MarketSignalBrief) -> str:
             peers = f" — read-through: {', '.join(e.peer_readthrough)}" if e.peer_readthrough else ""
             lines.append(
                 f"  - {e.symbol}{held} {e.earnings_date.isoformat()}{when}{peers}"
+            )
+
+    if brief.imminent_ipos:
+        lines.append(
+            "Imminent IPOs / catalysts (awareness, NOT a buy menu — you may only "
+            "act on the tradeable universe):"
+        )
+        for ipo in brief.imminent_ipos:
+            sym = f"{ipo.symbol} " if ipo.symbol else ""
+            exch = f" {ipo.exchange}" if ipo.exchange else ""
+            tag = " [HELD]" if ipo.is_held else (" [universe]" if ipo.in_universe else "")
+            lines.append(
+                f"  - {sym}({ipo.name}) {ipo.ipo_date.isoformat()}{exch}"
+                f"{_fmt_size(ipo.est_value)} [{ipo.status}]{tag}"
             )
 
     if brief.sentiment_outliers:

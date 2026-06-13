@@ -18,6 +18,7 @@ from loguru import logger
 
 from src.signals.brief import assemble_brief
 from src.signals.earnings_cal import select_imminent_earnings
+from src.signals.ipo_cal import select_imminent_ipos
 from src.signals.movers import detect_movers
 from src.signals.peer_map import PeerMap
 from src.signals.readthrough import build_readthrough
@@ -44,6 +45,7 @@ class SignalCollector:
         price_provider,
         news_provider=None,
         earnings_source=None,
+        ipo_source=None,
         peer_map: PeerMap | None = None,
         held_provider: Callable[[], list[str]] | None = None,
     ):
@@ -52,6 +54,7 @@ class SignalCollector:
         self.price_provider = price_provider
         self.news_provider = news_provider
         self.earnings_source = earnings_source
+        self.ipo_source = ipo_source
         self.peer_map = peer_map or PeerMap.from_config(config.peer_groups)
         self.held_provider = held_provider
         self._cache: tuple[float, str, MarketSignalBrief] | None = None
@@ -63,12 +66,14 @@ class SignalCollector:
         today: date | None = None,
         held: list[str] | None = None,
         horizon_days: int | None = None,
+        ipo_horizon_days: int | None = None,
     ) -> MarketSignalBrief:
         """Assemble the brief (TTL-cached). Never raises for source failures.
 
-        ``horizon_days`` overrides the earnings horizon for this call only — it
-        does NOT mutate ``self.config`` — and is part of the cache key so an
-        override never returns a brief built for a different horizon.
+        ``horizon_days`` / ``ipo_horizon_days`` override the earnings / IPO
+        horizon for this call only — they do NOT mutate ``self.config`` — and are
+        part of the cache key so an override never returns a brief built for a
+        different horizon.
         """
         today = today or date.today()
         if held is None and self.held_provider is not None:
@@ -79,9 +84,12 @@ class SignalCollector:
                 held = []
         held = held or []
         horizon = horizon_days if horizon_days is not None else self.config.earnings_horizon_days
+        ipo_horizon = (
+            ipo_horizon_days if ipo_horizon_days is not None else self.config.ipo_horizon_days
+        )
 
         cache_key = (
-            f"{today.isoformat()}|{horizon}|"
+            f"{today.isoformat()}|{horizon}|{ipo_horizon}|"
             f"{','.join(sorted(_norm(h) for h in held))}"
         )
         if self._cache is not None:
@@ -117,11 +125,16 @@ class SignalCollector:
         # 4. imminent earnings (best-effort source + pure selection)
         imminent = self._imminent_earnings(today, held, universe_set, degraded, horizon)
 
+        # 4b. imminent IPOs / catalysts (F78 — best-effort source + pure selection,
+        #     NOT universe-filtered: awareness of names not yet a ticker)
+        ipos = self._imminent_ipos(today, held, universe_set, degraded, ipo_horizon)
+
         # 5. retail sentiment outliers (F77 — history read only; the daemon
         #    sweep collects, so this never makes an HTTP call in the turn path)
         outliers = self._sentiment_outliers(degraded)
 
         brief = assemble_brief(movers, alerts, imminent, degraded,
+                               imminent_ipos=ipos,
                                sentiment_outliers=outliers)
         self._cache = (time.monotonic(), cache_key, brief)
         return brief
@@ -251,6 +264,27 @@ class SignalCollector:
             horizon_days=horizon, today=today,
         )
 
+    def _imminent_ipos(self, today, held, universe_set, degraded: list[str], horizon: int):
+        if self.ipo_source is None:
+            degraded.append("ipo:disabled")
+            return []
+        from datetime import timedelta
+
+        try:
+            cal = self.ipo_source.get_calendar(today, today + timedelta(days=horizon))
+        except Exception as exc:
+            logger.warning("signals: IPO calendar failed: {}", exc)
+            degraded.append("ipo:finnhub")
+            return []
+        return select_imminent_ipos(
+            cal,
+            today=today,
+            horizon_days=horizon,
+            max_ipos=self.config.max_ipos,
+            universe=universe_set,
+            held={_norm(h) for h in held},
+        )
+
     # -- wiring ----------------------------------------------------------- #
     @classmethod
     def from_settings(
@@ -273,6 +307,7 @@ class SignalCollector:
 
         news_provider = _build_news_provider(config, settings)
         earnings_source = _build_earnings_source(config, settings)
+        ipo_source = _build_ipo_source(config, settings)
 
         return cls(
             config=config,
@@ -280,6 +315,7 @@ class SignalCollector:
             price_provider=price_provider,
             news_provider=news_provider,
             earnings_source=earnings_source,
+            ipo_source=ipo_source,
             held_provider=held_provider,
         )
 
@@ -324,4 +360,25 @@ def _build_earnings_source(config: SignalsConfig, settings):
         )
     except Exception as exc:
         logger.warning("signals: Finnhub earnings unavailable: {}", exc)
+        return None
+
+
+def _build_ipo_source(config: SignalsConfig, settings):
+    """Finnhub IPO calendar when configured + keyed; else None (fail-honest)."""
+    if config.sources.ipo_provider != "finnhub":
+        return None
+    key = getattr(settings, "finnhub_api_key", "")
+    if not key:
+        logger.info("signals: FINNHUB_API_KEY not set — IPO calendar disabled")
+        return None
+    try:
+        from src.signals.sources.finnhub_ipo import FinnhubIpoCalendar
+
+        return FinnhubIpoCalendar(
+            key,
+            http_connect_timeout=config.http_connect_timeout,
+            http_read_timeout=config.http_read_timeout,
+        )
+    except Exception as exc:
+        logger.warning("signals: Finnhub IPO unavailable: {}", exc)
         return None

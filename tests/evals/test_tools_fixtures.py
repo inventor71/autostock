@@ -167,6 +167,7 @@ class TestDispatchInterception:
         argv_by_cmd = {
             "macro": ["macro"], "account": ["account"], "movers": ["movers"],
             "scoreboard": ["scoreboard"], "earnings_calendar": ["earnings_calendar"],
+            "ipo_calendar": ["ipo_calendar"],
         }
         for cmd in sorted(MARKET_COMMANDS):
             argv = argv_by_cmd.get(cmd, [cmd, "AAPL"])

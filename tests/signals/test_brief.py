@@ -3,7 +3,7 @@
 from datetime import date
 
 from src.signals.brief import assemble_brief, to_prompt_text
-from src.signals.records import ImminentEarnings, Mover, ReadThroughAlert
+from src.signals.records import ImminentEarnings, ImminentIpo, Mover, ReadThroughAlert
 
 
 def _mover(sym, chg, in_uni=True):
@@ -44,6 +44,22 @@ def test_degraded_sources_rendered_even_if_empty_signals():
     text = to_prompt_text(brief)  # but degraded still surfaces (fail-honest)
     assert text != ""
     assert "earnings:finnhub" in text
+
+
+def test_imminent_ipos_rendered():  # F78
+    ipos = [
+        ImminentIpo(name="SpaceX", symbol="SPCX", ipo_date=date(2026, 6, 12),
+                    exchange="NASDAQ", status="priced", est_value=75.1e9),
+        ImminentIpo(name="Acme", ipo_date=date(2026, 6, 16), status="expected",
+                    est_value=1.2e9, in_universe=True),
+    ]
+    brief = assemble_brief([], [], [], imminent_ipos=ipos)
+    assert not brief.is_empty()  # IPOs alone are signal content
+    text = to_prompt_text(brief)
+    assert "Imminent IPOs / catalysts" in text
+    assert "NOT a buy menu" in text
+    assert "SPCX (SpaceX) 2026-06-12 NASDAQ ~$75.1B [priced]" in text
+    assert "(Acme) 2026-06-16 ~$1.2B [expected] [universe]" in text
 
 
 def test_sentiment_outliers_rendered(  # F77

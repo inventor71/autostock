@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from src.signals.collector import SignalCollector
-from src.signals.records import EarningsRow
+from src.signals.records import EarningsRow, IpoRow
 from src.signals.settings import SignalsConfig
 
 _TODAY = date(2026, 6, 5)
@@ -49,6 +49,19 @@ class _FakeEarnings:
         return self.rows
 
 
+class _FakeIpo:
+    def __init__(self, rows=None, raises=False):
+        self.rows = rows or []
+        self.raises = raises
+        self.last_range = None
+
+    def get_calendar(self, from_date, to_date):
+        self.last_range = (from_date, to_date)
+        if self.raises:
+            raise RuntimeError("finnhub ipo boom")
+        return self.rows
+
+
 def _scoreboard_rows(*rows):
     """rows: (symbol, chg_1d, vol_ratio) → scoreboard-shaped dicts."""
     return [{"symbol": s, "chg_1d": c, "vol_ratio": v, "close": 10.0} for s, c, v in rows]
@@ -61,17 +74,17 @@ def patch_scoreboard(monkeypatch):
     return _patch
 
 
-def _collector(news=None, earnings=None):
+def _collector(news=None, earnings=None, ipo=None):
     return SignalCollector(
         config=_CONFIG, universe=_UNIVERSE, price_provider=object(),
-        news_provider=news, earnings_source=earnings,
+        news_provider=news, earnings_source=earnings, ipo_source=ipo,
     )
 
 
 def test_happy_path(patch_scoreboard):
     patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0), ("NVDA", -2.0, 1.0)))
     earnings = _FakeEarnings([EarningsRow(symbol="NVDA", earnings_date=date(2026, 6, 6), when="amc")])
-    brief = _collector(news=_FakeNews(), earnings=earnings).collect(today=_TODAY)
+    brief = _collector(news=_FakeNews(), earnings=earnings, ipo=_FakeIpo([])).collect(today=_TODAY)
 
     assert {m.symbol for m in brief.movers} == {"AVGO"}
     assert len(brief.readthrough_alerts) == 1
@@ -81,6 +94,64 @@ def test_happy_path(patch_scoreboard):
     assert alert.cause_hint and "guidance" in alert.cause_hint
     assert {e.symbol for e in brief.imminent_earnings} == {"NVDA"}
     assert brief.degraded_sources == []
+
+
+# --- F78: imminent IPOs -------------------------------------------------- #
+def _ipo_rows():
+    return [
+        IpoRow(name="SpaceX", symbol="SPCX", ipo_date=date(2026, 6, 6),
+               status="priced", est_value=75e9, exchange="NASDAQ"),
+        IpoRow(name="Tiny", symbol=None, ipo_date=date(2026, 6, 7),
+               status="expected", est_value=1e6),
+    ]
+
+
+def test_ipo_happy_path_not_universe_filtered(patch_scoreboard):
+    patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0)))
+    # SPCX/Tiny are NOT in the universe — they must still surface (awareness).
+    brief = _collector(news=_FakeNews(), earnings=_FakeEarnings([]), ipo=_FakeIpo(_ipo_rows())).collect(today=_TODAY)
+    names = [i.name for i in brief.imminent_ipos]
+    assert names == ["SpaceX", "Tiny"]  # size desc
+    assert brief.imminent_ipos[0].symbol == "SPCX"
+    assert all(not i.in_universe for i in brief.imminent_ipos)
+    assert "ipo:disabled" not in brief.degraded_sources
+
+
+def test_ipo_uses_its_own_horizon(patch_scoreboard):
+    from datetime import timedelta
+
+    patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0)))
+    ipo = _FakeIpo(_ipo_rows())
+    cfg = _CONFIG.model_copy(update={"ipo_horizon_days": 7})
+    SignalCollector(config=cfg, universe=_UNIVERSE, price_provider=object(),
+                    news_provider=_FakeNews(), ipo_source=ipo).collect(today=_TODAY)
+    assert ipo.last_range == (_TODAY, _TODAY + timedelta(days=7))
+
+
+def test_no_ipo_source_marked_disabled(patch_scoreboard):
+    patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0)))
+    brief = _collector(news=_FakeNews(), ipo=None).collect(today=_TODAY)
+    assert "ipo:disabled" in brief.degraded_sources
+    assert brief.imminent_ipos == []
+
+
+def test_ipo_failure_degrades_not_crashes(patch_scoreboard):
+    patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0)))
+    brief = _collector(news=_FakeNews(), ipo=_FakeIpo(raises=True)).collect(today=_TODAY)
+    assert "ipo:finnhub" in brief.degraded_sources
+    assert brief.imminent_ipos == []
+
+
+def test_ipo_horizon_override_passthrough(patch_scoreboard):
+    from datetime import timedelta
+
+    patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0)))
+    ipo = _FakeIpo(_ipo_rows())
+    collector = _collector(news=_FakeNews(), ipo=ipo)
+    collector.collect(today=_TODAY, ipo_horizon_days=10)
+    assert ipo.last_range == (_TODAY, _TODAY + timedelta(days=10))
+    # override is per-call, not written onto config
+    assert collector.config.ipo_horizon_days == 5
 
 
 def test_news_failure_degrades_not_crashes(patch_scoreboard):

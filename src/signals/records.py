@@ -83,6 +83,47 @@ class ImminentEarnings(BaseModel):
     peer_readthrough: list[str] = Field(default_factory=list)
 
 
+# --------------------------------------------------------------------------- #
+# Imminent IPOs / catalysts (F78 — awareness channel, NOT a buy menu)
+# --------------------------------------------------------------------------- #
+_IpoStatus = Literal["expected", "priced", "withdrawn", "filed", "unknown"]
+
+
+class IpoRow(BaseModel):
+    """One IPO-calendar entry fed to ``select_imminent_ipos`` (F78).
+
+    Symbol may be absent before pricing; ``name`` is the stable identifier.
+    ``est_value`` (Finnhub ``totalSharesValue``) is the size proxy used to rank.
+    """
+
+    name: str
+    symbol: str | None = None
+    ipo_date: _date
+    exchange: str | None = None
+    status: _IpoStatus = "unknown"
+    shares: int | None = None
+    price_low: float | None = None
+    price_high: float | None = None
+    est_value: float | None = None
+
+
+class ImminentIpo(BaseModel):
+    """An upcoming IPO inside the horizon (F78, FR-2).
+
+    Unlike earnings, IPOs are NOT filtered to the tradeable universe — the whole
+    point is awareness of names not yet a ticker. ``in_universe`` / ``is_held``
+    are tags only (a recent IPO already added to the universe), never a filter.
+    """
+
+    name: str
+    symbol: str | None = None
+    ipo_date: _date
+    exchange: str | None = None
+    status: _IpoStatus = "unknown"
+    est_value: float | None = None
+    in_universe: bool = False
+    is_held: bool = False
+
 
 # --------------------------------------------------------------------------- #
 # Retail sentiment (F77 — StockTwits self-labeled Bullish/Bearish)
@@ -129,12 +170,13 @@ class MarketSignalBrief(BaseModel):
     movers: list[Mover] = Field(default_factory=list)
     readthrough_alerts: list[ReadThroughAlert] = Field(default_factory=list)
     imminent_earnings: list[ImminentEarnings] = Field(default_factory=list)
+    imminent_ipos: list[ImminentIpo] = Field(default_factory=list)  # F78
     sentiment_outliers: list[SentimentOutlier] = Field(default_factory=list)  # F77
     degraded_sources: list[str] = Field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not (self.movers or self.readthrough_alerts or self.imminent_earnings
-                    or self.sentiment_outliers)
+                    or self.imminent_ipos or self.sentiment_outliers)
 
     def to_dict(self) -> dict:
         """JSON-friendly dict for the on-demand tools."""

@@ -649,3 +649,16 @@ def earnings_calendar(collector, days: int | None = None) -> dict:
         "imminent_earnings": [e.model_dump(mode="json") for e in brief.imminent_earnings],
         "degraded_sources": brief.degraded_sources,
     }
+
+
+def ipo_calendar(collector, days: int | None = None) -> dict:
+    """Imminent US IPOs within the horizon, size-ranked (F78, awareness).
+
+    Not universe-filtered — surfaces names not yet a ticker. ``days`` overrides
+    the IPO horizon for this call only (passed through to ``collect``)."""
+    brief = collector.collect(ipo_horizon_days=days)
+    return {
+        "as_of": brief.as_of.isoformat(),
+        "imminent_ipos": [i.model_dump(mode="json") for i in brief.imminent_ipos],
+        "degraded_sources": brief.degraded_sources,
+    }

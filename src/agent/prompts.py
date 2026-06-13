@@ -93,7 +93,11 @@ following:
    your thesis files before deciding anything — a fill or a triggered stop may
    have changed the book since you last wrote it down.
 2. Regime: refresh regime.md — SPY/QQQ/VIX, sector posture, macro — using the
-   tools and web research.
+   tools and web research. Also scan top-down for market-moving catalysts not yet
+   tied to a ticker — imminent IPOs (see the brief's IPO list / `ipo_calendar`),
+   M&A, regulatory, macro prints — and note their sector/sentiment impact and any
+   read-through to held or universe names in regime.md. This is awareness only:
+   you may NOT trade a name outside the tradeable universe.
 3. Held positions — for EACH name in [{held_str}], this turn, mandatory:
    - `python -m src.agent.tools indicators <SYMBOL>` — fresh RSI/MACD/Bollinger/
      ATR; any stop or target you set must be grounded in the CURRENT ATR, not a
@@ -192,6 +196,7 @@ _SIGNAL_TOOL_GUIDE = {
     "movers": "`python -m src.agent.tools movers` — today's biggest movers (universe + bellwethers) with read-through alerts",
     "readthrough": "`python -m src.agent.tools readthrough <SYM>` — peer names a big move in SYM may read through to",
     "earnings_calendar": "`python -m src.agent.tools earnings_calendar` — imminent earnings (universe / held) within the horizon",
+    "ipo_calendar": "`python -m src.agent.tools ipo_calendar` — imminent US IPOs within the horizon (size-ranked; awareness, NOT a buy menu)",
 }
 
 

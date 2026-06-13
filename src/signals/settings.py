@@ -11,6 +11,7 @@ class SignalSources(BaseModel):
     news_primary: Literal["alpaca", "yfinance"] = "alpaca"
     news_fallback: Literal["yfinance", "none"] = "yfinance"
     earnings_provider: Literal["finnhub", "none"] = "finnhub"
+    ipo_provider: Literal["finnhub", "none"] = "finnhub"  # F78
 
 
 class SentimentConfig(BaseModel):
@@ -62,6 +63,11 @@ class SignalsConfig(BaseModel):
 
     # Earnings (R3)
     earnings_horizon_days: int = Field(default=2, ge=0)
+
+    # Imminent IPOs / catalysts (F78) — awareness channel, never universe-filtered.
+    # Slightly longer horizon than earnings so a listing a few days out is visible.
+    ipo_horizon_days: int = Field(default=5, ge=0)
+    max_ipos: int = Field(default=8, ge=1)  # brief cap (keep the push compact)
 
     # Universe extension (R7) — signal-only, never tradeable
     bellwether_watchlist: list[str] = Field(default_factory=list)
