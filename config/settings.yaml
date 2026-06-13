@@ -159,6 +159,21 @@ signals:
   http_connect_timeout: 3.0
   http_read_timeout: 5.0
   scan_timeout_seconds: 30.0   # aggregate cap on the price scan (NFR-2)
+  # Retail sentiment (F77): hourly StockTwits sweep over the universe — author
+  # self-labels (Bullish/Bearish) only, no bodies/usernames. The crowd rests
+  # ~75% bullish, so only deviation vs a symbol's OWN baseline surfaces.
+  sentiment:
+    enabled: true
+    sweep_minutes: 60
+    window_et: ["04:00", "20:00"]  # sweep only during extended hours (ET)
+    request_gap_s: 0.5             # pacing between symbol calls
+    hourly_budget: 150             # hard cap/tick (unauth allowance ~200/hr)
+    baseline_days: 5
+    min_baseline_points: 12        # cold-start cut (~1 day of hourly sweeps)
+    min_tagged: 8                  # small-sample cut on the current snapshot
+    top_k: 5                       # max outliers surfaced in the brief
+    z_threshold: 2.0
+    max_age_minutes: 180           # stale 'current' (stopped sweep) never surfaces
   # Bellwether watchlist (R7): signal-only sources, never tradeable. SPY/QQQ/IWM/
   # DIA/VTI are already in the universe; these add sector ETFs.
   bellwether_watchlist: [SMH, SOXX, XLK, XLF, XLE, XLV, XLY, XLP, XLI]

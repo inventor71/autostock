@@ -83,6 +83,45 @@ class ImminentEarnings(BaseModel):
     peer_readthrough: list[str] = Field(default_factory=list)
 
 
+
+# --------------------------------------------------------------------------- #
+# Retail sentiment (F77 — StockTwits self-labeled Bullish/Bearish)
+# --------------------------------------------------------------------------- #
+class SentimentRecord(BaseModel):
+    """One symbol's label aggregate from one sweep (a history JSONL line).
+
+    Counts are a snapshot of the symbol stream's most recent messages at sweep
+    time, not cumulative totals. No usernames or message bodies are ever stored
+    (SECURITY-03 / NFR-4) — the self-declared labels are the whole signal.
+    """
+
+    ts: datetime
+    symbol: str
+    bullish_n: int = Field(ge=0)
+    bearish_n: int = Field(ge=0)
+    untagged_n: int = Field(ge=0)
+    latest_id: int | None = None  # newest message id seen (chatter-volume proxy)
+
+    @property
+    def tagged_n(self) -> int:
+        return self.bullish_n + self.bearish_n
+
+
+class SentimentOutlier(BaseModel):
+    """A symbol whose current sentiment deviates from its OWN baseline (FR-3).
+
+    StockTwits skews ~75% bullish at rest, so absolute ratios are meaningless;
+    only the per-symbol z-scores carry signal.
+    """
+
+    symbol: str
+    bull_ratio: float  # current bullish/(bullish+bearish), 0..1
+    baseline_ratio: float  # baseline mean of the same ratio
+    ratio_z: float | None = None
+    tagged_n: int = Field(ge=0)
+    direction: Literal["bullish", "bearish"]
+
+
 class MarketSignalBrief(BaseModel):
     """The unified signal brief shared by the push (prompt) and pull (tools) paths."""
 
@@ -90,10 +129,12 @@ class MarketSignalBrief(BaseModel):
     movers: list[Mover] = Field(default_factory=list)
     readthrough_alerts: list[ReadThroughAlert] = Field(default_factory=list)
     imminent_earnings: list[ImminentEarnings] = Field(default_factory=list)
+    sentiment_outliers: list[SentimentOutlier] = Field(default_factory=list)  # F77
     degraded_sources: list[str] = Field(default_factory=list)
 
     def is_empty(self) -> bool:
-        return not (self.movers or self.readthrough_alerts or self.imminent_earnings)
+        return not (self.movers or self.readthrough_alerts or self.imminent_earnings
+                    or self.sentiment_outliers)
 
     def to_dict(self) -> dict:
         """JSON-friendly dict for the on-demand tools."""
