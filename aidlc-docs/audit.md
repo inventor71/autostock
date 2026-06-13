@@ -279,3 +279,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 사용자 승인 (2026-06-13): 큐 [R13, F75] 제안 순서·근거 승인 ("승인"). 이후 자율 진행 — 멈춤 조건에서만 정지.
 - 2026-06-13 — **R13 merged** → main 401d1de (feat/R13, tests/ 네이밍·구조 정비; verify 1087 pass green).
 - 2026-06-13 — **F75 merged** → main 25bcb28 (feat/F75, WebAuthn 게이트 강화 F71 후속; verify 33 pass green). 라이브 스모크는 post-merge-guide 참조.
+- 2026-06-13 — **/ai-dlc-merge** (큐: F74 단독, 사용자 승인; F75는 타 세션이 기머지). Triage: F73/F76/F77 docs+F77 registry행 노이즈 → 통과.
+- 2026-06-13 — **F74 merged** → main 962b2e1 (promptfoo evals 프레임워크; 1214 passed; rebase 후 R8 stale-import 1건 fixup — sweep의 zsh 변수분리 버그도 교정)

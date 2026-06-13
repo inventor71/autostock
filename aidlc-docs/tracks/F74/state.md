@@ -8,7 +8,7 @@
 - **Track ID**: F74
 - **Title**: Prompt Eval & Regression Framework — 합성 시나리오로 agent turn 행동을 자동 채점하는 promptfoo 기반 회귀 게이트
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- 2026-06-13 Build&Test green + live smoke PASS -->
+- **Status**: merged → main 962b2e1 (2026-06-13)
 - **Branch**: feat/F74
 - **Worktree**: .claude/worktrees/F74
 - **Submodule branch**: — (monorepo; operator-console/cli 미접촉 예정)
