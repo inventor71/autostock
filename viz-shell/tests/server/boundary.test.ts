@@ -82,6 +82,24 @@ describe("read tools (BR-2)", () => {
     expect(boundary("Glob", { pattern: "**/*.tsx" }).behavior).toBe("allow");
   });
 
+  it("Glob pattern with '..' after a metachar is denied (static-prefix blind spot)", () => {
+    // The static prefix of "**/../../x/*" is "" → would resolve to vizShellRoot
+    // and slip through; the explicit '..' rule must catch it instead.
+    const res = boundary("Glob", { pattern: "**/../../workspace/*" });
+    expect(res.behavior).toBe("deny");
+    if (res.behavior === "deny") expect(res.message).toContain("'..'");
+  });
+
+  it("Glob absolute pattern outside viz-shell is denied via its static prefix", () => {
+    expect(boundary("Glob", { pattern: "/etc/*" }).behavior).toBe("deny");
+  });
+
+  it("Glob absolute pattern inside viz-shell is allowed", () => {
+    expect(
+      boundary("Glob", { pattern: path.join(vizDir, "src", "**", "*.tsx") }).behavior,
+    ).toBe("allow");
+  });
+
   it.each([
     ["Read", { file_path: "../workspace/secret.md" }],
     ["Read", { file_path: "/etc/hosts" }],

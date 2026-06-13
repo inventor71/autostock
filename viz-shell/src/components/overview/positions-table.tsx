@@ -2,15 +2,12 @@
 
 import { useState } from "react";
 
-import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtQty, fmtSignedMoney, pnlClass } from "@/lib/format";
+import { useSnapshot } from "@/lib/use-snapshot";
 import { ThesisDrawer } from "@/components/overview/thesis-drawer";
-import type { Snapshot } from "@/server/schemas";
 
 export function PositionsTable() {
-  const { data, isLoading } = trpc.portfolio.snapshot.useQuery();
-  // Same wire-shape re-assertion as AccountCards (tRPC Serialize flattening).
-  const snapshot = data as Snapshot | null | undefined;
+  const { snapshot, isLoading } = useSnapshot();
   const [selected, setSelected] = useState<string | null>(null);
 
   const positions = Object.entries(snapshot?.positions ?? {}).sort(([a], [b]) =>

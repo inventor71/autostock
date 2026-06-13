@@ -49,7 +49,7 @@ function MessageParts({ message }: { message: VizUIMessage }) {
 }
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { messages, sendMessage, status, error, setMessages, clearError } =
+  const { messages, sendMessage, stop, status, error, setMessages, clearError } =
     useChat<VizUIMessage>({
       transport: new DefaultChatTransport({ api: "/api/chat" }),
     });
@@ -72,7 +72,11 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const newChat = async () => {
     if (inFlight) return;
     if (!window.confirm("새 채팅을 시작할까요? (생성된 뷰 파일은 유지됩니다)")) return;
-    await fetch("/api/chat/reset", { method: "POST" });
+    const res = await fetch("/api/chat/reset", { method: "POST" });
+    if (!res.ok) {
+      window.alert("턴 진행 중에는 리셋할 수 없습니다 — 끝난 뒤 다시 시도하세요.");
+      return;
+    }
     setMessages([]);
     clearError();
   };
@@ -130,8 +134,17 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           </div>
         ))}
         {inFlight && (
-          <div data-testid="chat-working" className="text-xs text-ink-dim">
+          <div data-testid="chat-working" className="flex items-center gap-2 text-xs text-ink-dim">
             작업 중…
+            <button
+              type="button"
+              data-testid="chat-stop-button"
+              onClick={() => void stop()}
+              title="턴을 중단합니다 (스톨 시 복구용)"
+              className="rounded border border-edge px-1.5 py-0.5 text-ink-dim hover:bg-surface-2 hover:text-ink"
+            >
+              ■ 중지
+            </button>
           </div>
         )}
         {error && (

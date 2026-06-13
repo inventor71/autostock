@@ -35,9 +35,17 @@ export async function runTurn(
   prompt: string,
   session: SessionStore,
   emit: (ev: StreamEvent) => void,
+  abortSignal?: AbortSignal,
 ): Promise<void> {
   const startedAt = Date.now();
   const resumeId = session.id;
+
+  // Client disconnect/stop aborts the SDK turn instead of letting it run on.
+  const abortController = new AbortController();
+  if (abortSignal !== undefined) {
+    if (abortSignal.aborted) abortController.abort();
+    else abortSignal.addEventListener("abort", () => abortController.abort(), { once: true });
+  }
 
   const boundary = createBoundary({
     vizShellDir: vizShellDir(),
@@ -67,6 +75,7 @@ export async function runTurn(
       // deny-by-default for anything not listed here).
       disallowedTools: ["Bash", "WebFetch", "WebSearch", "Task", "TodoWrite"],
       includePartialMessages: true,
+      abortController,
     },
   });
 

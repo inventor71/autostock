@@ -26,9 +26,11 @@ autostock agent. You create and modify dashboard views on request.
 - Data access: ONLY via the tRPC hooks (import { trpc } from "@/lib/trpc"):
   trpc.portfolio.snapshot / trpc.portfolio.equity / trpc.portfolio.listPositions /
   trpc.portfolio.thesis. No fetch(), no fs, no dynamic imports.
-- Charts: use recharts. Styling: Tailwind utility classes, dark theme — reuse
-  the design tokens (bg-surface-1, border-edge, text-ink, text-ink-dim, text-up,
-  text-down, text-accent, text-warn).
+- Charts: use recharts with the shared constants from "@/lib/chart-theme"
+  (CHART_TOOLTIP_STYLE, CHART_GRID_STROKE, CHART_AXIS_STROKE, CHART_ACCENT).
+  Styling: Tailwind utility classes, dark theme — reuse the design tokens
+  (bg-surface-1, border-edge, text-ink, text-ink-dim, text-up, text-down,
+  text-accent, text-warn).
 - Poll with refetchInterval (e.g. 5000) when the view shows live data.
 - When data is missing (null/empty), render an honest placeholder — never
   fabricate numbers.

@@ -37,6 +37,17 @@ export async function POST(req: Request) {
     );
   }
 
+  // From here until the Response is handed to the framework, any synchronous
+  // throw must give the lock back — otherwise every later POST 409s forever.
+  try {
+    return buildTurnResponse(prompt, req.signal);
+  } catch (err) {
+    releaseTurn();
+    throw err;
+  }
+}
+
+function buildTurnResponse(prompt: string, clientSignal: AbortSignal): Response {
   const session = new SessionStore(sessionFilePath());
 
   const stream = createUIMessageStream<VizUIMessage>({
@@ -50,31 +61,36 @@ export async function POST(req: Request) {
         }
       };
       try {
-        await runTurn(prompt, session, (ev) => {
-          switch (ev.type) {
-            case "text-delta":
-              if (textId === null) {
-                textId = `txt-${++textCount}`;
-                writer.write({ type: "text-start", id: textId });
-              }
-              writer.write({ type: "text-delta", id: textId, delta: ev.delta });
-              break;
-            case "tool-activity":
-              closeText();
-              writer.write({
-                type: "data-tool-activity",
-                data: { tool: ev.tool, target: ev.target },
-              });
-              break;
-            case "boundary-denied":
-              closeText();
-              writer.write({
-                type: "data-boundary-denied",
-                data: { tool: ev.tool, target: ev.target, reason: ev.reason },
-              });
-              break;
-          }
-        });
+        await runTurn(
+          prompt,
+          session,
+          (ev) => {
+            switch (ev.type) {
+              case "text-delta":
+                if (textId === null) {
+                  textId = `txt-${++textCount}`;
+                  writer.write({ type: "text-start", id: textId });
+                }
+                writer.write({ type: "text-delta", id: textId, delta: ev.delta });
+                break;
+              case "tool-activity":
+                closeText();
+                writer.write({
+                  type: "data-tool-activity",
+                  data: { tool: ev.tool, target: ev.target },
+                });
+                break;
+              case "boundary-denied":
+                closeText();
+                writer.write({
+                  type: "data-boundary-denied",
+                  data: { tool: ev.tool, target: ev.target, reason: ev.reason },
+                });
+                break;
+            }
+          },
+          clientSignal,
+        );
       } finally {
         closeText();
         releaseTurn();

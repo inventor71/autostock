@@ -10,9 +10,9 @@
  *  3. `export default` a React component.
  *  4. Data ONLY via tRPC hooks (`trpc.portfolio.*`) — no fetch/fs/imports of
  *     server code. Poll live data with `refetchInterval`.
- *  5. recharts for charts; Tailwind utilities with the dark tokens
- *     (bg-surface-1, border-edge, text-ink, text-ink-dim, text-up, text-down,
- *     text-accent, text-warn).
+ *  5. recharts for charts (use the shared constants from "@/lib/chart-theme");
+ *     Tailwind utilities with the dark tokens (bg-surface-1, border-edge,
+ *     text-ink, text-ink-dim, text-up, text-down, text-accent, text-warn).
  *  6. Render honest placeholders for missing data — never fabricate values.
  */
 
@@ -27,6 +27,12 @@ import {
 } from "recharts";
 
 import { trpc } from "@/lib/trpc";
+import {
+  CHART_ACCENT,
+  CHART_AXIS_STROKE,
+  CHART_GRID_STROKE,
+  CHART_TOOLTIP_STYLE,
+} from "@/lib/chart-theme";
 
 export const meta = { title: "Example (reference)" };
 
@@ -54,18 +60,11 @@ export default function ExampleView() {
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={rows}>
-            <CartesianGrid stroke="#232b3d" strokeDasharray="3 3" />
-            <XAxis dataKey="symbol" stroke="#8b93a7" fontSize={12} />
-            <YAxis stroke="#8b93a7" fontSize={12} />
-            <Tooltip
-              contentStyle={{
-                background: "#11151f",
-                border: "1px solid #232b3d",
-                borderRadius: 8,
-                color: "#d7dce6",
-              }}
-            />
-            <Bar dataKey="pnl" fill="#7aa2f7" radius={[3, 3, 0, 0]} />
+            <CartesianGrid stroke={CHART_GRID_STROKE} strokeDasharray="3 3" />
+            <XAxis dataKey="symbol" stroke={CHART_AXIS_STROKE} fontSize={12} />
+            <YAxis stroke={CHART_AXIS_STROKE} fontSize={12} />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+            <Bar dataKey="pnl" fill={CHART_ACCENT} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

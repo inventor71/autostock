@@ -22,6 +22,8 @@ describe("sanitizeEnv (BR-4)", () => {
     CLAUDE_CODE_OAUTH_TOKEN: "oauth",
     SOME_FUTURE_TOKEN: "ft",
     SOME_DB_PASSWORD: "pw",
+    KIS_SESSION_ID: "ksi", // non-conventional suffix — caught by family prefix
+    ALPACA_BASE_URL: "abu",
     UNDEF: undefined,
   };
 
@@ -41,6 +43,8 @@ describe("sanitizeEnv (BR-4)", () => {
     "OPENAI_API_KEY",
     "SOME_FUTURE_TOKEN",
     "SOME_DB_PASSWORD",
+    "KIS_SESSION_ID",
+    "ALPACA_BASE_URL",
   ])("strips %s", (key) => {
     expect(clean).not.toHaveProperty(key);
   });

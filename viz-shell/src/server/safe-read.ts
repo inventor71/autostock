@@ -87,8 +87,10 @@ export async function tailJsonl<T>(
     const offset = Math.max(0, size - TAIL_MAX_BYTES);
     truncatedHead = offset > 0;
     const buf = Buffer.alloc(size - offset);
-    await handle.read(buf, 0, buf.length, offset);
-    text = buf.toString("utf8");
+    // Honor bytesRead: the file can shrink between stat and read, and a short
+    // read would otherwise leave a zero-filled tail that corrupts the decode.
+    const { bytesRead } = await handle.read(buf, 0, buf.length, offset);
+    text = buf.subarray(0, bytesRead).toString("utf8");
   } finally {
     await handle.close();
   }

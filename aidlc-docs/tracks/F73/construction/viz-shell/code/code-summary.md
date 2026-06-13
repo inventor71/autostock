@@ -86,3 +86,15 @@
 2. AccountCards: `buying_power` 부재 → Equity/Cash/Invested/Open P&L 4카드.
 3. zod v3→v4 (Agent SDK peer 요구) — `.passthrough()` 대신 `z.looseObject`.
 4. Next 16 대신 15.5 핀 — Turbopack 기본화로 require.context 리스크 회피.
+
+## Code Review 라운드 반영 (2026-06-13, /code-review high)
+7 finder × 42 후보 → verify → 8건 적용:
+1. **[보안] boundary Glob `..` 우회 차단** — 메타문자 뒤 `..`가 정적 프리픽스 추출에서 소실되는 blind spot을 명시 deny로 봉쇄 (`boundary.ts`, 테스트 4케이스 추가)
+2. tailJsonl `bytesRead` 반영 — stat↔read 사이 파일 축소 시 zero-fill 오염 방지 (`safe-read.ts`)
+3. `/api/chat/reset` in-flight 409 가드 — 세션 부활 레이스 차단 (`reset/route.ts` + `chat-reset.test.ts`)
+4. turn-lock 누수 봉쇄 — acquire→Response 구간 try/catch + `req.signal`→SDK `abortController` 연결 (disconnect/중지 시 SDK 턴 중단) (`route.ts`, `claude-runner.ts`)
+5. ChatPanel ■중지 버튼 (스톨 복구) + reset 409 안내 (`chat-panel.tsx`)
+6. sanitize-env 거래 크리덴셜 패밀리 프리픽스(`ALPACA_|KIS_|BROKER_|STEERING_|FINNHUB_`) 차단 (`sanitize-env.ts`)
+7. `useSnapshot()` 훅으로 캐스트 일원화 (`lib/use-snapshot.ts`)
+8. `lib/chart-theme.ts` 상수 추출 — equity-curve/_example/view-contract 공용
+검증: vitest **108/108** + tsc 클린 + 라이브 재스모크(채팅 턴 + reset).

@@ -54,14 +54,12 @@ function extractRawPath(toolName: string, input: Record<string, unknown>): strin
     const v = input[key];
     if (typeof v === "string" && v.length > 0) return v;
   }
-  // Glob/Grep with no explicit path operate on cwd; a pattern that climbs or
-  // is absolute is treated as the target itself (conservative).
+  // An absolute Glob pattern is treated as the target itself via its static
+  // prefix. ".."-containing patterns never reach here — they are denied
+  // outright in checkBoundary (a metachar before the ".." would erase it from
+  // the static prefix and smuggle the traversal past this check).
   const pattern = input["pattern"];
-  if (
-    toolName === "Glob" &&
-    typeof pattern === "string" &&
-    (path.isAbsolute(pattern) || pattern.includes(".."))
-  ) {
+  if (toolName === "Glob" && typeof pattern === "string" && path.isAbsolute(pattern)) {
     return pattern.replace(/[*?[].*$/, ""); // static prefix of the glob
   }
   return null;
@@ -85,6 +83,14 @@ export function createBoundary(opts: BoundaryOptions) {
     const isRead = READ_TOOLS.has(toolName);
     if (!isWrite && !isRead) {
       return deny(toolName, `tool '${toolName}' is not permitted in viz-shell`);
+    }
+
+    // Glob patterns may not climb: the static-prefix extraction below cannot
+    // see a ".." that follows a metachar ("**/../../x" → prefix ""), so the
+    // traversal would otherwise escape the read boundary at glob-engine level.
+    const pattern = input["pattern"];
+    if (toolName === "Glob" && typeof pattern === "string" && pattern.includes("..")) {
+      return deny(pattern, "glob patterns must not contain '..' in viz-shell");
     }
 
     const raw = extractRawPath(toolName, input);

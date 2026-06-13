@@ -13,6 +13,12 @@ import {
 
 import { trpc } from "@/lib/trpc";
 import { fmtMoney } from "@/lib/format";
+import {
+  CHART_ACCENT,
+  CHART_AXIS_STROKE,
+  CHART_GRID_STROKE,
+  CHART_TOOLTIP_STYLE,
+} from "@/lib/chart-theme";
 
 const WINDOWS = [7, 30, 90] as const;
 
@@ -55,10 +61,10 @@ export function EquityCurve() {
         <div data-testid="equity-curve-chart" className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={points} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
-              <CartesianGrid stroke="#232b3d" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#8b93a7" fontSize={11} tickLine={false} />
+              <CartesianGrid stroke={CHART_GRID_STROKE} strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke={CHART_AXIS_STROKE} fontSize={11} tickLine={false} />
               <YAxis
-                stroke="#8b93a7"
+                stroke={CHART_AXIS_STROKE}
                 fontSize={11}
                 tickLine={false}
                 domain={["auto", "auto"]}
@@ -66,19 +72,13 @@ export function EquityCurve() {
                 tickFormatter={(v: number) => fmtMoney(v)}
               />
               <Tooltip
-                contentStyle={{
-                  background: "#11151f",
-                  border: "1px solid #232b3d",
-                  borderRadius: 8,
-                  color: "#d7dce6",
-                  fontSize: 12,
-                }}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 formatter={(v) => [fmtMoney(Number(v)), "equity"]}
               />
               <Line
                 type="monotone"
                 dataKey="equity"
-                stroke="#7aa2f7"
+                stroke={CHART_ACCENT}
                 strokeWidth={2}
                 dot={false}
               />

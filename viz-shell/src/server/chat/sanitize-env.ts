@@ -18,6 +18,11 @@ const DENY_EXACT = new Set([
 const DENY_SUFFIX =
   /(_API_KEY|_API_SECRET|_SECRET_KEY|_SECRET|_TOKEN|_PASSWORD|_CREDENTIALS)$/;
 
+// Whole trading-credential families: any future key in these namespaces is
+// stripped regardless of suffix, so a non-conventional name (e.g.
+// KIS_SESSION_ID) cannot slip through the suffix pattern.
+const DENY_PREFIX = /^(ALPACA_|KIS_|BROKER_|STEERING_|FINNHUB_)/;
+
 export function sanitizeEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
@@ -26,7 +31,7 @@ export function sanitizeEnv(env: NodeJS.ProcessEnv): Record<string, string> {
       out[key] = value;
       continue;
     }
-    if (DENY_EXACT.has(key) || DENY_SUFFIX.test(key)) continue;
+    if (DENY_EXACT.has(key) || DENY_SUFFIX.test(key) || DENY_PREFIX.test(key)) continue;
     out[key] = value;
   }
   return out;

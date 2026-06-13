@@ -1,8 +1,7 @@
 "use client";
 
-import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtSignedMoney, pnlClass } from "@/lib/format";
-import type { Snapshot } from "@/server/schemas";
+import { useSnapshot } from "@/lib/use-snapshot";
 
 function Card({
   label,
@@ -27,10 +26,7 @@ function Card({
 }
 
 export function AccountCards() {
-  const { data, isLoading } = trpc.portfolio.snapshot.useQuery();
-  // tRPC's JSON-serialize type mapping flattens the loose zod object — the
-  // wire shape is exactly the schema's, so re-assert it.
-  const snapshot = data as Snapshot | null | undefined;
+  const { snapshot, isLoading } = useSnapshot();
 
   if (!isLoading && snapshot === null) {
     return (

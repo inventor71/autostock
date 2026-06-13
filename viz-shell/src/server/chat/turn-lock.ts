@@ -13,3 +13,7 @@ export function tryAcquireTurn(): boolean {
 export function releaseTurn(): void {
   inFlight = false;
 }
+
+export function isTurnInFlight(): boolean {
+  return inFlight;
+}
