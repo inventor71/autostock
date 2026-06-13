@@ -283,3 +283,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-13 — **F74 merged** → main 962b2e1 (promptfoo evals 프레임워크; 1214 passed; rebase 후 R8 stale-import 1건 fixup — sweep의 zsh 변수분리 버그도 교정)
 - 2026-06-13 — **/ai-dlc-merge** (큐: F77 단독, 사용자 승인). Triage: foreign 0바이트 깨진이름 파일 1개 → 사용자 승인 삭제; F76/F78 docs+registry행 노이즈 → 통과.
 - 2026-06-13 — **F77 merged** → main e06368e (StockTwits 리테일 sentiment — 시간당 스윕+baseline z-outlier+브리프; 1212 passed; critic 2라운드 5건 반영). 라이브 검증은 post-merge-guide 참조 (데몬 재시작 + 베이스라인 ~12h 필요).
+- 2026-06-13 — **/ai-dlc-merge** (큐: F78 단독, 사용자 승인). Triage: F76/F79 docs(active)+aidlc-state.md 노이즈 → 통과. base==main(01ced61)이라 rebase no-op.
+- 2026-06-13 — **F78 merged** → main 1d3330c (이벤트-레이더 Tier1: Finnhub IPO 캘린더 소스+brief 'Imminent IPOs/catalysts' push 섹션+ipo_calendar pull 도구+research Regime nudge[단일+멀티에이전트]; 인지 전용, universe 비필터·day-1 직매수 제외. 246 signals/evals passed; code-review 1건[FR-5 nudge 활성경로 누락] 수정+회귀가드. 사전존재 F77 sweep 3건 실패는 무관/별도). 라이브 검증·튜닝은 post-merge-guide 참조.

@@ -102,7 +102,10 @@
 | F75 | F71 후속 — WebAuthn 게이트 토폴로지 검증·강화 (code-review 5건: 우회/fail-open/챌린지/타이밍/등록통제) | merged | feat/F75 → main 25bcb28 | — | — (monorepo) | cf9869b | 2026-06-13 |
 | F76 | thesis torn-read 완화 (filedrop stat-stable read) + write_position 원자화 — lean bugfix (F73 critic 파생) | active | feat/F76 (TBD) | .claude/worktrees/F76 (TBD) | — (monorepo) | TBD | 2026-06-12 |
 | F77 | StockTwits 리테일 sentiment 신호 — 자가 라벨(Bull/Bear) 집계, 유니버스 스윕+브리프 공급 (F61 소스) | merged | feat/F77 → main e06368e | — | — (monorepo) | bacd341 | 2026-06-13 |
-| F78 | 이벤트-레이더 (Tier1, 인지) — Finnhub IPO 캘린더 소스 + brief 'Imminent IPOs/catalysts' 섹션 + Regime nudge (F61 소스) | active | feat/F78 (TBD) | .claude/worktrees/F78 (TBD) | — (monorepo) | bacd341 | 2026-06-13 |
+| F78 | 이벤트-레이더 (Tier1, 인지) — Finnhub IPO 캘린더 소스 + brief 'Imminent IPOs/catalysts' 섹션 + Regime nudge (F61 소스) | merged | feat/F78 → main 1d3330c | — (제거됨) | — (monorepo) | 01ced61→1d3330c | 2026-06-13 |
+| F79 | 모바일 PWA 실화면(SolidJS 뷰) 완성 — 홈 대시보드 + WebAuthn confirm 시트 배선 + 세션 뷰 (F71/F75 후속) | active | feat/F79 (TBD) | .claude/worktrees/F79 (TBD) | — (monorepo) | 01ced61 | 2026-06-13 |
+| F80 | JSONL/CSV → Parquet 저장 후보 평가 및 전환 (intraday CSV store가 designed swap point) | active | feat/F80 (dd3c784) | .claude/worktrees/F80 | — (monorepo) | 01ced61 | 2026-06-13 |
+| F81 | 13F 보유종목 시그널 소스 — Situational Awareness LP(Aschenbrenner) 등 기관 13F를 주기적으로 따와 리서치 브리프에 공급 (F61 소스) | active | feat/F81 (TBD) | .claude/worktrees/F81 (TBD) | — (monorepo) | 01ced61 | 2026-06-13 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
