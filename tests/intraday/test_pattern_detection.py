@@ -5,6 +5,7 @@ All network-free: synthetic bars and an in-memory provider stub.
 
 from __future__ import annotations
 
+import tempfile
 from datetime import date, datetime
 
 import pandas as pd
@@ -133,6 +134,104 @@ class TestStore:
     def test_read_empty(self, tmp_path):
         df = IntradayFeatureStore(root=tmp_path / "nope").read()
         assert df.empty and list(df.columns) == FEATURE_COLUMNS
+
+    def test_persists_as_parquet_not_csv(self, tmp_path):
+        store = IntradayFeatureStore(root=tmp_path)
+        store.upsert([_rec("2026-01-05", "AAPL", 0.01)])
+        assert (tmp_path / "AAPL.parquet").exists()
+        assert not list(tmp_path.glob("*.csv"))
+
+
+class TestStoreLegacyMigration:
+    """Legacy CSV files (the original backend) migrate to Parquet once, lazily."""
+
+    def _write_legacy_csv(self, tmp_path, symbol, recs):
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame(recs).reindex(columns=FEATURE_COLUMNS)
+        df.to_csv(tmp_path / f"{symbol}.csv", index=False)
+
+    def test_read_migrates_legacy_csv(self, tmp_path):
+        self._write_legacy_csv(
+            tmp_path, "AAPL", [_rec("2026-01-05", "AAPL", 0.01), _rec("2026-01-06", "AAPL", 0.02)]
+        )
+        store = IntradayFeatureStore(root=tmp_path)
+        df = store.read(["AAPL"])
+        assert list(df["date"]) == ["2026-01-05", "2026-01-06"]
+        # CSV converted to Parquet, source preserved (not silently deleted), not re-read.
+        assert (tmp_path / "AAPL.parquet").exists()
+        assert not (tmp_path / "AAPL.csv").exists()
+        assert (tmp_path / "AAPL.csv.migrated").exists()
+
+    def test_symbols_sees_migrated_and_native(self, tmp_path):
+        self._write_legacy_csv(tmp_path, "AAPL", [_rec("2026-01-05", "AAPL", 0.01)])
+        store = IntradayFeatureStore(root=tmp_path)
+        store.upsert([_rec("2026-01-06", "MSFT", 0.05)])  # native parquet
+        assert store.symbols() == ["AAPL", "MSFT"]
+
+    def test_upsert_after_migration_merges(self, tmp_path):
+        self._write_legacy_csv(tmp_path, "AAPL", [_rec("2026-01-05", "AAPL", 0.01)])
+        store = IntradayFeatureStore(root=tmp_path)
+        store.upsert([_rec("2026-01-06", "AAPL", 0.02)])
+        assert list(store.read(["AAPL"])["date"]) == ["2026-01-05", "2026-01-06"]
+        assert not (tmp_path / "AAPL.csv").exists()
+
+
+# --------------------------------------------------------------------------- #
+# Store — property-based (PBT extension: round-trip + idempotence)
+# --------------------------------------------------------------------------- #
+_PBT_SYMBOLS = st.sampled_from(["AAPL", "MSFT", "TSLA", "NVDA"])
+_PBT_DATES = st.dates(date(2024, 1, 1), date(2026, 12, 31)).map(lambda d: d.isoformat())
+_PBT_NUMERIC = st.one_of(
+    st.none(),
+    st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False),
+)
+
+
+@st.composite
+def _pbt_record(draw):
+    rec = {col: draw(_PBT_NUMERIC) for col in FEATURE_COLUMNS}
+    rec["date"] = draw(_PBT_DATES)
+    rec["symbol"] = draw(_PBT_SYMBOLS)
+    return rec
+
+
+class TestStoreProperties:
+    @settings(max_examples=50)
+    @given(records=st.lists(_pbt_record(), max_size=25))
+    def test_roundtrip_preserves_values(self, records):
+        """upsert → read returns every (date,symbol) row with values/types intact.
+
+        Round-trip property (serialize → deserialize = identity), with last-write-wins
+        collapsing duplicate (date,symbol) keys exactly as the store contract promises.
+        """
+        with tempfile.TemporaryDirectory() as root:  # fresh per example (no state leak)
+            store = IntradayFeatureStore(root=root)
+            store.upsert(records)
+
+            expected = {(r["date"], r["symbol"]): r for r in records}  # last write wins
+            df = store.read()
+            assert len(df) == len(expected)
+            assert list(df.columns) == FEATURE_COLUMNS
+            for row in df.to_dict("records"):
+                orig = expected[(row["date"], row["symbol"])]
+                for col in FEATURE_COLUMNS:
+                    ov, rv = orig[col], row[col]
+                    if ov is None:
+                        assert pd.isna(rv), f"{col}: expected NaN, got {rv!r}"
+                    else:
+                        assert rv == ov, f"{col}: {rv!r} != {ov!r}"
+
+    @settings(max_examples=50)
+    @given(records=st.lists(_pbt_record(), max_size=25))
+    def test_idempotent_reupsert(self, records):
+        """Re-applying the same upsert leaves the store byte-for-byte equivalent."""
+        with tempfile.TemporaryDirectory() as root:  # fresh per example (no state leak)
+            store = IntradayFeatureStore(root=root)
+            store.upsert(records)
+            first = store.read()
+            store.upsert(records)
+            second = store.read()
+            assert first.equals(second)
 
 
 # --------------------------------------------------------------------------- #

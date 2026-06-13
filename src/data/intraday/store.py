@@ -1,10 +1,15 @@
 """Persistent store for intraday-shape feature records (P0).
 
-CSV-backed, one file per symbol under ``data/intraday/`` (gitignored). Chosen to
-avoid a new dependency (pyarrow is absent; pandas is present) and to keep the
-exploratory dataset human-inspectable. The public contract — ``upsert`` /
-``read`` keyed by ``(date, symbol)`` — is the swap point: a Parquet/DuckDB backend
-can replace the body later without touching callers.
+Parquet-backed, one file per symbol under ``data/intraday/`` (gitignored). Parquet
+preserves column dtypes and compresses the columnar numeric feature set far better
+than the original CSV, while the public contract — ``upsert`` / ``read`` keyed by
+``(date, symbol)`` — stays the swap point untouched by callers.
+
+Legacy ``<SYMBOL>.csv`` files (the original backend) are migrated to Parquet once,
+lazily, on first access: each is read, written as ``<SYMBOL>.parquet``, and the
+source renamed to ``<SYMBOL>.csv.migrated`` so it is neither re-read nor lost. The
+``date`` column is kept as an ISO string (callers sort/dedupe/stringify on it), so
+round-tripping through Parquet preserves the exact behaviour the CSV backend had.
 """
 
 from __future__ import annotations
@@ -25,7 +30,22 @@ class IntradayFeatureStore:
         self.root = Path(root)
 
     def _path(self, symbol: str) -> Path:
-        return self.root / f"{symbol.upper()}.csv"
+        return self.root / f"{symbol.upper()}.parquet"
+
+    def _migrate_legacy(self) -> None:
+        """One-time CSV→Parquet migration for any legacy ``*.csv`` in the store.
+
+        Idempotent: a CSV whose Parquet sibling already exists is treated as stale
+        (renamed aside, not re-imported); otherwise it is converted. Renamed CSVs
+        end in ``.csv.migrated`` so subsequent scans skip them.
+        """
+        if not self.root.exists():
+            return
+        for csv_path in sorted(self.root.glob("*.csv")):
+            parquet_path = csv_path.with_suffix(".parquet")
+            if not parquet_path.exists():
+                pd.read_csv(csv_path).to_parquet(parquet_path, index=False)
+            csv_path.rename(csv_path.with_suffix(".csv.migrated"))
 
     def upsert(self, records: Iterable[dict]) -> int:
         """Insert/replace feature rows. Re-running a date overwrites that row.
@@ -37,12 +57,13 @@ class IntradayFeatureStore:
             return 0
         new = new.reindex(columns=FEATURE_COLUMNS)
         self.root.mkdir(parents=True, exist_ok=True)
+        self._migrate_legacy()
 
         written = 0
         for symbol, group in new.groupby("symbol", sort=True):
             path = self._path(str(symbol))
             if path.exists():
-                existing = pd.read_csv(path)
+                existing = pd.read_parquet(path)
                 combined = pd.concat([existing, group], ignore_index=True)
             else:
                 combined = group
@@ -53,7 +74,7 @@ class IntradayFeatureStore:
                 .reset_index(drop=True)
                 .reindex(columns=FEATURE_COLUMNS)
             )
-            combined.to_csv(path, index=False)
+            combined.to_parquet(path, index=False)
             written += len(group)
         return written
 
@@ -67,12 +88,13 @@ class IntradayFeatureStore:
 
         Returns an empty, correctly-columned DataFrame when nothing matches.
         """
+        self._migrate_legacy()
         if symbols is None:
-            paths = sorted(self.root.glob("*.csv")) if self.root.exists() else []
+            paths = sorted(self.root.glob("*.parquet")) if self.root.exists() else []
         else:
             paths = [self._path(s) for s in symbols]
 
-        frames = [pd.read_csv(p) for p in paths if p.exists()]
+        frames = [pd.read_parquet(p) for p in paths if p.exists()]
         if not frames:
             return pd.DataFrame(columns=FEATURE_COLUMNS)
 
@@ -93,4 +115,5 @@ class IntradayFeatureStore:
         """Symbols currently present in the store."""
         if not self.root.exists():
             return []
-        return sorted(p.stem for p in self.root.glob("*.csv"))
+        self._migrate_legacy()
+        return sorted(p.stem for p in self.root.glob("*.parquet"))
