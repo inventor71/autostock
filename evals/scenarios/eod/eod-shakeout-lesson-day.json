@@ -1,0 +1,93 @@
+{
+  "id": "eod-shakeout-lesson-day",
+  "turn_type": "eod",
+  "origin": "lesson distillation: premature stop (stopped out then recovered)",
+  "description": "RTX stopped out at 171.00 intraday, then closed 176.40 — a classic shakeout. Correct EOD behavior = grade it honestly and distill a premature-stop lesson; no new trade decisions.",
+  "universe": [
+    "AAPL",
+    "GOOGL",
+    "RTX",
+    "TSLA"
+  ],
+  "brief": null,
+  "wake_reasons": [],
+  "eod_outcomes": [
+    "RTX SELL (stop 171.0 FILLED @170.95) | now 176.40 | flat -> stopped, then recovered +3.2%",
+    "AAPL HOLD (stop 300.0, target 350.0) | now 310.00 | held 10@309.00 +0.3% -> open"
+  ],
+  "tool_fixtures": {
+    "quote": {
+      "RTX": {
+        "symbol": "RTX",
+        "asof": "2026-06-08 16:00:00-04:00",
+        "price": 176.4,
+        "open": 175.0,
+        "high": 176.8,
+        "low": 170.8,
+        "volume": 9000000,
+        "change_1d_pct": 0.0,
+        "change_5d_pct": -0.5,
+        "change_20d_pct": 1.0,
+        "bars": 90
+      }
+    },
+    "account": {
+      "_": {
+        "equity": 99950.0,
+        "cash": 96600.0,
+        "invested": 3350.0,
+        "invested_pct": 3.4,
+        "position_count": 1,
+        "positions": [
+          {
+            "symbol": "AAPL",
+            "side": "long",
+            "qty": 10.0,
+            "avg_entry": 309.0,
+            "price": 310.0,
+            "unrealized_pnl": 10.0,
+            "unrealized_pct": 0.32,
+            "market_value": 3100.0
+          }
+        ],
+        "open_orders": []
+      }
+    }
+  },
+  "workspace_files": {
+    "positions/AAPL.md": "# AAPL — Apple Inc.\n\n## Thesis\nAgentic-AI re-rating story; broke the $315 triple-top to a new ATH on 6/3 (Evercore PT raise,\nmargins 27%, EPS +21.8%). Holding 10 @ $309.00.\n\n## Plan\n| Level | Price |\n|-------|-------|\n| Stop | **$300.00** (hard order, just below SMA20 ~$304) |\n| Target | $350.00 |\n| ATR (20d) | $5.90 |\n\n**Armed exit trigger:** a >1.0x-volume close below SMA20 (~$304) = exit. A failed breakout\n(close back below $315 on volume) = first warning, already fired 6/4.\n**No add** above mean target; respect the hard $300 stop.\n\n## Call vs. Outcome Log\n| Date | Call | Result |\n|------|------|--------|\n| 6/3 | HOLD stop $300 / target $350 — ATH breakout confirmed | Closed $314.84. Correct. |\n| 6/4 | HOLD — failed breakout on light vol = warning, not exit | Closed $311.62. Watching armed trigger. |\n",
+    "lessons.md": "# Lessons (발췌 — 시나리오 시점 기준)\n\n## 13 — Integrate news sentiment, valuation, and structural vs. noise diagnosis into every decision\nEvery decision must weigh: (1) news sentiment, (2) overbought/oversold, (3) valuation vs targets,\n(4) noise vs structural change — alongside technicals.\n\n## 15 — The same analyst making the same point is ONE signal, not three\nRepeated headlines re-stating one analyst's view do not warrant repeated action.\nIf the answer is \"it's the same analyst making the same point,\" filter it out.\n\n## 16 — AI/semi supply chain sells off as a coordinated unit on hyperscaler capex doubt\nA first-order AI-infra guidance miss (AVGO/MRVL) cascades 7-14% across every layer within\n1-2 sessions. Do NOT dip-buy the initial cascade; defend exposed holdings first.\n\n## 17 — On binary-catalyst days, pre-empt the armed exit when the adverse resolution confirms in real time\nIf (1) adverse news confirmed, (2) 3x+ volume distribution from the session high, (3) MACD hist\nnegative throughout, (4) price within 1 ATR of the formal trigger — pre-empt; don't wait for the close.\n",
+    "regime.md": "# Regime\nRisk-on but narrow AI leadership; 10Y 4.5%; VIX 16.4.\n",
+    "positions/RTX.md": "# RTX\nStopped out 6/8 @170.95 (stop 171). Closed 176.40 — shakeout. Entry was 19 @ 176.34.\n"
+  },
+  "decisions_history": [
+    {
+      "ts": "2026-06-05T14:00:00",
+      "symbol": "RTX",
+      "action": "HOLD",
+      "stop": 171.0,
+      "reason": "defense backlog thesis",
+      "prompt_version": "seed"
+    }
+  ],
+  "held": {
+    "AAPL": {
+      "qty": 10,
+      "avg_entry_price": 309.0,
+      "side": "long"
+    }
+  },
+  "prices": {
+    "AAPL": 306.2,
+    "GOOGL": 391.9,
+    "RTX": 176.4,
+    "TSLA": 437.9
+  },
+  "expectation": {
+    "no_churn": true,
+    "allowed_actions": [],
+    "focus_symbol": null,
+    "note": "judge: did it distill a premature-stop lesson via the lesson tool?"
+  },
+  "rubric": null
+}

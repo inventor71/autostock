@@ -1,0 +1,13 @@
+{
+  "name": "autostock-evals",
+  "private": true,
+  "description": "F74 prompt eval & regression harness (promptfoo glue)",
+  "devDependencies": {
+    "promptfoo": "0.121.15"
+  },
+  "scripts": {
+    "eval": "promptfoo eval -c promptfooconfig.yaml --no-cache",
+    "eval:tier2": "promptfoo eval -c promptfooconfig.tier2.yaml --no-cache",
+    "view": "promptfoo view"
+  }
+}
