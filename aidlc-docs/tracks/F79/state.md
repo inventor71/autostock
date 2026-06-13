@@ -60,9 +60,18 @@ F71/U3가 로직만 출고하고 SolidJS 뷰 배선을 "실기기 검증분"으�
 - [~] Workflow Planning — 경량 인라인 (단일 후속 기능; 설계→코드→테스트 직진)
 - [x] Application Design — 완료 (components/methods/services/dependency + 통합 공백 4건 해소)
 - [ ] Units Generation — Application Design에서 U1~U3 제안 (확정 대기)
-- [ ] Construction (per-unit Code Generation)
-  - [ ] U1 데이터·연결 기반 / U2 보안 mutating 경로 / U3 셸·세션·다듬기
+- [~] Construction (per-unit Code Generation) — 보안 백본 완료, 뷰 잔여
+  - [~] U1 데이터·연결: C2 SnapshotController ✅ / C1·C7·폴링 잔여
+  - [~] U2 보안 mutating: C3 SignedMutationGateway ✅ + S1 서버 게이트 ✅ + fast-check ✅ / C4·C5·C9·respond헤더배선 잔여
+  - [ ] U3 셸·세션·다듬기: C6 DashboardView / C8 SessionEntry / C10 MobileShell / pull-to-refresh
 - [ ] Build & Test
+
+## Construction 진행 메모 (체크포인트 2026-06-13)
+- **완료(검증됨)**: 보안 백본 end-to-end — 클라 단일 서명 관문(C3) + 서버 원격 prompt 게이트(S1)
+  + 스냅샷 조립(C2). addon 30 tests + 서버 40 tests green, app·opencode tsgo 클린.
+  커밋: c5fa1ea(U1+U2 cores), 2aeacce(S1).
+- **잔여**: 주로 SolidJS 뷰(C5 ConfirmSheet/C6 Dashboard/C7 Detail/C8 Session/C10 Shell) +
+  C4 승인큐 + C9 잠금 + permission.respond 헤더 배선. 시각 레이아웃·라우팅 통합은 실행/관찰 이점 큼.
 
 ## 설계 확정 (Application Design)
 - D-AD-1: WebAuthn 헤더 = SDK per-call `headers` 옵션(단일 관문 C3 SignedMutationGateway).
