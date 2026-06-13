@@ -13,6 +13,7 @@
 | OpenAI API (`openai>=1.12`) | Alternate LLM strategy | REST | `OPENAI_API_KEY` (env) | Low (optional) |
 | Finnhub | Earnings calendar for signal collection (F61) | REST (`requests`) | `FINNHUB_API_KEY` (env) | Medium |
 | Yahoo Finance (`yfinance>=0.2.30`) | Fallback / secondary market data + news | HTTP scrape | None (public) | Low (fallback) |
+| StockTwits API | Retail sentiment — author self-labels (Bullish/Bearish) per symbol; hourly sweep with z-score baseline deviation detection (F77) | REST (`src/signals/sources/stocktwits.py`, unauthenticated ~200 req/hr) | None (unauthenticated) | Low (best-effort) |
 
 ## Databases & Data Stores
 
@@ -48,6 +49,6 @@
 - **KIS specifics**: `python-kis` 2.1.6 (`pykis`) has no `stop` param; 모의투자 (paper) does not support stop-limit (`ORD_DVSN=22`) — live-only. KIS live trading is pending.
 - **BrokerApiBroker (R7)**: `BrokerApiBroker` shares all request-building / fill-polling / position-mapping logic with `AlpacaBroker` via `AlpacaShapedBroker`. R7 fixed the short-cover order side mapping (was incorrectly sending `sell` instead of `buy_to_cover`) and tightened TIF handling to fail-closed (unsupported TIF raises, not silently downgrades).
 - **Auth model**: All external credentials loaded from environment variables / `.env`; no secrets in repo; `AUTOSTOCK_ENV_FILE` allows test harness to load a separate `.env.test`.
-- **Signal sources**: movers/news via Alpaca Data API (primary) + yfinance (fallback); earnings via Finnhub; toggleable per `settings.yaml` `signals.sources` section.
+- **Signal sources**: movers/news via Alpaca Data API (primary) + yfinance (fallback); earnings via Finnhub; retail sentiment via StockTwits (unauthenticated, hourly sweep, baseline z-score, F77); toggleable per `settings.yaml` `signals.sources` and `signals.sentiment` sections.
 - **Extended hours / OCO**: OCO orders do not set `extended_hours=True` — Alpaca DAY+LIMIT restriction makes extended-hours OCOs unreliable.
 - **Claude CLI auth**: Agent mode requires the `claude` CLI installed and authenticated on the host (OAuth subscription token at `~/.claude/`). CI uses `CLAUDE_CODE_OAUTH_TOKEN` secret.

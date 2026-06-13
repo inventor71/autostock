@@ -74,9 +74,9 @@ Autostock has **two distinct orchestration paths** sharing the same domain core 
 - **Type**: Shared
 
 ### SignalCollector (`src/signals/collector.py`)
-- **Purpose**: Pre-research signal assembly (F61) — movers, peer read-through, earnings
-- **Responsibilities**: Scans price movers, propagates to sector peers via PeerMap, fetches Finnhub earnings calendar, builds markdown/structured brief injected into research prompt
-- **Dependencies**: AlpacaProvider, FinnhubEarnings, PeerMap
+- **Purpose**: Pre-research signal assembly (F61/F77) — movers, peer read-through, earnings, retail sentiment
+- **Responsibilities**: Scans price movers (price % or volume multiple), propagates to sector peers via static PeerMap (R6/R7), fetches Finnhub earnings calendar (R3), aggregates StockTwits retail sentiment z-outliers (F77), builds markdown/structured brief injected into research prompt; TTL-cached to share between push (prompt) and pull (agent tools) paths
+- **Dependencies**: AlpacaProvider, FinnhubEarnings, StockTwitsSource, PeerMap
 - **Type**: Shared
 
 ### TradingEngine (`src/trading/engine.py`)

@@ -121,6 +121,14 @@
 - **Rationale**: Backward compatibility — existing deployments without console are unaffected.
 - **Implemented In**: `main.py`
 
+### Retail Sentiment Signal (F77)
+
+#### StockTwits Baseline Z-Score Gate
+- **Rule**: A StockTwits sentiment reading for a symbol is only surfaced in the research brief if ALL of: (a) the symbol has ≥ `min_baseline_points` (12) historical hourly readings; (b) the current snapshot has ≥ `min_tagged` (8) labelled messages; AND (c) the z-score of current bull-ratio vs the symbol's own rolling baseline exceeds `z_threshold` (2.0). At most `top_k` (5) outliers are included per brief.
+- **Rationale**: StockTwits crowd is ~75% bullish by default; raw ratios carry no signal. Only deviations relative to a symbol's own baseline are meaningful. Cold-start (insufficient history) and small-sample (few messages) cuts prevent noise.
+- **Implemented In**: `src/signals/sentiment.py`, `src/signals/sentiment_sweep.py`, `src/signals/sources/stocktwits.py`
+- **Invariants**: Readings older than `max_age_minutes` (180) are never surfaced; sweep runs only within the `window_et` window (04:00–20:00 ET); rate-limited to `hourly_budget` (150 requests/hour)
+
 ### Market Data
 
 #### Best-Effort Multi-Symbol Fetch (NFR-4)
