@@ -79,10 +79,12 @@ vibeOS(caffeinum/vibeOS) 패턴의 "방향 A"를 autostock에 이식: 레포에 
 - [ ] NFR Requirements — SKIP (requirements NFR-1~7로 확정)
 - [ ] NFR Design — SKIP (Application Design에 통합)
 - [ ] Infrastructure Design — SKIP (로컬 dev 서버 단일 프로세스)
-- [~] Code Generation — Part 1 승인(2026-06-13) + Part 2 생성 완료 (28/28 step, vibeshell 109f631, 테스트 100/100 + 라이브 스모크) — **코드 승인 대기**
-- [ ] Build & Test — green이어도 merge-awaiting 전환 금지 (Merge Policy 참조)
+- [x] Code Generation — 승인(2026-06-13). vibeshell 109f631 + code-review 8건 e9c959a. 테스트 108/108 + 라이브 스모크
+- [x] Build & Test — ✅ GREEN (tsc 클린 / vitest 108 / next build OK / 경계 테스트 / 라이브 IT). **장기 브랜치 — `active` 유지(merge-awaiting 전환 안 함)**. Post-Merge Guide 작성
 
 ## Current Status
-- **Lifecycle Phase**: CONSTRUCTION (단일 유닛: viz-shell)
-- **Current Stage**: Code Generation Part 2 완료 (코드 승인 대기)
-- **Next Stage**: Build & Test (green이어도 merge-awaiting 전환 금지 — Merge Policy)
+- **Lifecycle Phase**: CONSTRUCTION 완료 (전 stage 종료)
+- **Current Stage**: Build & Test 완료 — GREEN
+- **Next Stage**: (없음) 장기 브랜치 유지. 사용자가 "안정됐다, 머지하자" 선언 시
+  Status를 `merge-awaiting`으로 바꾸고 `/ai-dlc-merge`. 그 전까지 `active`.
+  main 유의미 머지마다 vibeshell rebase 권장.
