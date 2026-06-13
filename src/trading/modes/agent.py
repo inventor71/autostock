@@ -87,7 +87,8 @@ class AgentTradingMode:
         self._bar_cache = bar_cache  # F14: kept so the agent_prefetch job can warm it
         self._watch = WatchStore(root)
         self._brief_assembler = BriefAssembler(
-            bar_cache, state=self.steering.state, watch_store=self._watch)
+            bar_cache, state=self.steering.state, watch_store=self._watch,
+            sentiment_lines_fn=self._sentiment_lines_fn())
         self._news = NewsPoller(self._news_provider(), root,
                                 ttl_minutes=cfg.news_ttl_minutes,
                                 symbols_fn=self._intraday_symbols)
@@ -101,6 +102,56 @@ class AgentTradingMode:
     def _news_provider():
         from src.data.providers.news_provider import YFinanceNewsProvider
         return YFinanceNewsProvider()
+
+    # ------------------------------------------------------------------ #
+    # F77: retail sentiment (StockTwits) — hourly sweep + brief lines
+    # ------------------------------------------------------------------ #
+    def _sentiment_config(self):
+        from config.config import get_settings
+        from src.signals.settings import SignalsConfig
+        return SignalsConfig.from_settings(get_settings().signals).sentiment
+
+    def _sentiment_lines_fn(self):
+        """(symbols) -> intraday brief lines for sentiment outliers, or None."""
+        try:
+            cfg = self._sentiment_config()
+            if not cfg.enabled:
+                return None
+            root = self.executor.journal.root
+
+            def lines(symbols: list[str]) -> list[str]:
+                from src.signals.sentiment import outlier_lines_for
+                return outlier_lines_for(symbols, cfg, root=root)
+
+            return lines
+        except Exception as exc:  # optional context — never block intraday setup
+            logger.warning("sentiment brief lines disabled: {}", exc)
+            return None
+
+    def _setup_sentiment_sweep(self) -> None:
+        """Register the hourly StockTwits sweep (plain HTTP, no LLM cost).
+
+        Best-effort wiring: any failure here disables the sweep but never the
+        daemon (NFR-1). The tick itself absorbs all runtime errors."""
+        try:
+            cfg = self._sentiment_config()
+            if not cfg.enabled:
+                return
+            from src.signals.sentiment_sweep import SentimentSweeper
+            from src.signals.sources.stocktwits import StocktwitsSource
+
+            sweeper = SentimentSweeper(
+                source=StocktwitsSource(),
+                universe=list(self.executor.universe),
+                cfg=cfg,
+                root=self.executor.journal.root,
+            )
+            self.scheduler.add_seconds_job(
+                sweeper.sweep_tick, cfg.sweep_minutes * 60, "sentiment_sweep")
+            logger.info("sentiment sweep scheduled every {}m (ET window {}-{})",
+                        cfg.sweep_minutes, cfg.window_et[0], cfg.window_et[1])
+        except Exception as exc:
+            logger.warning("sentiment sweep not scheduled: {}", exc)
 
     def _intraday_symbols(self) -> list[str]:
         from src.agent.intraday.util import held_and_watched
@@ -439,6 +490,8 @@ class AgentTradingMode:
             self._intraday, interval_minutes=self.intraday_minutes, job_id="agent_intraday"
         )
         self._setup_early_session()
+        # F77: hourly retail-sentiment sweep (steering-independent, plain HTTP).
+        self._setup_sentiment_sweep()
         # Always-on (steering-independent) OCO reconcile for brokers that emulate
         # OCO at the exchange (KIS): cancels the dangling leg once a position exits.
         # The steering seconds-jobs below are gated on steering, so a standalone KIS

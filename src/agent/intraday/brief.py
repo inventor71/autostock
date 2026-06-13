@@ -24,10 +24,14 @@ def _pct(level: float, price: float) -> str:
 
 
 class BriefAssembler:
-    def __init__(self, bar_cache: BarCache, *, state=None, watch_store=None):
+    def __init__(self, bar_cache: BarCache, *, state=None, watch_store=None,
+                 sentiment_lines_fn=None):
         self._bars = bar_cache
         self._state = state
         self._watch = watch_store
+        # F77: optional (symbols) -> brief lines for retail-sentiment outliers
+        # among held/watch names. Best-effort — failures yield no lines.
+        self._sentiment_lines_fn = sentiment_lines_fn
 
     def build(self, *, snapshot: dict | None, news: dict | None = None,
               include_news: bool = True, extra_symbols=()) -> str:
@@ -55,6 +59,12 @@ class BriefAssembler:
         lines = ["INTRADAY BRIEF"]
         for sym in symbols:
             lines.append(self._symbol_line(sym, positions, opens, watch_by_sym, news))
+
+        if self._sentiment_lines_fn is not None:
+            try:
+                lines.extend(self._sentiment_lines_fn(symbols))
+            except Exception:
+                pass  # sentiment is optional context — never blocks the brief
 
         lines.append(self._human_line(locked, snapshot))
         delta = self._delta_line(fills)

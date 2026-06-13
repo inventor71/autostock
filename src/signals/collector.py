@@ -117,11 +117,34 @@ class SignalCollector:
         # 4. imminent earnings (best-effort source + pure selection)
         imminent = self._imminent_earnings(today, held, universe_set, degraded, horizon)
 
-        brief = assemble_brief(movers, alerts, imminent, degraded)
+        # 5. retail sentiment outliers (F77 — history read only; the daemon
+        #    sweep collects, so this never makes an HTTP call in the turn path)
+        outliers = self._sentiment_outliers(degraded)
+
+        brief = assemble_brief(movers, alerts, imminent, degraded,
+                               sentiment_outliers=outliers)
         self._cache = (time.monotonic(), cache_key, brief)
         return brief
 
     # -- helpers ---------------------------------------------------------- #
+
+    def _sentiment_outliers(self, degraded: list[str]):
+        """F77: z-scored outliers from the sweep history (fail-honest).
+
+        Cold start (no history yet / sweep disabled) is silently absent — only
+        an actual read/compute failure is recorded as degraded."""
+        cfg = self.config.sentiment
+        if not cfg.enabled:
+            return []
+        try:
+            from src.signals.sentiment import current_outliers
+
+            return current_outliers(cfg)
+        except Exception as exc:
+            logger.warning("signals: sentiment history failed: {}", exc)
+            degraded.append("sentiment:history")
+            return []
+
     def _scan_symbols(self) -> list[str]:
         # Bellwethers are signal-only — enforce in-process (not just in the config
         # test): drop any that is also a tradeable universe symbol so it can never

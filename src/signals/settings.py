@@ -13,6 +13,31 @@ class SignalSources(BaseModel):
     earnings_provider: Literal["finnhub", "none"] = "finnhub"
 
 
+class SentimentConfig(BaseModel):
+    """Retail sentiment sweep + outlier selection (F77).
+
+    The sweep is plain HTTP against StockTwits' unauthenticated symbol streams
+    (no LLM cost). All knobs live here, not in code (FR-7 precedent)."""
+
+    enabled: bool = True
+    sweep_minutes: int = Field(default=60, ge=1)
+    # Sweep only inside this ET window (extended-hours session).
+    window_et: tuple[str, str] = ("04:00", "20:00")
+    request_gap_s: float = Field(default=0.5, ge=0.0)
+    # Hard cap on requests per sweep tick — stays inside StockTwits'
+    # ~200/hr unauthenticated allowance with retry headroom (NFR-3).
+    hourly_budget: int = Field(default=150, ge=1)
+    baseline_days: int = Field(default=5, ge=1)
+    # A symbol needs this many history points before it can be an outlier
+    # (cold-start cut) and this many currently tagged messages (small-sample cut).
+    min_baseline_points: int = Field(default=12, ge=1)
+    min_tagged: int = Field(default=8, ge=0)
+    top_k: int = Field(default=5, ge=1)
+    z_threshold: float = Field(default=2.0, ge=0.0)
+    # Ignore a 'current' point older than this (sweep stopped → no stale outliers).
+    max_age_minutes: int = Field(default=180, ge=1)
+
+
 class SignalsConfig(BaseModel):
     """Loaded from ``config/settings.yaml`` → ``signals:`` block.
 
@@ -46,6 +71,9 @@ class SignalsConfig(BaseModel):
 
     # Source toggles (R8)
     sources: SignalSources = Field(default_factory=SignalSources)
+
+    # Retail sentiment (F77)
+    sentiment: SentimentConfig = Field(default_factory=SentimentConfig)
 
     # Caching / latency (NFR-2/3)
     cache_ttl_seconds: float = Field(default=300.0, ge=0.0)

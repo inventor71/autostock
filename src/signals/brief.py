@@ -14,6 +14,7 @@ from src.signals.records import (
     MarketSignalBrief,
     Mover,
     ReadThroughAlert,
+    SentimentOutlier,
 )
 
 
@@ -23,6 +24,7 @@ def assemble_brief(
     imminent_earnings: list[ImminentEarnings],
     degraded_sources: list[str] | None = None,
     *,
+    sentiment_outliers: list[SentimentOutlier] | None = None,
     as_of: datetime | None = None,
 ) -> MarketSignalBrief:
     """Pure: bundle the parts into a brief (no I/O, no clock unless ``as_of`` omitted)."""
@@ -31,6 +33,7 @@ def assemble_brief(
         movers=movers,
         readthrough_alerts=readthrough_alerts,
         imminent_earnings=imminent_earnings,
+        sentiment_outliers=list(sentiment_outliers or []),
         degraded_sources=list(degraded_sources or []),
     )
 
@@ -78,6 +81,20 @@ def to_prompt_text(brief: MarketSignalBrief) -> str:
             peers = f" — read-through: {', '.join(e.peer_readthrough)}" if e.peer_readthrough else ""
             lines.append(
                 f"  - {e.symbol}{held} {e.earnings_date.isoformat()}{when}{peers}"
+            )
+
+    if brief.sentiment_outliers:
+        lines.append(
+            "Retail sentiment (StockTwits self-labels, deviation vs each "
+            "symbol's OWN baseline — the crowd rests bullish):"
+        )
+        for o in brief.sentiment_outliers:
+            rz = f"z={o.ratio_z:+.1f}" if o.ratio_z is not None else "z=?"
+            vz = f", msgs z={o.volume_z:+.1f}" if o.volume_z is not None else ""
+            lines.append(
+                f"  - {o.symbol} bull {o.bull_ratio:.0%} (usually "
+                f"{o.baseline_ratio:.0%}, {rz}{vz}, n={o.tagged_n}) — "
+                f"{o.direction} shift"
             )
 
     if brief.degraded_sources:
