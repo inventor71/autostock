@@ -141,3 +141,27 @@ Retail sentiment (StockTwits, self-labeled — vs own baseline):
 
 **라이브 스모크 (Build & Test)**: 실제 StockTwits로 5~10심볼 미니 스윕 → JSONL 확인 →
 합성 히스토리 섞어 select_outliers → 브리프 텍스트 렌더까지.
+
+
+---
+
+## 부록: Critic Round 정정 (2026-06-13, 머지 전)
+
+원 설계에서 critic 검토로 정정된 사항 — 위 본문과 코드가 다르면 이 부록이 우선:
+
+1. **volume_z 폐기 (HIGH-1)**: 스트림이 최근 ~30개 메시지 캡이라 tagged 수가 포화 —
+   "메시지량 z"는 잡담 비율 노이즈를 재는 거짓 신호. 이상치 점수·렌더 모두
+   **ratio_z 단독**으로 변경. `latest_id`는 미래의 진짜 신규글 속도 신호용으로
+   저장만 유지.
+2. **시간 버킷 dedupe (HIGH-2)**: `load_recent`가 심볼당 ET 시간 버킷에 최신 1점만
+   유지 — 데몬 재시작/수동 실행의 같은 시간대 중복 append가 baseline std를
+   인위적으로 줄여 z를 부풀리는 것을 차단.
+3. **min_baseline_points=12의 의미**: "하루치"가 아니라 **약 12 스윕시간**(시간당
+   스윕, ET 창 16h/일 기준 첫날 오후경 도달). 프리장/정규장 분포 혼합은 알려진
+   한계로 수용(시간대 정규화는 범위 외).
+4. **misfire grace (MEDIUM)**: 3600s 잡에 기본 30s grace면 바쁜 정시에 해당 스윕이
+   조용히 소실 → `add_seconds_job(misfire_grace_time=600)` 오버라이드.
+5. **intraday TTL 캐시 (MEDIUM)**: `outlier_lines_for`가 매 tick 5일치 JSONL을
+   재파싱하지 않도록 300s 모듈 캐시.
+6. **심볼 URL 위생 (LOW)**: `^[A-Z][A-Z0-9.\-]{0,9}$` allowlist + URL quote —
+   비정상 문자열은 HTTP 도달 전에 거부.

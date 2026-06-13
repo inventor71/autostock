@@ -6,7 +6,7 @@
 - **Track ID**: F77
 - **Title**: StockTwits 자가 라벨(Bull/Bear) 집계 — 시간당 유니버스 스윕 + 베이스라인 + research/intraday 브리프 (F61 소스)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test ALL GREEN 2026-06-13 -->
+- **Status**: merge-awaiting  <!-- critic round 반영 + 재검증 green 2026-06-13 -->
 - **Branch**: feat/F77
 - **Worktree**: .claude/worktrees/F77
 - **Submodule branch**: — (monorepo; operator-console 무접촉 예정)
@@ -41,4 +41,5 @@ research/intraday 브리프 섹션. **wake 트리거/고빈도 폴링/본문 분
   - [x] Functional Design — 승인 2026-06-13
   - [x] Code Generation Part 1 (계획)
   - [x] Code Generation Part 2 — 구현+테스트, 커밋 13365c1
-- [x] Build & Test — ALL GREEN (py 1210, 신규 25 + 브리프 렌더, 라이브 스모크 실데이터) + post-merge guide
+- [x] Build & Test — ALL GREEN (py 1210→critic 후 1212, 라이브 스모크 실데이터) + post-merge guide
+- [x] Critic round — HIGH 2(volume_z 포화 폐기, baseline 시간버킷 dedupe)·MEDIUM 2(misfire grace, intraday 캐시)·LOW 1(URL 위생) 반영

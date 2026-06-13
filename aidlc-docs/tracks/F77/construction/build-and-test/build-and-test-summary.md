@@ -31,3 +31,18 @@
 
 - 콘솔(TS) 변경 없음 — bun test 불필요.
 - 시간 창 밖에서 수동 스윕 테스트 시 `window_et: ["00:00","23:59"]`로.
+
+## Critic Round (2026-06-13, 머지 전)
+
+critic 서브에이전트 검토 → 유효 지적 5건 반영:
+
+1. **[HIGH] volume_z 포화**: 스트림 ~30개 캡에서 메시지량 z는 거짓 신호(역방향 가능) →
+   ratio_z 단독 점수/렌더로 변경, `SentimentOutlier.volume_z` 필드 삭제.
+2. **[HIGH] baseline 왜곡**: 재시작 중복 append가 std 축소 → `load_recent` ET 시간버킷
+   dedupe(시간당 최신 1점). min_baseline_points 의미 문서 정정(≈12 스윕시간).
+3. **[MEDIUM] misfire**: 3600s 잡 grace 30s → 600s 오버라이드 (`add_seconds_job` 파라미터 추가).
+4. **[MEDIUM] intraday 비캐시**: `outlier_lines_for` 300s TTL 캐시.
+5. **[LOW] 심볼 URL 위생**: allowlist regex + quote, HTTP 도달 전 거부 (테스트 포함).
+
+비반영(기록만): 프리장/정규장 분포 혼합(시간대 정규화) — 알려진 한계로 수용.
+재검증: pytest **1212 passed** (dedupe·URL 거부 테스트 2건 추가).

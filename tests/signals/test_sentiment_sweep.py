@@ -60,6 +60,14 @@ class TestStocktwitsSource:
         with pytest.raises(RateLimited):
             StocktwitsSource().fetch_symbol("NVDA")
 
+    def test_implausible_symbol_rejected_before_url(self, monkeypatch):
+        def _no_call(*a, **k):
+            raise AssertionError("HTTP must not be reached")
+        monkeypatch.setattr("requests.get", _no_call)
+        for bad in ("", "../etc", "A/B", "ABCDEFGHIJK", "1ABC"):
+            with pytest.raises(ValueError):
+                StocktwitsSource().fetch_symbol(bad)
+
     def test_http_error_raises_normally(self, monkeypatch):
         monkeypatch.setattr("requests.get",
                             lambda url, headers=None, timeout=None: _Resp(status_code=500))

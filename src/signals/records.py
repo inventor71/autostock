@@ -118,7 +118,6 @@ class SentimentOutlier(BaseModel):
     bull_ratio: float  # current bullish/(bullish+bearish), 0..1
     baseline_ratio: float  # baseline mean of the same ratio
     ratio_z: float | None = None
-    volume_z: float | None = None  # tagged-message volume vs baseline
     tagged_n: int = Field(ge=0)
     direction: Literal["bullish", "bearish"]
 

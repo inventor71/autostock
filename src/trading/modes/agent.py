@@ -147,7 +147,8 @@ class AgentTradingMode:
                 root=self.executor.journal.root,
             )
             self.scheduler.add_seconds_job(
-                sweeper.sweep_tick, cfg.sweep_minutes * 60, "sentiment_sweep")
+                sweeper.sweep_tick, cfg.sweep_minutes * 60, "sentiment_sweep",
+                misfire_grace_time=600)
             logger.info("sentiment sweep scheduled every {}m (ET window {}-{})",
                         cfg.sweep_minutes, cfg.window_et[0], cfg.window_et[1])
         except Exception as exc:

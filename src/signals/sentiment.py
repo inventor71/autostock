@@ -55,24 +55,24 @@ def bull_ratio(bullish_n: int, bearish_n: int) -> float | None:
 
 @dataclass(frozen=True)
 class Baseline:
-    """Per-symbol baseline over the history window."""
+    """Per-symbol baseline over the history window.
+
+    Only the bull-ratio is z-scored: the stream is capped at ~30 recent
+    messages, so tagged-message COUNTS saturate for liquid names and a
+    "volume z" would measure label-rate noise, not chatter volume
+    (critic HIGH-1). ``latest_id`` stays recorded for a future true
+    new-message-rate signal."""
 
     n_points: int
     ratio_mean: float | None
     ratio_std: float | None
-    tagged_mean: float | None
-    tagged_std: float | None
 
 
 def baseline(history: list[SentimentRecord]) -> Baseline:
-    """Mean/std of bull-ratio and tagged-volume over past sweep points.
-
-    Points with nothing tagged contribute to volume stats (tagged=0) but not to
-    ratio stats (ratio undefined).
-    """
+    """Mean/std of bull-ratio over past sweep points (untagged-only points
+    contribute to n_points but not to ratio stats — ratio undefined)."""
     ratios = [r for r in (bull_ratio(h.bullish_n, h.bearish_n) for h in history)
               if r is not None]
-    tagged = [float(h.bullish_n + h.bearish_n) for h in history]
 
     def _mean_std(xs: list[float]) -> tuple[float | None, float | None]:
         if not xs:
@@ -84,12 +84,7 @@ def baseline(history: list[SentimentRecord]) -> Baseline:
         return mean, math.sqrt(var)
 
     ratio_mean, ratio_std = _mean_std(ratios)
-    tagged_mean, tagged_std = _mean_std(tagged)
-    return Baseline(
-        n_points=len(history),
-        ratio_mean=ratio_mean, ratio_std=ratio_std,
-        tagged_mean=tagged_mean, tagged_std=tagged_std,
-    )
+    return Baseline(n_points=len(history), ratio_mean=ratio_mean, ratio_std=ratio_std)
 
 
 def zscore(value: float | None, mean: float | None, std: float | None) -> float | None:
@@ -122,17 +117,13 @@ def select_outliers(
         if ratio is None or base.ratio_mean is None:
             continue
         ratio_z = zscore(ratio, base.ratio_mean, base.ratio_std)
-        volume_z = zscore(float(tagged_n), base.tagged_mean, base.tagged_std)
-        score = max(abs(ratio_z) if ratio_z is not None else 0.0,
-                    abs(volume_z) if volume_z is not None else 0.0)
-        if score < cfg.z_threshold:
+        if ratio_z is None or abs(ratio_z) < cfg.z_threshold:
             continue
-        out.append((score, SentimentOutlier(
+        out.append((abs(ratio_z), SentimentOutlier(
             symbol=cur.symbol,
             bull_ratio=ratio,
             baseline_ratio=base.ratio_mean,
             ratio_z=ratio_z,
-            volume_z=volume_z,
             tagged_n=tagged_n,
             direction="bullish" if ratio >= base.ratio_mean else "bearish",
         )))
@@ -196,7 +187,21 @@ def load_recent(
             except Exception:
                 continue
             history.setdefault(rec.symbol, []).append(rec)
+    # One point per symbol per ET hour (latest wins): daemon restarts / manual
+    # runs append duplicates into the same hour, which would shrink the
+    # baseline std and inflate every z-score (critic HIGH-2).
+    for symbol, recs in history.items():
+        by_hour: dict[str, SentimentRecord] = {}
+        for rec in sorted(recs, key=lambda r: r.ts.isoformat()):
+            ts = rec.ts if rec.ts.tzinfo else rec.ts.astimezone()
+            by_hour[ts.astimezone(_ET()).strftime("%Y-%m-%dT%H")] = rec
+        history[symbol] = list(by_hour.values())
     return history
+
+
+def _ET():
+    from src.core.markettime import ET  # lazy (see module docstring)
+    return ET
 
 
 def current_outliers(
@@ -225,6 +230,12 @@ def current_outliers(
     return select_outliers(currents, baselines, cfg)
 
 
+# (monotonic, cache_key, outliers) — the sweep only writes hourly, so intraday
+# ticks (minutes apart) must not re-parse 5 days of JSONL each time (critic).
+_OUTLIER_CACHE_TTL_S = 300.0
+_outlier_cache: tuple[float, str, list[SentimentOutlier]] | None = None
+
+
 def outlier_lines_for(
     symbols: list[str],
     cfg: SentimentConfig,
@@ -233,9 +244,25 @@ def outlier_lines_for(
     """Compact intraday-brief lines for outliers among ``symbols``.
 
     Fail-honest: any failure (or cold start) is an empty list — the intraday
-    brief must assemble regardless."""
+    brief must assemble regardless. Results are TTL-cached (the underlying
+    history only changes once per sweep)."""
+    global _outlier_cache
     try:
-        outliers = current_outliers(cfg, symbols=symbols, root=root)
+        import time
+
+        key = f"{resolve_root(root)}|{cfg.model_dump_json()}"
+        if _outlier_cache is not None:
+            cached_at, cached_key, cached = _outlier_cache
+            if cached_key == key and (time.monotonic() - cached_at) < _OUTLIER_CACHE_TTL_S:
+                outliers = cached
+            else:
+                outliers = current_outliers(cfg, root=root)
+                _outlier_cache = (time.monotonic(), key, outliers)
+        else:
+            outliers = current_outliers(cfg, root=root)
+            _outlier_cache = (time.monotonic(), key, outliers)
+        wanted = {s.strip().upper() for s in symbols}
+        outliers = [o for o in outliers if o.symbol in wanted]
     except Exception as exc:
         logger.debug("sentiment intraday lines skipped ({})", exc)
         return []

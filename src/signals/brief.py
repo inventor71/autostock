@@ -90,10 +90,9 @@ def to_prompt_text(brief: MarketSignalBrief) -> str:
         )
         for o in brief.sentiment_outliers:
             rz = f"z={o.ratio_z:+.1f}" if o.ratio_z is not None else "z=?"
-            vz = f", msgs z={o.volume_z:+.1f}" if o.volume_z is not None else ""
             lines.append(
                 f"  - {o.symbol} bull {o.bull_ratio:.0%} (usually "
-                f"{o.baseline_ratio:.0%}, {rz}{vz}, n={o.tagged_n}) — "
+                f"{o.baseline_ratio:.0%}, {rz}, n={o.tagged_n}) — "
                 f"{o.direction} shift"
             )
 

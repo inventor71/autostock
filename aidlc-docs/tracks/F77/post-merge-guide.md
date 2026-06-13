@@ -6,9 +6,9 @@
    유니버스(131심볼) StockTwits 무인증 스트림을 훑어 자가 라벨 집계를
    `workspace/sentiment/<ET날짜>.jsonl`에 append. LLM 비용 0, HTTP 131회/시간
    (예산 150 캡, 429/403 시 그 tick 중단·부분 저장).
-2. **research 브리프에 "Retail sentiment" 섹션**: 자기 베이스라인 대비 |z|≥2.0
-   이상치 상위 5개만. **콜드스타트 컷(min_baseline_points=12 ≈ 하루치)** 때문에
-   머지 직후 첫날은 섹션이 안 뜨는 게 정상 — 스윕이 하루 돌아야 베이스라인이 생김.
+2. **research 브리프에 "Retail sentiment" 섹션**: 자기 베이스라인 대비 bull-ratio
+   |z|≥2.0 이상치 상위 5개만 (critic 반영: 메시지량 z는 스트림 30개 캡 포화로 폐기). **콜드스타트 컷(min_baseline_points=12 ≈ 12 스윕시간)** 때문에
+   머지 당일 오후까지는 섹션이 안 뜨는 게 정상 — 스윕이 ~12시간 돌아야 베이스라인이 생김.
 3. **intraday 브리프**: 보유/워치 종목에 이상치가 있을 때만 `sentiment SYM: ...` 라인.
 4. 신규 설정 블록 `signals.sentiment:` (settings.yaml — 기본값으로 동작, env 키 없음).
 

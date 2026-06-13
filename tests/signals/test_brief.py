@@ -52,11 +52,11 @@ def test_sentiment_outliers_rendered(  # F77
 
     outlier = SentimentOutlier(
         symbol="NVDA", bull_ratio=0.45, baseline_ratio=0.78,
-        ratio_z=-2.7, volume_z=2.9, tagged_n=22, direction="bearish")
+        ratio_z=-2.7, tagged_n=22, direction="bearish")
     brief = assemble_brief([], [], [], sentiment_outliers=[outlier])
     assert not brief.is_empty()  # sentiment alone is signal content
     text = to_prompt_text(brief)
     assert "Retail sentiment" in text
     assert "NVDA bull 45%" in text and "usually 78%" in text
-    assert "z=-2.7" in text and "msgs z=+2.9" in text
+    assert "z=-2.7" in text
     assert "bearish shift" in text

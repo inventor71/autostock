@@ -123,12 +123,24 @@ class TestIO:
         assert set(history) == {"NVDA", "AMD"}
 
     def test_load_lenient_on_corrupt_lines(self, tmp_path):
-        sentiment.append_sweep([_rec("NVDA")], root=tmp_path, ts=TS)
-        p = sentiment.append_sweep([_rec("NVDA")], root=tmp_path, ts=TS)
+        sentiment.append_sweep([_rec("NVDA", ts=TS)], root=tmp_path, ts=TS)
+        p = sentiment.append_sweep(
+            [_rec("NVDA", ts=TS + timedelta(hours=1))], root=tmp_path, ts=TS)
         with open(p, "a", encoding="utf-8") as f:
             f.write("{torn\n\n")
         history = sentiment.load_recent(tmp_path, days=2, now=TS)
         assert len(history["NVDA"]) == 2
+
+    def test_restart_duplicates_collapse_to_one_per_hour(self, tmp_path):
+        # daemon restarts append near-identical points into the same ET hour;
+        # they must not multiply baseline points (critic HIGH-2)
+        for minute in (0, 10, 40):
+            sentiment.append_sweep(
+                [_rec("NVDA", ts=TS + timedelta(minutes=minute))], root=tmp_path, ts=TS)
+        sentiment.append_sweep(
+            [_rec("NVDA", ts=TS + timedelta(hours=1))], root=tmp_path, ts=TS)
+        history = sentiment.load_recent(tmp_path, days=1, now=TS)
+        assert len(history["NVDA"]) == 2  # hour bucket keeps latest per hour
 
     def test_append_failure_returns_none(self, tmp_path):
         (tmp_path / "sentiment").write_text("not a dir")

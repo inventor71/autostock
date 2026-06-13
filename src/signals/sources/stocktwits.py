@@ -13,7 +13,9 @@ the whole tick instead of hammering on (NFR-3).
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
+from urllib.parse import quote
 
 from src.signals.records import SentimentRecord
 
@@ -33,8 +35,16 @@ class RateLimited(Exception):
     """StockTwits answered 429/403 — stop the sweep, retry next tick."""
 
 
+_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
+
+
 def _norm(symbol: str) -> str:
-    return symbol.strip().upper()
+    """Normalize + allowlist-validate before the symbol touches a URL path
+    (SECURITY-05): a stray string must fail here, not mutate the request."""
+    symbol = symbol.strip().upper()
+    if not _SYMBOL_RE.match(symbol):
+        raise ValueError(f"not a plausible ticker: {symbol!r}")
+    return symbol
 
 
 class StocktwitsSource:
@@ -57,7 +67,7 @@ class StocktwitsSource:
         import requests
 
         symbol = _norm(symbol)
-        resp = requests.get(_BASE_URL.format(symbol=symbol),
+        resp = requests.get(_BASE_URL.format(symbol=quote(symbol, safe="")),
                             headers=_HEADERS, timeout=self._timeout)
         if resp.status_code in (403, 429):
             raise RateLimited(f"stocktwits {resp.status_code} for {symbol}")

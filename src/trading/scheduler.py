@@ -48,15 +48,23 @@ class TradingScheduler:
         )
         logger.info(f"Scheduled batch job '{job_id}' every {interval_minutes} min")
 
-    def add_seconds_job(self, func, seconds: float, job_id: str) -> None:
+    def add_seconds_job(self, func, seconds: float, job_id: str,
+                        misfire_grace_time: int | None = None) -> None:
         """Add a short-cadence job (e.g. the F4 file-drop poll / snapshot publisher).
-        coalesce collapses a backlog; max_instances=1 prevents self-overlap."""
+        coalesce collapses a backlog; max_instances=1 prevents self-overlap.
+
+        ``misfire_grace_time`` overrides the 30s default for long-interval jobs
+        (F77 critic: an hourly job missed by a 30s-busy pool would otherwise
+        silently skip to the NEXT hour — give it a grace matched to its period)."""
+        defaults = dict(_JOB_DEFAULTS)
+        if misfire_grace_time is not None:
+            defaults["misfire_grace_time"] = misfire_grace_time
         self._scheduler.add_job(
             func,
             trigger=IntervalTrigger(seconds=seconds),
             id=job_id,
             replace_existing=True,
-            **_JOB_DEFAULTS,
+            **defaults,
         )
         logger.info(f"Scheduled seconds job '{job_id}' every {seconds}s")
 
