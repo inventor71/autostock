@@ -294,3 +294,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 ## /ai-dlc-merge — F81
 - 2026-06-14 — **merge run start** — triage PASS (working tree: active-track docs F76/F83/F85 noise only; no foreign/non-active). Queue scoped to **F81** per user intent (F79 also merge-awaiting but separate track, left for its own run). main 18eb146.
 - 2026-06-14 — **F81 merged** (1e2b9b9) — 13F disclosed-holdings signal source: source-agnostic HoldingsProvider abstraction + SEC 13F first impl; daemon refresh→workspace/holdings/ cache, turn/universe read-only; put→SHORT direction-gate (shorting_enabled comply, F54/F60); shipped enabled:false. Rebased 1a7645e→onto 18eb146 clean (no conflicts), 40 holdings tests green, live SEC smoke re-verified. Merge run complete.
+
+- 2026-06-14 — **F79 merged** (fbc1bae) — 모바일 PWA 실화면: WebAuthn 패스키-게이트 승인 흐름 + S1 원격 prompt 게이트 + /autostock 셸 + 리치 대시보드/상세 뷰(라이트·다크). 대시보드 실데이터·세션서명은 후속(read 엔드포인트 부재). code-review 5건 반영.

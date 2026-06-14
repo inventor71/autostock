@@ -8,7 +8,7 @@
 - **Track ID**: F79
 - **Title**: 모바일 PWA 실화면(SolidJS 뷰) 완성 — 홈 대시보드 + WebAuthn confirm 시트 배선 + 세션 뷰 (F71/F75 후속)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- code-review 5건 수정 완료, 재그린(41 addon + 41 server, app·opencode tsgo). -->
+- **Status**: merged → main fbc1bae (2026-06-14)  <!-- code-review 5건 반영, rebase→verify→merge. 대시보드 실데이터·세션서명 후속. -->
 - **Branch**: feat/F79
 - **Worktree**: .claude/worktrees/F79
 - **Submodule branch**: — (monorepo; operator-console/cli/packages/app + opencode 변경)
