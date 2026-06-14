@@ -6,7 +6,7 @@
 - **Track ID**: F87
 - **Title**: 13F disclosed-holdings 브리프 bias 완화 — 숏/풋 방향을 매 턴 push 프롬프트에서 제거하고 on-demand pull 툴로만 노출
 - **Type**: feature (behavior change, F81 follow-up)
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-14 -->
+- **Status**: merged → main c392f3d (2026-06-14)
 - **Branch**: feat/F87
 - **Worktree**: .claude/worktrees/F87
 - **Base commit**: f7b751d

@@ -296,3 +296,6 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-14 — **F81 merged** (1e2b9b9) — 13F disclosed-holdings signal source: source-agnostic HoldingsProvider abstraction + SEC 13F first impl; daemon refresh→workspace/holdings/ cache, turn/universe read-only; put→SHORT direction-gate (shorting_enabled comply, F54/F60); shipped enabled:false. Rebased 1a7645e→onto 18eb146 clean (no conflicts), 40 holdings tests green, live SEC smoke re-verified. Merge run complete.
 
 - 2026-06-14 — **F79 merged** (fbc1bae) — 모바일 PWA 실화면: WebAuthn 패스키-게이트 승인 흐름 + S1 원격 prompt 게이트 + /autostock 셸 + 리치 대시보드/상세 뷰(라이트·다크). 대시보드 실데이터·세션서명은 후속(read 엔드포인트 부재). code-review 5건 반영.
+
+## /ai-dlc-merge — F87 (F81 follow-up)
+- 2026-06-14 — **F87 merged** (c392f3d) — 13F brief bias mitigation: every-turn push brief now LONG-only + neutral framing ("ONE manager's view, NOT consensus/recommendation, independently judge"); bearish/put SHORT side moved to on-demand `disclosed_holdings` pull tool (market.py + __main__ subcommand + prompts entry). render_push_line(long-only) added, render_line(full) kept for pull. Addresses user concern that SA LP's mostly-put 13F repeated every turn anchors the agent. 45 tests green; brief/push/tools regression 18 green. Base f7b751d→c392f3d.
