@@ -48,6 +48,7 @@ class SignalCollector:
         ipo_source=None,
         peer_map: PeerMap | None = None,
         held_provider: Callable[[], list[str]] | None = None,
+        root=None,
     ):
         self.config = config
         self.universe = [_norm(s) for s in universe]
@@ -57,6 +58,9 @@ class SignalCollector:
         self.ipo_source = ipo_source
         self.peer_map = peer_map or PeerMap.from_config(config.peer_groups)
         self.held_provider = held_provider
+        # F81: workspace root for the holdings cache read (None → resolve via
+        # AGENT_JOURNAL_ROOT, same contract as the F77 sentiment history).
+        self._root = root
         self._cache: tuple[float, str, MarketSignalBrief] | None = None
 
     # -- public ----------------------------------------------------------- #
@@ -133,9 +137,14 @@ class SignalCollector:
         #    sweep collects, so this never makes an HTTP call in the turn path)
         outliers = self._sentiment_outliers(degraded)
 
+        # 6. disclosed-holdings highlights (F81 — cache read only; the daemon
+        #    refresher does the HTTP, so this never makes an HTTP call in the turn)
+        holdings = self._disclosed_holdings(today, degraded)
+
         brief = assemble_brief(movers, alerts, imminent, degraded,
                                imminent_ipos=ipos,
-                               sentiment_outliers=outliers)
+                               sentiment_outliers=outliers,
+                               disclosed_holdings=holdings)
         self._cache = (time.monotonic(), cache_key, brief)
         return brief
 
@@ -156,6 +165,35 @@ class SignalCollector:
         except Exception as exc:
             logger.warning("signals: sentiment history failed: {}", exc)
             degraded.append("sentiment:history")
+            return []
+
+    def _disclosed_holdings(self, today: date, degraded: list[str]):
+        """F81: holdings highlights from the cached snapshots (fail-honest).
+
+        Cache read only — the daemon refresher does the HTTP. No cache yet /
+        feature disabled is silently absent; only a real read failure degrades."""
+        cfg = self.config.disclosed_holdings
+        if not cfg.enabled:
+            return []
+        try:
+            from src.signals.holdings.brief import build_highlights
+            from src.signals.holdings.store import read_prev, read_snapshots
+
+            snaps = read_snapshots(self._root)
+            if not snaps:
+                return []
+            prev_by_id = {}
+            for s in snaps:
+                p = read_prev(s.source_id, self._root)
+                if p is not None:
+                    prev_by_id[s.source_id] = p
+            return build_highlights(
+                snaps, prev_by_id=prev_by_id,
+                max_age_days=cfg.max_age_days, top_n=cfg.brief_top_n, today=today,
+            )
+        except Exception as exc:
+            logger.warning("signals: disclosed-holdings read failed: {}", exc)
+            degraded.append("holdings:read")
             return []
 
     def _scan_symbols(self) -> list[str]:

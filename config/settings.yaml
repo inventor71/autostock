@@ -189,6 +189,24 @@ signals:
     top_k: 5                       # max outliers surfaced in the brief
     z_threshold: 2.0
     max_age_minutes: 180           # stale 'current' (stopped sweep) never surfaces
+  # Disclosed holdings (F81): institutional 13F → tradeable-universe overlay + brief.
+  # Shipped OFF — long-only safe. Flip enabled:true (and restart the daemon) to run.
+  # The daemon refresher does the only HTTP (every refresh_hours) and writes a
+  # normalized snapshot per source to workspace/holdings/; the universe overlay and
+  # the research brief read that cache (no HTTP on the turn/universe path).
+  disclosed_holdings:
+    enabled: false
+    refresh_hours: 24              # 13F is quarterly; cadence only catches new filings
+    max_age_days: 135              # drop a filing older than ~1 quarter + 45d lag
+    brief_top_n: 6                 # names per side shown in the brief
+    # SEC fair-access REQUIRES an identifying User-Agent with a real contact.
+    user_agent: "autostock/1.0 (contact: ops@example.com)"
+    request_gap_s: 0.5
+    providers:
+      # LONG holdings → universe long candidates; PUT/short-side → universe short
+      # candidates ONLY when risk.shorting_enabled (else brief-only). overlay:false
+      # makes a source brief-only (never touches the tradeable universe).
+      - { type: sec_13f, cik: "0002045724", manager_name: "Situational Awareness LP", overlay: true }
   # Bellwether watchlist (R7): signal-only sources, never tradeable. SPY/QQQ/IWM/
   # DIA/VTI are already in the universe; these add sector ETFs.
   bellwether_watchlist: [SMH, SOXX, XLK, XLF, XLE, XLV, XLY, XLP, XLI]

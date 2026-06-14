@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.signals.holdings.records import HoldingsHighlight  # F81 (no import cycle)
+
 
 # --------------------------------------------------------------------------- #
 # Inputs (normalized rows handed to the pure functions)
@@ -172,11 +174,13 @@ class MarketSignalBrief(BaseModel):
     imminent_earnings: list[ImminentEarnings] = Field(default_factory=list)
     imminent_ipos: list[ImminentIpo] = Field(default_factory=list)  # F78
     sentiment_outliers: list[SentimentOutlier] = Field(default_factory=list)  # F77
+    disclosed_holdings: list[HoldingsHighlight] = Field(default_factory=list)  # F81
     degraded_sources: list[str] = Field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not (self.movers or self.readthrough_alerts or self.imminent_earnings
-                    or self.imminent_ipos or self.sentiment_outliers)
+                    or self.imminent_ipos or self.sentiment_outliers
+                    or self.disclosed_holdings)
 
     def to_dict(self) -> dict:
         """JSON-friendly dict for the on-demand tools."""

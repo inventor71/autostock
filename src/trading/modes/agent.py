@@ -116,6 +116,49 @@ class AgentTradingMode:
         from src.signals.settings import SignalsConfig
         return SignalsConfig.from_settings(get_settings().signals).sentiment
 
+    def _holdings_config(self):
+        from config.config import get_settings
+        from src.signals.settings import SignalsConfig
+        return SignalsConfig.from_settings(get_settings().signals).disclosed_holdings
+
+    def _setup_holdings_refresh(self) -> None:
+        """Register the periodic disclosed-holdings (13F) refresh (F81, FR-2/FR-7).
+
+        Best-effort wiring: any failure here disables the refresh but never the
+        daemon (NFR-1). The tick itself absorbs all runtime errors. Runs once on
+        boot (next_run_time now) then every ``refresh_hours`` — 13F is quarterly,
+        so the cadence only needs to catch a new filing, not poll hot."""
+        try:
+            import threading
+
+            from config.config import get_settings
+
+            cfg = self._holdings_config()
+            if not cfg.enabled:
+                return
+            from src.signals.holdings.provider import build_providers
+            from src.signals.holdings.refresher import HoldingsRefresher
+
+            providers = build_providers(cfg.providers, get_settings())
+            if not providers:
+                logger.info("holdings refresh: no usable providers — skipping")
+                return
+            refresher = HoldingsRefresher(
+                providers=providers, root=self.executor.journal.root)
+            self.scheduler.add_seconds_job(
+                refresher.refresh_tick, int(cfg.refresh_hours * 3600),
+                "holdings_refresh", misfire_grace_time=3600)
+            # Prime the cache on boot (interval trigger only fires after the first
+            # period) on a daemon thread so a slow SEC fetch never stalls startup.
+            # refresh_tick absorbs all errors, so the thread is fire-and-forget.
+            threading.Thread(
+                target=refresher.refresh_tick, name="holdings-refresh-prime",
+                daemon=True).start()
+            logger.info("holdings refresh scheduled every {}h ({} provider(s))",
+                        cfg.refresh_hours, len(providers))
+        except Exception as exc:
+            logger.warning("holdings refresh not scheduled: {}", exc)
+
     def _sentiment_lines_fn(self):
         """(symbols) -> intraday brief lines for sentiment outliers, or None."""
         try:
@@ -572,6 +615,9 @@ class AgentTradingMode:
         self._setup_early_session()
         # F77: hourly retail-sentiment sweep (steering-independent, plain HTTP).
         self._setup_sentiment_sweep()
+        # F81: periodic disclosed-holdings (13F) refresh — the only HTTP path; the
+        # turn/universe read the cache it writes.
+        self._setup_holdings_refresh()
         # F82: intraday feature auto-collection (gap-backfill thread + EOD append).
         self._setup_intraday_collection()
         # Always-on (steering-independent) OCO reconcile for brokers that emulate
