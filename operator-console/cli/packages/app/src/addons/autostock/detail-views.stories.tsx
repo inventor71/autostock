@@ -1,10 +1,14 @@
 // @ts-nocheck
 import { HealthOverlay, PositionThesisView } from "./detail-views"
 
+// `transform` makes this a containing block for the `position: fixed` overlays, so the
+// full-screen detail views are clipped to the phone frame in Storybook (on a real device
+// `fixed inset-0` is the phone viewport — this just mimics that in a desktop preview).
 const Phone = (props) => (
   <div
     style={{
       position: "relative",
+      transform: "translateZ(0)",
       width: "390px",
       height: "740px",
       overflow: "hidden",

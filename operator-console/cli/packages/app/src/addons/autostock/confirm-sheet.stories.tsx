@@ -2,10 +2,13 @@
 import { ConfirmSheet } from "./confirm-sheet"
 import { WebAuthnError } from "./signed-mutation"
 
+// `transform` = containing block for the sheet's `position: fixed`, so it clips to the
+// phone frame in Storybook (on device, fixed = the phone viewport).
 const Phone = (props) => (
   <div
     style={{
       position: "relative",
+      transform: "translateZ(0)",
       width: "390px",
       height: "740px",
       overflow: "hidden",
