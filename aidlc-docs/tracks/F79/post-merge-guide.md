@@ -1,10 +1,12 @@
-# F79 Post-Merge Guide — 모바일 PWA 실화면 (백본 + 라이브 배선)
+# F79 Post-Merge Guide — 모바일 PWA 실화면 (백본 + 셸 + 라이브 승인)
 
-> ⚠️ **정직한 범위 고지(먼저 읽기)**: 이 머지분은 **보안/데이터 백본 + 라이브 FR-3 배선 +
-> 뷰 컴포넌트**까지다. **뷰가 아직 앱 내비/라우터에 마운트되지 않았다**(C8 세션 입력 서명 +
-> C10 셸/라우팅 통합은 후속). 즉 **폰에서 새 대시보드/시트 화면은 아직 안 보인다.** 단,
-> **서버 게이트(S1)는 라이브로 동작이 바뀐다**(아래). 컴포넌트·게이트·코어는 전부
-> 테스트/typecheck 그린.
+> ⚠️ **정직한 범위 고지(먼저 읽기)**: 이 머지분은 **보안 백본 + 라이브 승인 흐름 + 모바일 셸
+> (`/autostock` 라우트)** 까지다. **폰에서 `/autostock`에 접속하면 셸이 뜨고, 패스키-게이트
+> 승인(ConfirmSheet)·비활성 잠금이 동작한다.** 단 **대시보드 실데이터(자산/포지션/건강/포트폴리오)
+> 와 세션-입력 클라 서명은 후속** — serve 서버에 autostock 스냅샷 read 엔드포인트가 아직 없고
+> (F83이 mobile read 게이트를 deferred), 사용자 결정으로 데이터는 fast-follow. 대시보드는
+> 빈-모델 graceful 렌더 + "데이터 연결 후속" 고지. **서버 게이트(S1)는 라이브로 동작이 바뀐다**
+> (아래). 컴포넌트·게이트·코어·셸은 전부 테스트/typecheck 그린.
 
 ## 무엇이 바뀌나 (prod 브랜치)
 
@@ -17,13 +19,16 @@
     현재 폰发 원격 프롬프트는 거부된다** — F75의 "클라 미배선 → mutating 거부"와 같은 안전 패턴.
 - 순효과: 외부에서 서명 없이 에이전트를 스티어하던 구멍을 선제적으로 닫음. 기존 데몬/TUI 흐름 무변화.
 
-### 2. 신규 코드 (아직 화면엔 안 보임)
-- `app/.../addons/autostock/`: `snapshot.ts`(C2) · `signed-mutation.ts`(C3) · `webauthn-fetch.ts` ·
-  `approval-queue.ts`(C4) · `lock.ts`(C9) · `confirm-sheet.tsx`(C5) · `dashboard-view.tsx`(C6) ·
-  `detail-views.tsx`(C7).
+### 2. 신규 화면 — `/autostock` 모바일 셸 (라이브)
+- 새 라우트 **`/autostock`**(app.tsx) → `mobile-shell.tsx`(C10): 헤더+배지, DashboardView(C6),
+  **ConfirmSheet(C5) 승인 시트**(permission.asked/.replied 이벤트 구독 → 승인큐(C4) → 패스키
+  서명 승인 `respondSigned`/무서명 거절), **비활성 잠금 커튼**(C9, 패스키로 해제).
+- 코어/뷰: `snapshot.ts`(C2)·`signed-mutation.ts`(C3)·`webauthn-fetch.ts`·`approval-queue.ts`(C4)·
+  `lock.ts`(C9)·`confirm-sheet.tsx`(C5)·`dashboard-view.tsx`(C6)·`detail-views.tsx`(C7).
 - `context/permission.tsx`: **`respondSigned()`** — 승인 시 패스키 서명을 `x-autostock-webauthn`
-  헤더로 붙여 응답(FR-3 라이브 배선). **단 이 메서드를 호출하는 UI(ConfirmSheet 마운트)는 후속.**
+  헤더로 붙여 응답(FR-3, **셸에서 라이브 호출**).
 - 신규 devDependency: `fast-check`(PBT).
+- **데스크톱/기존 UI 무변화**: `/autostock` 외 라우트는 그대로(추가형).
 
 ## 전제 조건
 - 콘솔/앱 재빌드 + `autostock serve`(및 데몬) 재시작 — 서버 코드(S1) 반영.
@@ -37,10 +42,17 @@
    스티어 → **정상 동작**(게이트 안 됨). 데몬 자동 턴도 정상.
 3. **원격 게이트 발화(폰/원격)**: tailscale 경유로 `POST /session/<id>/prompt`를 `x-autostock-webauthn`
    없이 호출 → **400 거부**(서버 로그에 `autostock: remote prompt gated`). 정상.
-4. typecheck: `bun run --cwd packages/app typecheck` + `--cwd packages/opencode typecheck` 클린.
+4. **모바일 셸(실기기)**: `autostock serve` 가동 + 폰 PWA로 **`/autostock`** 접속 → autostock 셸이 뜬다
+   (대시보드는 빈-모델 + "데이터 연결 후속" 고지 = 정상, 데이터는 fast-follow).
+5. **승인 시트(실기기, 핵심)**: 에이전트가 mutating autostock 도구를 요청하면 셸에 **승인 시트 자동
+   표시** → "승인 — 지문 서명" 탭 → 패스키 서명 → 통과. 무서명/취소 → fail-closed(미전송). 거절은
+   서명 없이 동작.
+6. **비활성 잠금**: 5분 미조작 → 잠금 커튼 → "잠금 해제 — 지문"(패스키)로 해제.
+7. typecheck: `bun run --cwd packages/app typecheck` + `--cwd packages/opencode typecheck` 클린.
 
 ### "정상"의 모습
-- 호스트/데몬: 무변화. 원격 무서명 프롬프트: 거부. 폰에 새 화면: 아직 없음(후속 통합 전).
+- 호스트/데몬: 무변화. 원격 무서명 프롬프트: 거부. 폰 `/autostock`: 셸 표시 + 승인 시트 동작 +
+  대시보드 빈-모델(데이터 후속).
 
 ## 튜닝 / 노브
 - mutating 분류·원격 판정은 `opencode/.../autostock/webauthn.ts`(`isRemoteOrigin`/`checkPrompt`).
@@ -51,9 +63,11 @@
 - S1만 빼고 싶으면 session.ts의 `gateRemotePrompt()` 호출 2곳 제거(컴포넌트는 그대로 둬도 무해).
 
 ## 알려진 한계 / 범위 밖 (이 머지분)
-- **셸/라우터 통합 미완(C10)**: DashboardView/ConfirmSheet/DetailViews가 앱 내비에 안 떠 있음 →
-  폰에서 아직 사용 불가. **후속 트랙(실기기 실행하며 통합·다듬기) 필요.**
-- **세션 입력 클라 서명 미배선(C8)**: 서버 게이트는 닫혔으나, 폰에서 프롬프트를 *보내* 통과시키려면
-  세션 composer에 `withWebAuthn(session.prompt headers)` 배선 필요(후속).
-- **데스크톱 가짜-패스키 e2e 시뮬 / 실기기 토폴로지 스모크 미실행**(셸 통합 후 의미 있음).
+- **대시보드 실데이터 — 후속(사용자 결정)**: serve 서버에 autostock 스냅샷 read 엔드포인트 부재
+  (F83이 mobile read 게이트를 deferred). 셸은 빈-모델 graceful + 고지. → **후속: F83 카탈로그 기반
+  모바일 read 엔드포인트** + 대시보드 데이터 배선(+ F84 차트도 이 데이터에 의존).
+- **세션 입력 클라 서명 + 세션뷰 모바일 통합 — 후속**: 서버 게이트(S1)는 닫힘(무서명 거부). 폰에서
+  프롬프트를 *보내* 통과시키려면 세션 composer에 `withWebAuthn(session.prompt headers)` 배선 필요 —
+  세션뷰 모바일 통합 + 데이터 채널과 함께.
+- **실기기 토폴로지 스모크 미실행**: 위 검증 4~6은 실기기/실서버에서 사용자 1회 수행.
 - 범위 밖(요구사항): PWA 설치성/오프라인 셸, 푸시 알림, 신규 수동 주문, 계정 자동detect.

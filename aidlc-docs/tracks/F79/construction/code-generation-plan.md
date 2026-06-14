@@ -24,9 +24,13 @@
 ## U3 — 셸·세션·다듬기
 - [x] C6 DashboardView (`dashboard-view.tsx`: equity/손익/포지션칩/건강글리프/승인배지/asOf/offline/stale/새로고침) — tsgo 클린
 - [x] C7 DetailViews (`detail-views.tsx`: PositionThesisView + HealthOverlay, 읽기전용) — tsgo 클린
-- [ ] C8 SessionEntry — 기존 session.tsx 재사용 + 입력 송신 시 withWebAuthn(session.prompt headers) 배선 (세션 composer 통합 — 실행/관찰 필요)
-- [ ] C10 MobileShell 내비 + 배지 + 잠금 오버레이 라우팅 (entry/app 라우터 통합 — 실행/관찰 필요)
-- [ ] FR-8 pull-to-refresh 제스처(셸에서 onRefresh 배선)
+- [x] C10 MobileShell (`mobile-shell.tsx`) + `/autostock` 라우트(app.tsx lazy) — permission.asked/.replied 이벤트 구독→승인큐→ConfirmSheet→respondSigned(승인)/respond(거절), 배지, 비활성 잠금 커튼(패스키 해제), 세션 링크. app tsgo 클린(=실 컨텍스트/SDK 이벤트 타입 정합).
+- [x] FR-8 pull-to-refresh — 셸에서 onRefresh→touch 배선(대시보드 새로고침). (제스처 폴리시는 후속)
+- [~] **C8 세션 입력 클라 서명 — 후속(데이터 채널과 함께)**: 서버 게이트 S1이 원격 무서명 prompt를
+  거부(fail-safe)하므로 보안은 닫힘. 폰에서 *보내* 통과시키는 클라 서명은 세션뷰 모바일 통합 +
+  데이터 채널과 함께. (사용자 결정: 데이터는 후속)
+- [~] **대시보드 실데이터 — 후속**: serve 서버에 autostock 스냅샷 read 엔드포인트 부재(F83이 mobile을
+  deferred). 셸은 빈 모델 graceful 렌더 + "데이터 연결 후속" 고지. 승인·잠금·세션링크는 동작.
 
 ## 검증
 - [x] app typecheck (tsgo -b) 클린 — 현 시점

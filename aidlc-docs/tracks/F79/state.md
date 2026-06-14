@@ -8,7 +8,7 @@
 - **Track ID**: F79
 - **Title**: 모바일 PWA 실화면(SolidJS 뷰) 완성 — 홈 대시보드 + WebAuthn confirm 시트 배선 + 세션 뷰 (F71/F75 후속)
 - **Type**: feature
-- **Status**: active  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
+- **Status**: merge-awaiting  <!-- Build & Test green (41 addon + 40 server, app·opencode tsgo). 대시보드 실데이터·세션서명은 사용자 결정으로 후속. -->
 - **Branch**: feat/F79
 - **Worktree**: .claude/worktrees/F79
 - **Submodule branch**: — (monorepo; operator-console/cli/packages/app + opencode 변경)
@@ -60,21 +60,24 @@ F71/U3가 로직만 출고하고 SolidJS 뷰 배선을 "실기기 검증분"으�
 - [~] Workflow Planning — 경량 인라인 (단일 후속 기능; 설계→코드→테스트 직진)
 - [x] Application Design — 완료 (components/methods/services/dependency + 통합 공백 4건 해소)
 - [ ] Units Generation — Application Design에서 U1~U3 제안 (확정 대기)
-- [~] Construction (per-unit Code Generation) — 보안 백본 완료, 뷰 잔여
-  - [~] U1 데이터·연결: C2 SnapshotController ✅ / C1·C7·폴링 잔여
-  - [~] U2 보안 mutating: C3 SignedMutationGateway ✅ + S1 서버 게이트 ✅ + fast-check ✅ / C4·C5·C9·respond헤더배선 잔여
-  - [ ] U3 셸·세션·다듬기: C6 DashboardView / C8 SessionEntry / C10 MobileShell / pull-to-refresh
-- [ ] Build & Test
+- [x] Construction (per-unit Code Generation) — 코어+보안+뷰+셸 완료(데이터/세션서명 후속)
+  - [x] U1 데이터·연결: C2 SnapshotController ✅ (C1 페어링/C7 상세 ✅; 실데이터 폴링=후속)
+  - [x] U2 보안 mutating: C3 SignedMutationGateway ✅ + S1 서버 게이트 ✅ + fast-check ✅ + C4 queue ✅ + C9 lock ✅ + respondSigned ✅
+  - [x] U3 셸: C6 DashboardView ✅ (리치+테마) / C5 ConfirmSheet ✅ / C7 DetailViews ✅ / C10 MobileShell+`/autostock` ✅ / FR-8 ✅
+  - [~] C8 세션 입력 클라 서명 + 대시보드 실데이터 = **후속**(사용자 결정; serve read 엔드포인트 부재→F83/후속)
+- [x] Build & Test — 41 addon + 40 server green, app·opencode tsgo 클린, Storybook 라이트/다크 스냅샷
+- [x] post-merge-guide — `/autostock` 셸·승인흐름 라이브·데이터 후속·실기기 스모크 절차
 
-## Construction 진행 메모 (체크포인트 2026-06-14)
-- **완료(검증됨)**: 코어 5종(C2 snapshot/C3 signed-mutation/C4 queue/C9 lock/webauthn-fetch) +
-  라이브 FR-3 배선(permission.respondSigned) + S1 서버 게이트 + 뷰 3종(C5 ConfirmSheet/
-  C6 DashboardView/C7 DetailViews). **app·opencode tsgo 클린, 41 addon + 40 server = 81 tests green.**
-  커밋: c5fa1ea, 2aeacce, 9c9cd8e, + 뷰 커밋.
-- **잔여(앱 실행 필요)**: C8 세션 입력 클라 서명 배선(세션 composer) + C10 셸/라우터 통합(뷰 마운트)
-  + FR-8 제스처 배선 + 데스크톱 e2e 시뮬 + 실기기 스모크. → 뷰가 아직 내비에 안 떠 폰에서 미가용.
-- **Status=active 유지(merge-awaiting 아님)**: S1 게이트는 안전·머지 가능하나 뷰 미마운트로 기능
-  미완. 백본만 선머지할지 / 통합까지 갈지 사용자 결정 대기. post-merge-guide에 S1 라이브 영향 명시.
+## Construction 완료 메모 (마무리 2026-06-14)
+- **완료(검증됨)**: 코어 5종 + 라이브 FR-3(respondSigned) + S1 서버 게이트 + 뷰 3종(리치 대시보드·
+  ConfirmSheet·DetailViews, **라이트/다크 Storybook 스냅샷 검증**) + **C10 MobileShell + `/autostock`
+  라우트**(permission 이벤트→승인 시트→서명, 비활성 잠금). app·opencode tsgo 클린, 81 tests green.
+  커밋: c5fa1ea, 2aeacce, 9c9cd8e, 뷰/폴리시 커밋, mobile-shell 커밋.
+- **후속(사용자 결정 = 데이터는 fast-follow)**: ① 대시보드 실데이터 — serve 서버 autostock 스냅샷
+  read 엔드포인트(F83 카탈로그 기반) + 배선. ② 세션 입력 클라 서명 + 세션뷰 모바일 통합(서버 S1은
+  이미 fail-safe). ③ 실기기 토폴로지 스모크. → **F79는 보안 백본+승인 UX+셸로 머지 가능**, 모니터링
+  데이터는 후속 트랙.
+- **F84(차트)** 는 이 대시보드 데이터(①)에 의존 — F79 머지 후 데이터 엔드포인트 → F84 순.
 
 ## 설계 확정 (Application Design)
 - D-AD-1: WebAuthn 헤더 = SDK per-call `headers` 옵션(단일 관문 C3 SignedMutationGateway).
