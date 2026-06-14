@@ -99,9 +99,12 @@
 | `risk.individual_stock_halt_pct` | `0.10` | Halt shorts on symbols up ≥ 10% |
 | `trading.batch_interval_minutes` | `15` | Strategy evaluation cadence (batch mode) |
 | `agent.turn_timeout` | `600` | LLM turn timeout in seconds |
-| `agent.research_model` | `claude-opus-*` | Model for research turns |
+| `agent.research_model` | `opus` | Model for research turns |
 | `multi_agent.n_agents` | `3` | Number of sub-agents in research turn |
 | `multi_agent.mode` | `sequential` | Sub-agent parallelism: sequential / parallel |
 | `intraday.atr_k` | `1.5` | ATR multiplier for abnormal-move wake trigger |
-| `surge.threshold_pct` | `0.07` | EOD surge detection threshold (7%) |
-| `early_session.threshold_pct` | `0.05` | Early-session rapid-move threshold (5%) |
+| `surge.threshold_pct` | `7.0` | EOD surge detection threshold (7%) |
+| `early_session.threshold_pct` | `5.0` | Early-session rapid-move threshold (5%) |
+| `signals.ipo_horizon_days` | `5` | F78: surface IPOs within this many days |
+| `signals.max_ipos` | `8` | F78: maximum IPOs in research brief |
+| `signals.sources.ipo_provider` | `finnhub` | F78: IPO data source (`finnhub` or `none`) |

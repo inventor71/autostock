@@ -10,6 +10,7 @@ Autostock is an automated equities trading platform targeting US markets (NYSE/N
 - **Framework**: Pydantic v2 (models + settings), Loguru (structured logging), APScheduler (market-time scheduling); no web framework — CLI/daemon app
 - **Architecture Style**: Modular monolith with two distinct orchestration paths (strategy engine + agent loop) over a shared domain core; pluggable provider pattern throughout (broker, data, strategy)
 - **Build System**: hatchling / pyproject.toml (PEP 517); Bun/Node for the TypeScript operator console
+- **License**: GNU General Public License v3.0 (GPL-3.0-only); operator-console retains MIT (opencode fork)
 
 ## Key Components
 
@@ -23,7 +24,7 @@ Autostock is an automated equities trading platform targeting US markets (NYSE/N
 | `src/execution/` | shared | BaseBroker abstraction + Alpaca Trading, Alpaca Broker API, KIS, SimulatedBroker |
 | `src/data/` | shared | BaseDataProvider + Alpaca Data, yfinance (fallback), KIS, News providers |
 | `src/core/` | shared | Pydantic domain models, enums, exceptions — depended on by all, depends on nothing |
-| `src/signals/` | app | Research-turn signal assembly (F61): movers, peer read-through, Finnhub earnings |
+| `src/signals/` | app | Research-turn signal assembly (F61/F77/F78): movers, peer read-through, Finnhub earnings + IPO calendar, StockTwits sentiment |
 | `src/agent/steering/` | shared | Human-in-the-loop: file-drop IPC, CommandBus (NFR-2), OrderGate |
 | `src/monitoring/` | shared | Health checkers (account, broker, LLM, process, disk, risk) + alert dispatch |
 | `src/backtest/` | app | Vectorised bar-by-bar backtest engine + metrics + parameter optimizer |
@@ -40,4 +41,4 @@ Autostock is an automated equities trading platform targeting US markets (NYSE/N
 - **Total Source Files**: 169 Python source files + ~90 test files
 - **Primary Markets**: US equities (Alpaca paper/live); Korean equities (KIS paper; live pending)
 - **Storage**: File-based — JSONL logs, journal files, file-drop IPC; no relational/NoSQL database
-- **Last Significant Change**: F77 StockTwits retail sentiment signal — hourly sweep + baseline z-outlier detection + intraday brief integration; prior: R7 BrokerApiBroker short-cover fix + fail-closed TIF; F68 self-learning stack; F60 shorting master switch; F61 market-signal brief; F3 intraday event-driven wakes
+- **Last Significant Change**: F78 event-radar Tier1 — imminent IPO/catalyst awareness channel via Finnhub (awareness-only, not universe-filtered; size-ranked, capped); F77 StockTwits retail sentiment signal (hourly sweep + baseline z-outlier detection + intraday brief); R7 BrokerApiBroker short-cover fix + fail-closed TIF; F68 self-learning stack; F60 shorting master switch; F61 market-signal brief; F3 intraday event-driven wakes

@@ -60,6 +60,11 @@
 - **Rationale**: Directionally opposite legs for shorts vs. longs.
 - **Implemented In**: `src/risk/manager.py`, `src/agent/steering/gate.py`
 
+#### Short Entry Requires Mandatory Stop
+- **Rule**: A SELL_SHORT with no resolvable stop (no explicit level, no ATR available) is rejected even with `force=True`. Longs may fall through to a plain market buy without a stop; shorts never may.
+- **Rationale**: A short's loss is theoretically unbounded; a stop is a hard requirement, not optional.
+- **Implemented In**: `src/risk/manager.py:_handle_sell_short`, `src/risk/manager.py:_receive_human_sell_short`
+
 ### Bracket / OCO Structural Rules (F9)
 
 #### Trail Order Exclusivity
@@ -79,7 +84,7 @@
 #### Fail-Closed TIF Enforcement (R7)
 - **Rule**: Brokers reject orders with unsupported `time_in_force` values rather than silently downgrading them. Supported TIF values are `day`, `gtc`, `ioc`, `fok`.
 - **Rationale**: Silent TIF downgrades caused short-cover orders to be submitted with incorrect semantics. Fail-closed forces the error to the surface.
-- **Implemented In**: `src/execution/brokers/broker_api_broker.py`, `src/risk/manager.py` (`_SUPPORTED_TIF`)
+- **Implemented In**: `src/execution/brokers/account_farm_broker.py`, `src/risk/manager.py` (`_SUPPORTED_TIF`)
 
 ### Universe & Scheduling
 
@@ -96,12 +101,28 @@
 - **Rationale**: Prevents costly LLM calls on every tick; only meaningful events warrant re-analysis.
 - **Implemented In**: `src/agent/intraday/wake.py`, `src/agent/intraday/abnormal.py`
 
+### Signal Collection Rules
+
+#### IPO Awareness is NOT Universe-Filtered (F78)
+- **Rule**: Imminent IPOs from Finnhub are surfaced in the research brief regardless of whether the symbol is in the trading universe. `in_universe` and `is_held` are informational tags only — never filters. Withdrawn IPOs are always dropped.
+- **Rationale**: An IPO is by definition a name not yet in the universe; filtering would defeat the awareness channel purpose.
+- **Implemented In**: `src/signals/ipo_cal.py:select_imminent_ipos`
+- **Invariants**: IPOs ranked by `est_value` desc (missing last); capped at `max_ipos` (default 8); only `ipo_provider=finnhub` supported in v1 (`none` disables).
+
+#### Fail-Honest Signal Collection
+- **Rule**: SignalCollector and agent tool functions return per-source error annotations rather than propagating exceptions. The research turn proceeds with partial signals if any source fails.
+- **Implemented In**: `src/signals/collector.py`, `src/agent/tools/market.py`
+
+#### Best-Effort Multi-Symbol Fetch (NFR-4)
+- **Rule**: `get_latest_prices()` returns a partial dict when some symbols fail; callers must tolerate missing keys. One bad symbol must not block the entire scan.
+- **Implemented In**: `src/data/base.py`, all provider implementations
+
 ### Self-Learning (Charter-Bounded)
 
 #### Constitution-Bounded Self-Rewrite
 - **Rule**: EOD self-review produces lessons; lessons are attributed to decisions (`lessons_cited` + `prompt_version`); guidance prompts may self-rewrite **only within an immutable CONSTITUTION**, with a compliance check and rollback. Constitution changes require user approval; prompt swaps stay automatic.
 - **Rationale**: Bounded autonomy — the agent improves its own prompts without escaping fixed guardrails.
-- **Implemented In**: `src/agent/review.py`, `src/agent/constitution.py`, efficacy/lessons/rewrite modules (F64/F65/F66/F67/F68)
+- **Implemented In**: `src/agent/learning/review.py`, `src/agent/learning/constitution.py`, efficacy/lessons/rewrite modules (F64/F65/F66/F67/F68)
 - **Invariants**: `AgentTradingLoop._rewrite_fn` is `None` by default; self-rewrite machinery shipped inert (F64).
 
 ### Steering / Human Intervention
@@ -128,16 +149,6 @@
 - **Rationale**: StockTwits crowd is ~75% bullish by default; raw ratios carry no signal. Only deviations relative to a symbol's own baseline are meaningful. Cold-start (insufficient history) and small-sample (few messages) cuts prevent noise.
 - **Implemented In**: `src/signals/sentiment.py`, `src/signals/sentiment_sweep.py`, `src/signals/sources/stocktwits.py`
 - **Invariants**: Readings older than `max_age_minutes` (180) are never surfaced; sweep runs only within the `window_et` window (04:00–20:00 ET); rate-limited to `hourly_budget` (150 requests/hour)
-
-### Market Data
-
-#### Best-Effort Multi-Symbol Fetch (NFR-4)
-- **Rule**: `get_latest_prices()` returns a partial dict when some symbols fail; callers must tolerate missing keys. One bad symbol must not block the entire scan.
-- **Implemented In**: `src/data/base.py`, all provider implementations
-
-#### Fail-Honest Signal Collection
-- **Rule**: SignalCollector and agent tool functions return per-source error annotations rather than propagating exceptions. The research turn proceeds with partial signals if any source fails.
-- **Implemented In**: `src/signals/collector.py`, `src/agent/tools/market.py`
 
 ### Multi-Broker Routing
 

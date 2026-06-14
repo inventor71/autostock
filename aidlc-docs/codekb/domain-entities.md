@@ -60,7 +60,7 @@ All core entities are Pydantic v2 models / enums defined in `src/core/` — depe
 
 ### Decision (Agent Journal)
 - **Purpose**: A machine-readable trade decision emitted by the agent brain; the unit of brain/body hand-off
-- **Key Fields**: `symbol: str`, `action: Signal`, `qty: float`, `ts: datetime`, `rationale: str`, `lessons_cited: list[str]`, `prompt_version: str`, `metadata: dict`
+- **Key Fields**: `symbol: str`, `action: DecisionAction`, `qty: float`, `ts: datetime`, `rationale: str`, `lessons_cited: list[str]`, `prompt_version: str`, `source: Literal["agent", "human"]`, `turn_id: str|None`, `limit: float|None`, `stop: float|None`, `target: float|None`, `valid_until: datetime|None`
 - **Relationships**: Many Decisions per Journal; each Decision has 0-1 FilledOrder; cursor tracks last executed index
 - **Defined In**: `src/agent/journal.py` — persisted to `decisions.jsonl`
 - **Lifecycle**: Appended by `AgentTradingLoop`; consumed once by `DecisionExecutor` (cursor-tracked); outcome attributed at EOD self-review
@@ -74,7 +74,7 @@ All core entities are Pydantic v2 models / enums defined in `src/core/` — depe
 ### LessonRecord (Self-Learning)
 - **Purpose**: A single lesson learned from a trading outcome; persisted for situational recall
 - **Key Fields**: `lesson_id: str`, `date: str`, `category: str`, `regime: str`, `sector: str`, `outcome: str`, `takeaway: str`, `signal_used: str`
-- **Relationships**: Written by EOD `review.py`; recalled by `src/agent/recall.py`; efficacy tracked by `src/agent/efficacy.py`
+- **Relationships**: Written by EOD `review.py`; recalled by `src/agent/learning/recall.py`; efficacy tracked by `src/agent/learning/efficacy.py`
 - **Defined In**: `src/agent/journal.py` — persisted to `lessons.jsonl`
 - **Lifecycle**: Written at EOD; recalled by regime/sector match; attribution tracks `lessons_cited` on Decision
 
@@ -83,6 +83,20 @@ All core entities are Pydantic v2 models / enums defined in `src/core/` — depe
 - **Key Fields**: `symbol: str`, `date: str`, `return_pct: float`, `direction: str` (surge/dive)
 - **Relationships**: Written by `SurgeDetector`; consumed by agent EOD review turn
 - **Defined In**: `src/surge/records.py`
+
+### IpoRow (Signals — F78)
+- **Purpose**: Raw IPO listing row fetched from the Finnhub IPO calendar
+- **Key Fields**: `name: str`, `symbol: str|None`, `ipo_date: date`, `exchange: str|None`, `status: Literal["expected","priced","withdrawn","filed"]`, `est_value: float|None`, `price_low: float|None`, `price_high: float|None`, `shares: int|None`
+- **Relationships**: Raw input to `select_imminent_ipos()` → `ImminentIpo`
+- **Defined In**: `src/signals/records.py`
+- **Lifecycle**: Fetched from Finnhub `/calendar/ipo`; withdrawn rows dropped immediately
+
+### ImminentIpo (Signals — F78)
+- **Purpose**: A filtered, size-ranked imminent IPO surfaced in the research brief
+- **Key Fields**: `name: str`, `symbol: str|None`, `ipo_date: date`, `exchange: str|None`, `status: str`, `est_value: float|None`, `in_universe: bool`, `is_held: bool`
+- **Relationships**: Produced by `select_imminent_ipos()` from `IpoRow` list; injected into `SignalBrief` for agent research prompt; also exposed via the `ipo_calendar` agent tool
+- **Defined In**: `src/signals/records.py`
+- **Lifecycle**: Assembled per research turn; NOT universe-filtered (IPOs are awareness-only); ranked by `est_value` desc, capped at `max_ipos`; `in_universe`/`is_held` are tags, not filters
 
 ### CommandRecord (Steering)
 - **Purpose**: A human operator command received via file-drop channel

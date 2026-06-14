@@ -51,7 +51,7 @@ Autostock has **two distinct orchestration paths** sharing the same domain core 
 
 ### AgentSession (`src/agent/session.py`)
 - **Purpose**: Wraps `claude -p` CLI in headless mode with a curated tool manifest
-- **Responsibilities**: Spawns subprocess, streams JSON output, enforces turn timeout, exposes market tools (quote, indicators, scoreboard, fundamentals, earnings) to LLM
+- **Responsibilities**: Spawns subprocess, streams JSON output, enforces turn timeout, exposes market tools (quote, indicators, scoreboard, fundamentals, earnings, ipo_calendar) to LLM
 - **Dependencies**: Claude Code CLI (subscription auth at `~/.claude/`), `src/agent/tools/__main__.py`
 - **Type**: Application
 
@@ -74,9 +74,9 @@ Autostock has **two distinct orchestration paths** sharing the same domain core 
 - **Type**: Shared
 
 ### SignalCollector (`src/signals/collector.py`)
-- **Purpose**: Pre-research signal assembly (F61/F77) — movers, peer read-through, earnings, retail sentiment
-- **Responsibilities**: Scans price movers (price % or volume multiple), propagates to sector peers via static PeerMap (R6/R7), fetches Finnhub earnings calendar (R3), aggregates StockTwits retail sentiment z-outliers (F77), builds markdown/structured brief injected into research prompt; TTL-cached to share between push (prompt) and pull (agent tools) paths
-- **Dependencies**: AlpacaProvider, FinnhubEarnings, StockTwitsSource, PeerMap
+- **Purpose**: Pre-research signal assembly (F61/F77/F78) — movers, peer read-through, earnings, IPO calendar, retail sentiment
+- **Responsibilities**: Scans price movers (price % or volume multiple), propagates to sector peers via static PeerMap (R6/R7), fetches Finnhub earnings calendar (R3) and IPO calendar (F78), aggregates StockTwits retail sentiment z-outliers (F77), builds markdown/structured brief injected into research prompt; TTL-cached to share between push (prompt) and pull (agent tools) paths
+- **Dependencies**: AlpacaProvider, FinnhubEarnings, FinnhubIpo, StockTwitsSource, PeerMap
 - **Type**: Shared
 
 ### TradingEngine (`src/trading/engine.py`)
@@ -102,7 +102,7 @@ Autostock has **two distinct orchestration paths** sharing the same domain core 
 - **Responsibilities**: Iterates historical bars, applies strategy + risk + SimulatedBroker; collects BacktestResult metrics; optionally drives prompt auto-improvement loop
 - **Type**: Application
 
-### BrokerApiBroker (`src/execution/brokers/broker_api_broker.py`)
+### BrokerApiBroker (`src/execution/brokers/account_farm_broker.py`)
 - **Purpose**: Broker implementation using the Alpaca Broker API (sandbox farm)
 - **Responsibilities**: Shares all request-building / fill-polling / position-mapping logic with `AlpacaBroker` via `AlpacaShapedBroker`; supplies only the Broker-API client hooks and account-ID routing
 - **R7 fix**: Short-cover side mapping corrected (`sell` → `buy_to_cover`); TIF handling is now fail-closed (unsupported TIF raises, not silently downgrades)
@@ -122,7 +122,7 @@ sequenceDiagram
     participant BRK as Broker
 
     ORC->>SIG: collect_signals()
-    SIG-->>ORC: SignalBrief (movers/earnings/peers)
+    SIG-->>ORC: SignalBrief (movers/earnings/IPOs/peers/sentiment)
     ORC->>SESS: run_research_turn(brief + portfolio + universe)
     SESS->>CLAUDE: claude -p (headless, tools enabled)
     CLAUDE-->>SESS: decisions JSON

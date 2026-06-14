@@ -15,6 +15,7 @@
 | Turn timeout enforcement | AgentSession kills `claude -p` subprocess after `agent.turn_timeout` (default 600s) | `src/agent/session.py` |
 | Atomic JSONL writes | `steering/jsonl.py` uses temp-file + `os.replace()` for all JSONL line appends | `src/agent/steering/jsonl.py` |
 | Efficacy-cached singleton | `_efficacy_cached: (date, outcomes)` atomic tuple prevents redundant LLM retrospective calls within a day | `src/agent/orchestrator.py` |
+| Mandatory short stop | A SELL_SHORT with no resolvable stop is rejected fail-closed (not just a polled backup) | `src/risk/manager.py` |
 
 ## Scalability
 
@@ -28,6 +29,8 @@
 | Concurrent health checks | `CheckerDispatcher` runs health dimension checks in parallel threads | `src/monitoring/health/checker.py` |
 | Universe caching | US/KR universe cached to JSON; rebuilt only when cache is stale | `src/universe/`, `config/universe/` |
 | Market-time scheduling | APScheduler interval + US-market cron avoids unnecessary ticks during off-hours | `src/trading/scheduler.py` |
+| Signal TTL cache | SignalCollector TTL cache (`cache_ttl_seconds=300`) prevents duplicate fetch between push (prompt) and pull (tool) paths | `src/signals/collector.py` |
+| StockTwits rate limiting | Hourly sweep rate-limited to `hourly_budget` (150 req/hr) with `request_gap_s` (0.5s) pacing | `src/signals/sentiment_sweep.py` |
 
 ## Security
 
@@ -40,6 +43,7 @@
 | Env-file indirection | Broker/LLM keys loaded from `.env` via `pydantic-settings`; path overridable via env var | `config/config.py` |
 | Shorting off by default | `shorting_enabled: false` in `settings.yaml` ships; live shorts require explicit opt-in | `config/settings.yaml`, `src/risk/manager.py` |
 | Paper/live key separation | Distinct paper vs live API keys for Alpaca and KIS; paper mode enforced by `broker.paper = true` | `src/execution/brokers/` |
+| Fail-closed TIF enforcement | Unsupported TIF values raise instead of silently downgrading (R7) | `src/risk/manager.py`, brokers |
 
 ## Observability
 
@@ -51,9 +55,9 @@
 | Alert dispatch | Slack and/or Telegram webhook alerts on health failures | `src/monitoring/alerts.py` |
 | Live monitor snapshot | `SteeringRuntime` publishes `monitor.json` on every state change; console TUI reads it | `src/agent/steering/runtime.py` |
 | Decision audit ledger | `execution_log.jsonl` records every decision → order → fill (F24) | `src/agent/executor.py` |
-| Turn log | `turn_log.jsonl` records per-turn metadata (tokens, duration, decisions) | `src/agent/turn_log.py` |
-| Equity curve log | `equity_log.jsonl` persists portfolio equity after each turn vs benchmark | `src/agent/equity_log.py` |
-| Trades log | `trades_log.jsonl` records closed round-trip P&L | `src/agent/trades_log.py` |
+| Turn log | `turn_log.jsonl` records per-turn metadata (tokens, duration, decisions) | `src/agent/logs/turn.py` |
+| Equity curve log | `equity_log.jsonl` persists portfolio equity after each turn vs benchmark | `src/agent/logs/equity.py` |
+| Trades log | `trades_log.jsonl` records closed round-trip P&L | `src/agent/logs/trades.py` |
 | Quality metrics | `src/agent/quality/` computes win rate, Sharpe, fill accuracy per decision/prompt version | `src/agent/quality/` |
 | Agent trace CLI | `scripts/agent_trace.py` reads reasoning traces for transparency (F65) | `scripts/agent_trace.py` |
 | Portfolio dashboard | `scripts/status.py` Rich-formatted portfolio state and round-trip P&L | `scripts/status.py` |
