@@ -82,9 +82,24 @@ vibeOS(caffeinum/vibeOS) 패턴의 "방향 A"를 autostock에 이식: 레포에 
 - [x] Code Generation — 승인(2026-06-13). vibeshell 109f631 + code-review 8건 e9c959a. 테스트 108/108 + 라이브 스모크
 - [x] Build & Test — ✅ GREEN (tsc 클린 / vitest 108 / next build OK / 경계 테스트 / 라이브 IT). **장기 브랜치 — `active` 유지(merge-awaiting 전환 안 함)**. Post-Merge Guide 작성
 
+### 🟢 후속: 지표 확장 (F83 철회 후 순서 정상화 — 2026-06-14)
+> F83(공유 카탈로그)을 critic 검증 후 철회하고, 원래 목표(viz-shell 지표 부족 해소)를
+> vibeshell에서 직접. Tier 로드맵은 대화 정리분(Tier 0 공짜 → 1 핵심 → 2 분석 → 3 리서치).
+- [x] **Tier 0** (2026-06-14) — snapshot 미사용 필드 노출. 스키마 확장(open_orders/recent_fills/
+  round_trip/run_state) + 위젯 4종(RunStateBadge/OpenOrdersTable/RoundTripCard/RecentFills),
+  라우터 추가 0. 테스트 110 통과 + 라이브 스모크(API 5 orders/8 fills, 위젯 렌더). 미체결
+  브래킷/OCO 가시성 확보(최대 격차 해소).
+- [ ] **Tier 1** — decisions/turns/trades (jsonl tail 라우터 추가).
+- [ ] **Tier 2** — quality/health/watchlist·regime.
+- [ ] **Tier 3** — screening/sentiment/surge/lessons/daily (여력 시).
+
+> ⚠️ **발견(F73 갭, Tier 0 중)**: 사용자가 채팅으로 만든 생성 뷰(`src/generated/
+> unrealized-pnl-by-symbol.tsx`)에 타입 에러가 있어 `tsc --noEmit`·`next build`를 깨뜨림.
+> 런타임은 ErrorBoundary로 격리되나 **빌드/타입체크 게이트는 generated/를 포함해 오염**.
+> dev(HMR) 운영엔 무해. 처리 방안(생성뷰를 tsc/build 스코프에서 제외 등)은 별도 결정 대기.
+
 ## Current Status
-- **Lifecycle Phase**: CONSTRUCTION 완료 (전 stage 종료)
-- **Current Stage**: Build & Test 완료 — GREEN
-- **Next Stage**: (없음) 장기 브랜치 유지. 사용자가 "안정됐다, 머지하자" 선언 시
-  Status를 `merge-awaiting`으로 바꾸고 `/ai-dlc-merge`. 그 전까지 `active`.
-  main 유의미 머지마다 vibeshell rebase 권장.
+- **Lifecycle Phase**: CONSTRUCTION 완료 + 후속 지표 확장 진행 중
+- **Current Stage**: Tier 0 완료 (지표 확장 후속) — vibeshell, 미커밋→커밋 예정
+- **Next Stage**: Tier 1(decisions/turns/trades) 또는 사용자 지시. 장기 브랜치 유지
+  (merge-awaiting 전환 안 함). main 유의미 머지마다 vibeshell rebase 권장.

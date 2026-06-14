@@ -40,6 +40,30 @@ describe("SnapshotSchema (E1 — verified against live snapshot shape)", () => {
   it("defaults positions to {} when absent", () => {
     expect(SnapshotSchema.parse({}).positions).toEqual({});
   });
+
+  it("parses Tier-0 fields (open_orders/recent_fills/round_trip/run_state)", () => {
+    const out = SnapshotSchema.parse({
+      open_orders: [
+        { symbol: "TMO", order_id: "x", side: "buy", order_type: "limit", limit_price: 465, stop_price: null, current_price: 469.39 },
+        { symbol: "RTX", side: "sell", order_type: "stop", limit_price: null, stop_price: 175.5, current_price: 183.53 },
+      ],
+      recent_fills: [{ ts: "2026-06-09T13:34:29.118658+00:00", side: "sell", qty: 2, symbol: "AAPL", price: 297.8 }],
+      round_trip: { closed_count: 0, win_rate: null, realized_pnl: 0.0, as_of: "2026-06-14T02:39:07-04:00" },
+      run_state: { paused: false, entries_halted: false, et_date: "2026-06-13" },
+    });
+    expect(out.open_orders).toHaveLength(2);
+    expect(out.open_orders[0].limit_price).toBe(465);
+    expect(out.open_orders[0].stop_price ?? null).toBeNull(); // nullish preserved
+    expect(out.recent_fills[0].symbol).toBe("AAPL");
+    expect(out.round_trip?.win_rate ?? null).toBeNull(); // null until a round trip closes
+    expect(out.run_state?.et_date).toBe("2026-06-13");
+  });
+
+  it("defaults open_orders/recent_fills to [] when absent", () => {
+    const out = SnapshotSchema.parse({});
+    expect(out.open_orders).toEqual([]);
+    expect(out.recent_fills).toEqual([]);
+  });
 });
 
 describe("EquityRecordSchema (E2)", () => {
