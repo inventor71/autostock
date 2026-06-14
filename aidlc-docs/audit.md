@@ -289,3 +289,4 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 ## /ai-dlc-merge — F80, F82
 - 2026-06-14 — **merge run start** — triage PASS (working tree: shared aidlc-state.md + active-track docs F76/F81/F83 noise only; no foreign/non-active). Queue: F80 (↑1, base 01ced61) → F82 (↑2, stacked on F80). main now d8ceda3. User: "/ai-dlc-merge로 머지하고, 머지후에 main에서 한번 돌려서 채워줘." Rebase onto d8ceda3; expected minor conflicts in pyproject.toml (F80) / settings.yaml (F82) vs main's relicense + F78.
 - 2026-06-14 — **F80 merged** (9e8ae56) — intraday feature store CSV→Parquet (designed swap point) + pyarrow; rebased onto d8ceda3 clean, 23/23 store tests green.
+- 2026-06-14 — **F82 merged** (2c9ddad) — intraday feature auto-collection (universe gap-backfill thread on start + EOD append, config-gated default ON); stacked on F80, rebased onto 9e8ae56 clean (F80 commit dropped as applied), 36 intraday tests green. Merge run complete (F80→F82).

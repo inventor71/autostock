@@ -7,7 +7,7 @@
 - **Track ID**: F82
 - **Title**: Intraday 피처 자동 수집 — 유니버스 갭 백필 + 매 장마감 EOD append
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-14 → /ai-dlc-merge (F80 먼저) -->
+- **Status**: merged → main 2c9ddad (2026-06-14)
 - **Branch**: feat/F82 (stacked on feat/F80)
 - **Worktree**: .claude/worktrees/F82
 - **Submodule branch**: — (monorepo)
