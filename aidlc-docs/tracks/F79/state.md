@@ -66,12 +66,15 @@ F71/U3가 로직만 출고하고 SolidJS 뷰 배선을 "실기기 검증분"으�
   - [ ] U3 셸·세션·다듬기: C6 DashboardView / C8 SessionEntry / C10 MobileShell / pull-to-refresh
 - [ ] Build & Test
 
-## Construction 진행 메모 (체크포인트 2026-06-13)
-- **완료(검증됨)**: 보안 백본 end-to-end — 클라 단일 서명 관문(C3) + 서버 원격 prompt 게이트(S1)
-  + 스냅샷 조립(C2). addon 30 tests + 서버 40 tests green, app·opencode tsgo 클린.
-  커밋: c5fa1ea(U1+U2 cores), 2aeacce(S1).
-- **잔여**: 주로 SolidJS 뷰(C5 ConfirmSheet/C6 Dashboard/C7 Detail/C8 Session/C10 Shell) +
-  C4 승인큐 + C9 잠금 + permission.respond 헤더 배선. 시각 레이아웃·라우팅 통합은 실행/관찰 이점 큼.
+## Construction 진행 메모 (체크포인트 2026-06-14)
+- **완료(검증됨)**: 코어 5종(C2 snapshot/C3 signed-mutation/C4 queue/C9 lock/webauthn-fetch) +
+  라이브 FR-3 배선(permission.respondSigned) + S1 서버 게이트 + 뷰 3종(C5 ConfirmSheet/
+  C6 DashboardView/C7 DetailViews). **app·opencode tsgo 클린, 41 addon + 40 server = 81 tests green.**
+  커밋: c5fa1ea, 2aeacce, 9c9cd8e, + 뷰 커밋.
+- **잔여(앱 실행 필요)**: C8 세션 입력 클라 서명 배선(세션 composer) + C10 셸/라우터 통합(뷰 마운트)
+  + FR-8 제스처 배선 + 데스크톱 e2e 시뮬 + 실기기 스모크. → 뷰가 아직 내비에 안 떠 폰에서 미가용.
+- **Status=active 유지(merge-awaiting 아님)**: S1 게이트는 안전·머지 가능하나 뷰 미마운트로 기능
+  미완. 백본만 선머지할지 / 통합까지 갈지 사용자 결정 대기. post-merge-guide에 S1 라이브 영향 명시.
 
 ## 설계 확정 (Application Design)
 - D-AD-1: WebAuthn 헤더 = SDK per-call `headers` 옵션(단일 관문 C3 SignedMutationGateway).
