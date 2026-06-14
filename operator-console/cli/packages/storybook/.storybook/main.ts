@@ -21,7 +21,11 @@ export default defineMain({
     "@storybook/addon-a11y",
     "@storybook/addon-vitest",
   ],
-  stories: ["../../ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
+  stories: [
+    "../../ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
+    // F79: preview the autostock mobile PWA views (presentational, props-driven).
+    "../../app/src/addons/autostock/**/*.stories.@(js|jsx|mjs|ts|tsx)",
+  ],
   async viteFinal(config) {
     const { mergeConfig, searchForWorkspaceRoot } = await import("vite")
     return mergeConfig(config, {

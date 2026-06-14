@@ -51,6 +51,8 @@ import { ServersProvider } from "./context/servers"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
+// F79: autostock mobile PWA shell (dashboard + passkey-gated approvals + lock).
+const AutostockMobile = lazy(() => import("@/addons/autostock/mobile-shell"))
 
 const SessionRoute = Object.assign(
   () => (
@@ -327,6 +329,7 @@ export function AppInterface(props: {
                     root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
                   >
                     <Route path="/" component={HomeRoute} />
+                    <Route path="/autostock" component={AutostockMobile} />
                     <Route path="/:dir" component={DirectoryLayout}>
                       <Route path="/" component={() => <Navigate href="session" />} />
                       <Route path="/session/:id?" component={SessionRoute} />

@@ -17,6 +17,8 @@ import {
   isMutatingAutostockPermission,
   isRemoteOrigin,
   issueChallenge,
+  promptNeedsAssertion,
+  checkPrompt,
 } from "../src/server/autostock/webauthn"
 
 describe("isMutatingAutostockPermission", () => {
@@ -192,5 +194,48 @@ describe("expectedOrigin/RpId (https-only — WebAuthn secure context)", () => {
   test("unset/garbage rejected", () => {
     expect(expectedOrigin({})).toBeNull()
     expect(expectedOrigin({ AUTOSTOCK_WEBAUTHN_ORIGIN: "not a url" })).toBeNull()
+  })
+})
+
+// F79 S1 — remote session-prompt gate (agent steering = mutating).
+describe("promptNeedsAssertion (F79 S1)", () => {
+  test("in-process (no socket) does not need assertion", () => {
+    expect(promptNeedsAssertion(undefined, false)).toBe(false)
+    expect(promptNeedsAssertion(undefined, true)).toBe(false)
+  })
+  test("host-local loopback (attach-mode TUI) does not need assertion", () => {
+    expect(promptNeedsAssertion("127.0.0.1", false)).toBe(false)
+  })
+  test("loopback via tailscale-serve hop (phone) needs assertion", () => {
+    expect(promptNeedsAssertion("127.0.0.1", true)).toBe(true)
+  })
+  test("non-loopback socket needs assertion", () => {
+    expect(promptNeedsAssertion("100.1.2.3", false)).toBe(true)
+  })
+})
+
+describe("checkPrompt (F79 S1)", () => {
+  const cfg = { env: { AUTOSTOCK_WEBAUTHN_ORIGIN: "https://pc.tail.ts.net" } }
+  test("local origin → pass through (null), no crypto required", async () => {
+    expect(await checkPrompt({ remoteAddress: "127.0.0.1", tailscaleUserLogin: undefined, header: undefined }, cfg)).toBeNull()
+    expect(await checkPrompt({ remoteAddress: undefined, tailscaleUserLogin: undefined, header: undefined }, cfg)).toBeNull()
+  })
+  test("remote without assertion (WebAuthn configured) → denied (fail-closed)", async () => {
+    const denial = await checkPrompt({ remoteAddress: "100.1.2.3", tailscaleUserLogin: undefined, header: undefined }, cfg)
+    expect(denial).not.toBeNull()
+    expect(denial).toContain("WebAuthn")
+  })
+  test("remote via tailscale hop without assertion → denied", async () => {
+    const denial = await checkPrompt(
+      { remoteAddress: "127.0.0.1", tailscaleUserLogin: "alice@example.com", header: undefined },
+      cfg,
+    )
+    expect(denial).not.toBeNull()
+    expect(denial).toContain("WebAuthn")
+  })
+  test("remote but WebAuthn NOT configured → pass through (no dead-lock on plain serve)", async () => {
+    expect(
+      await checkPrompt({ remoteAddress: "100.1.2.3", tailscaleUserLogin: undefined, header: undefined }, { env: {} }),
+    ).toBeNull()
   })
 })

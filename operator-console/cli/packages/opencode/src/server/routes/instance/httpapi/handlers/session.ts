@@ -283,11 +283,31 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
+    // F79 S1: a REMOTE prompt steers the agent (mutating) → require a WebAuthn assertion.
+    // Host-local / in-process (TUI, daemon) pass through. Server-side — a tampered phone
+    // client can't skip it. Mirrors the permission-reply gate (dynamic import, fork-isolated).
+    const gateRemotePrompt = Effect.fn("SessionHttpApi.gateRemotePrompt")(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const { checkPrompt } = yield* Effect.promise(() => import("@/server/autostock/webauthn"))
+      const denial = yield* Effect.promise(() =>
+        checkPrompt({
+          remoteAddress: Option.getOrUndefined(request.remoteAddress),
+          tailscaleUserLogin: request.headers["tailscale-user-login"],
+          header: request.headers["x-autostock-webauthn"],
+        }),
+      )
+      if (denial !== null) {
+        yield* Effect.logWarning("autostock: remote prompt gated").pipe(Effect.annotateLogs({ denial }))
+        return yield* new HttpApiError.BadRequest({})
+      }
+    })
+
     const prompt = Effect.fn("SessionHttpApi.prompt")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* gateRemotePrompt()
       const message = yield* promptSvc
         .prompt({
           ...ctx.payload,
@@ -304,6 +324,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof PromptPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* gateRemotePrompt()
       yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
