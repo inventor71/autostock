@@ -5,8 +5,11 @@ import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
 import { Persist, persisted } from "@/utils/persist"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "./server-sync"
+import { useServer } from "./server"
 import { useParams } from "@solidjs/router"
 import { decode64 } from "@/utils/base64"
+import { withWebAuthn } from "@/addons/autostock/signed-mutation"
+import { browserCredentialsGet, serverFetcher } from "@/addons/autostock/webauthn-fetch"
 import {
   acceptKey,
   directoryAcceptKey,
@@ -50,6 +53,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     const params = useParams()
     const serverSDK = useServerSDK()
     const serverSync = useServerSync()
+    const server = useServer()
 
     const permissionsEnabled = createMemo(() => {
       const directory = decode64(params.dir)
@@ -239,6 +243,25 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     return {
       ready,
       respond,
+      // F79 C3/FR-3: approve a (remote, mutating) permission WITH a fresh WebAuthn passkey
+      // signature attached as the x-autostock-webauthn header. The server (F75 gate) is the
+      // final authority. Fail-closed: a cancelled/locked ceremony throws and never replies.
+      async respondSigned(permission: PermissionRequest, response: "once" | "always", directory?: string) {
+        const conn = server.current
+        const http = conn && "http" in conn ? conn.http : undefined
+        if (!http) throw new Error("서버 연결이 없습니다")
+        await withWebAuthn(
+          { fetcher: serverFetcher(http), credentialsGet: browserCredentialsGet() },
+          (headers) =>
+            serverSDK.client.permission
+              .respond(
+                { sessionID: permission.sessionID, permissionID: permission.id, response, directory },
+                { headers },
+              )
+              .then(() => undefined),
+        )
+        responded.set(permission.id, Date.now())
+      },
       autoResponds(permission: PermissionRequest, directory?: string) {
         return shouldAutoRespond(permission, directory)
       },

@@ -16,10 +16,10 @@
 - [x] fast-check 직접 devDependency 추가 (PBT-09)
 - [x] S1 서버 게이트 확장 — 원격 `session.prompt` 서명 강제 (webauthn.ts `checkPrompt`/`promptNeedsAssertion` + session.ts `gateRemotePrompt` 배선: prompt + promptAsync)
 - [x] S1 서버 테스트 (autostock-webauthn.test.ts +7: 원격 prompt 무서명 거부 / loopback·in-process trusted / tailscale hop 거부) — 40 pass
-- [ ] C4 ApprovalQueueController (배지 + 자동 시트 트리거; permission.tsx 위)
+- [x] C4 ApprovalQueueController 코어 (`approval-queue.ts`: selectPending/badgeCount/nextForSheet) + 테스트(PBT 포함)
 - [ ] C5 ConfirmSheet 뷰 (승인→C3 서명 전송 / 거절 무서명)
-- [ ] C9 LockController (비활성 타이머 → 클라 잠금 → 재인증)
-- [ ] permission `respond`에 헤더 전달 경로 배선 (per-call headers)
+- [x] C9 LockController 코어 (`lock.ts`: shouldLock/msUntilLock) + 테스트(PBT)
+- [x] permission `respondSigned` 라이브 배선 — withWebAuthn → serverFetcher(인증) → SDK per-call headers → 서버 게이트. app tsgo 클린(=SDK 헤더 수용 검증). `webauthn-fetch.ts` 헬퍼(순수부 테스트).
 
 ## U3 — 셸·세션·다듬기
 - [ ] C6 DashboardView (모바일 우선; equity/손익/포지션/건강/승인대기/asOf/offline/stale)
