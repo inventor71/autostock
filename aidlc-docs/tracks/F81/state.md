@@ -8,7 +8,7 @@
 - **Track ID**: F81
 - **Title**: 13F 보유종목 시그널 소스 — Situational Awareness LP(Aschenbrenner) 등 기관 13F를 주기적으로 따와 리서치 브리프에 공급
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-14; /ai-dlc-merge to merge -->
+- **Status**: merged → main 1e2b9b9 (2026-06-14)
 - **Branch**: feat/F81
 - **Worktree**: .claude/worktrees/F81
 - **Submodule branch**: — (parent-repo Python only; operator-console/cli not touched)
