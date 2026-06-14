@@ -527,7 +527,7 @@ class SteeringRuntime:
         "src/trading/modes": "Per-mode entry points (agent.py, paper.py, backtest.py)",
         "src/strategy": "Strategy implementations",
         "src/strategy/technical": "Technical strategies — MA Crossover, RSI, MACD, Bollinger",
-        "src/strategy/ml": "ML strategies — Random Forest, LSTM",
+        "src/strategy/ml": "ML feature engineering (technical features for agent/LLM)",
         "src/strategy/llm": "LLM strategy (Claude/OpenAI) + prompt auto-improvement",
         "src/risk": "Risk management — single order gate (manager.py) + exits + sizing",
         "src/execution": "Broker abstraction — BaseBroker, SimulatedBroker, AlpacaBroker",
