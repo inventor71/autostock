@@ -6,7 +6,9 @@ import { RoundTripCard } from "@/components/overview/round-trip-card";
 import { EquityCurve } from "@/components/overview/equity-curve";
 import { PositionsTable } from "@/components/overview/positions-table";
 import { OpenOrdersTable } from "@/components/overview/open-orders-table";
+import { RecentDecisions } from "@/components/overview/recent-decisions";
 import { RecentFills } from "@/components/overview/recent-fills";
+import { TradesTable } from "@/components/overview/trades-table";
 
 /**
  * Seed view (fixed tab, cannot be hidden). Each widget renders its own honest
@@ -22,6 +24,8 @@ export function OverviewTab() {
       <EquityCurve />
       <PositionsTable />
       <OpenOrdersTable />
+      <RecentDecisions />
+      <TradesTable />
       <RecentFills />
     </div>
   );

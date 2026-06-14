@@ -88,6 +88,53 @@ export const EquityRecordSchema = z.looseObject({
 
 export type EquityRecord = z.infer<typeof EquityRecordSchema>;
 
+// workspace/decisions.jsonl — one agent decision per line (reason is the narrative).
+export const DecisionSchema = z.looseObject({
+  ts: z.string(),
+  symbol: z.string(),
+  action: z.string(), // BUY | SELL | HOLD | ADJUST_STOP | ...
+  confidence: z.coerce.number().nullish(),
+  sell_pct: z.coerce.number().nullish(),
+  limit: z.coerce.number().nullish(),
+  stop: z.coerce.number().nullish(),
+  target: z.coerce.number().nullish(),
+  thesis_ref: z.string().nullish(),
+  valid_until: z.string().nullish(),
+  reason: z.string().optional(),
+});
+
+// workspace/turns.jsonl — one agent turn per line (cost/tokens/summary).
+export const TurnSchema = z.looseObject({
+  turn_id: z.string().optional(),
+  ts: z.string(),
+  et_date: z.string().optional(),
+  turn_type: z.string().optional(), // wake | research | intraday | eod | ...
+  model: z.string().optional(),
+  num_decisions: z.coerce.number().optional(),
+  cost_usd: z.coerce.number().optional(),
+  duration_ms: z.coerce.number().optional(),
+  input_tokens: z.coerce.number().optional(),
+  output_tokens: z.coerce.number().optional(),
+  summary: z.string().optional(),
+  health: z.string().optional(),
+});
+
+// workspace/trades.jsonl — one closed round trip per line.
+export const TradeSchema = z.looseObject({
+  symbol: z.string(),
+  qty: z.coerce.number().optional(),
+  entry_price: z.coerce.number().optional(),
+  exit_price: z.coerce.number().optional(),
+  opened_at: z.string().optional(),
+  closed_at: z.string().optional(),
+  realized_pnl: z.coerce.number().optional(),
+  return_pct: z.coerce.number().optional(),
+});
+
+export type Decision = z.infer<typeof DecisionSchema>;
+export type Turn = z.infer<typeof TurnSchema>;
+export type Trade = z.infer<typeof TradeSchema>;
+
 /** positions/<SYMBOL>.md thesis docs are opaque markdown — never parsed (E3). */
 export type ThesisDoc = {
   symbol: string;

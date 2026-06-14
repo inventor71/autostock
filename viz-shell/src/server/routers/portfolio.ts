@@ -3,13 +3,28 @@ import { promises as fs } from "node:fs";
 import { z } from "zod";
 
 import { router, publicProcedure } from "@/server/trpc";
-import { equityPath, positionsDir, snapshotPath } from "@/server/paths";
+import {
+  decisionsPath,
+  equityPath,
+  positionsDir,
+  snapshotPath,
+  tradesPath,
+  turnsPath,
+} from "@/server/paths";
 import { readFileStable, readJsonFile, tailJsonl } from "@/server/safe-read";
 import {
+  DecisionSchema,
   EquityRecordSchema,
   SnapshotSchema,
+  TradeSchema,
+  TurnSchema,
   type ThesisDoc,
 } from "@/server/schemas";
+
+/** Shared "recent N rows" input for jsonl tail procedures. */
+const limitInput = z
+  .object({ limit: z.number().int().min(1).max(500).default(50) })
+  .default({ limit: 50 });
 
 /** BR-7: symbols look like "RTX", "BRK.B", "GOOGL" — nothing path-like. */
 export const SYMBOL_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
@@ -75,4 +90,19 @@ export const portfolioRouter = router({
         stale: read.stale,
       };
     }),
+
+  /** Recent agent decisions (newest last on disk), tail-read for the window. */
+  decisions: publicProcedure
+    .input(limitInput)
+    .query(({ input }) => tailJsonl(decisionsPath(), DecisionSchema, { maxLines: input.limit })),
+
+  /** Recent agent turns (cost/tokens/summary), tail-read. */
+  turns: publicProcedure
+    .input(limitInput)
+    .query(({ input }) => tailJsonl(turnsPath(), TurnSchema, { maxLines: input.limit })),
+
+  /** Closed round-trip trades, tail-read. */
+  trades: publicProcedure
+    .input(limitInput)
+    .query(({ input }) => tailJsonl(tradesPath(), TradeSchema, { maxLines: input.limit })),
 });

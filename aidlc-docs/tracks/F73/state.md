@@ -89,7 +89,10 @@ vibeOS(caffeinum/vibeOS) 패턴의 "방향 A"를 autostock에 이식: 레포에 
   round_trip/run_state) + 위젯 4종(RunStateBadge/OpenOrdersTable/RoundTripCard/RecentFills),
   라우터 추가 0. 테스트 110 통과 + 라이브 스모크(API 5 orders/8 fills, 위젯 렌더). 미체결
   브래킷/OCO 가시성 확보(최대 격차 해소).
-- [ ] **Tier 1** — decisions/turns/trades (jsonl tail 라우터 추가).
+- [x] **Tier 1** (2026-06-14) — decisions/turns/trades. paths 3 + schemas(Decision/Turn/Trade) +
+  router 3 query(tailJsonl, limit 1..500) + 위젯 2종(RecentDecisions: action/confidence + reason
+  펼침, TradesTable: 청산 라운드트립) + view-contract에 신규 훅 4개 안내. turns는 라우터만(생성뷰용).
+  테스트 118 통과(+7 라우터), Tier1 코드 tsc 클린, 라이브 스모크(decisions 3/turns 2/trades 5 실데이터, 위젯 렌더).
 - [ ] **Tier 2** — quality/health/watchlist·regime.
 - [ ] **Tier 3** — screening/sentiment/surge/lessons/daily (여력 시).
 

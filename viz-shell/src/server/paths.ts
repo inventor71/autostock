@@ -27,6 +27,18 @@ export function equityPath(): string {
   return path.join(repoRoot(), "workspace", "equity.jsonl");
 }
 
+export function decisionsPath(): string {
+  return path.join(repoRoot(), "workspace", "decisions.jsonl");
+}
+
+export function turnsPath(): string {
+  return path.join(repoRoot(), "workspace", "turns.jsonl");
+}
+
+export function tradesPath(): string {
+  return path.join(repoRoot(), "workspace", "trades.jsonl");
+}
+
 export function positionsDir(): string {
   return path.join(repoRoot(), "workspace", "positions");
 }

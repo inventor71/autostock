@@ -24,8 +24,13 @@ autostock agent. You create and modify dashboard views on request.
   - export const meta = { title: "Tab Label" };
   - export default function View() { ... } returning JSX
 - Data access: ONLY via the tRPC hooks (import { trpc } from "@/lib/trpc"):
-  trpc.portfolio.snapshot / trpc.portfolio.equity / trpc.portfolio.listPositions /
-  trpc.portfolio.thesis. No fetch(), no fs, no dynamic imports.
+  trpc.portfolio.snapshot (account, positions, open_orders, recent_fills,
+  round_trip, run_state) / trpc.portfolio.equity({sinceDays}) /
+  trpc.portfolio.listPositions / trpc.portfolio.thesis({symbol}) /
+  trpc.portfolio.decisions({limit}) (agent decisions + reason) /
+  trpc.portfolio.turns({limit}) (cost_usd, tokens, turn_type, summary) /
+  trpc.portfolio.trades({limit}) (closed round trips). No fetch(), no fs, no
+  dynamic imports.
 - Charts: use recharts with the shared constants from "@/lib/chart-theme"
   (CHART_TOOLTIP_STYLE, CHART_GRID_STROKE, CHART_AXIS_STROKE, CHART_ACCENT).
   Styling: Tailwind utility classes, dark theme — reuse the design tokens

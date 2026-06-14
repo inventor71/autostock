@@ -30,6 +30,25 @@ function seedFixture() {
   writeFileSync(path.join(root, "workspace", "positions", "RTX.md"), "# RTX thesis\nbody");
   writeFileSync(path.join(root, "workspace", "positions", "BRK.B.md"), "# BRK.B");
   writeFileSync(path.join(root, "workspace", "positions", "notes.txt"), "ignored");
+  // Tier 1 jsonl artifacts (chronological append; newest last).
+  writeFileSync(
+    path.join(root, "workspace", "decisions.jsonl"),
+    [
+      JSON.stringify({ ts: "2026-06-13T10:00:00-04:00", symbol: "RTX", action: "HOLD", confidence: 0.7, stop: 175.5, target: 210, reason: "first" }),
+      JSON.stringify({ ts: "2026-06-13T11:00:00-04:00", symbol: "TMO", action: "BUY", confidence: 0.6, reason: "second" }),
+    ].map((l) => `${l}\n`).join(""),
+  );
+  writeFileSync(
+    path.join(root, "workspace", "turns.jsonl"),
+    [
+      JSON.stringify({ turn_id: "W1", ts: "2026-06-13T09:00:00+09:00", turn_type: "wake", model: "sonnet", cost_usd: 0.35, input_tokens: 3, output_tokens: 297, summary: "s1" }),
+      JSON.stringify({ turn_id: "R1", ts: "2026-06-13T10:00:00+09:00", turn_type: "research", cost_usd: 1.2 }),
+    ].map((l) => `${l}\n`).join(""),
+  );
+  writeFileSync(
+    path.join(root, "workspace", "trades.jsonl"),
+    JSON.stringify({ symbol: "AAPL", qty: 10, entry_price: 309, exit_price: 298.79, realized_pnl: -102.14, return_pct: -3.31, closed_at: "2026-06-09T13:34:29Z" }) + "\n",
+  );
 }
 
 const caller = appRouter.createCaller({});
@@ -121,4 +140,43 @@ describe("portfolio.thesis (BR-7 double whitelist)", () => {
       await expect(caller.portfolio.thesis({ symbol })).rejects.toThrow();
     },
   );
+});
+
+describe("Tier 1 jsonl tail procedures (decisions/turns/trades)", () => {
+  it("decisions tail returns parsed rows with reason narrative", async () => {
+    const rows = await caller.portfolio.decisions({ limit: 50 });
+    expect(rows).toHaveLength(2);
+    expect(rows[1].action).toBe("BUY");
+    expect(rows[0].reason).toBe("first");
+    expect(rows[0].stop).toBe(175.5);
+  });
+
+  it("turns tail exposes cost/tokens/type", async () => {
+    const rows = await caller.portfolio.turns({ limit: 50 });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].cost_usd).toBe(0.35);
+    expect(rows[0].turn_type).toBe("wake");
+  });
+
+  it("trades tail returns closed round trips", async () => {
+    const rows = await caller.portfolio.trades({ limit: 50 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].realized_pnl).toBe(-102.14);
+    expect(rows[0].return_pct).toBe(-3.31);
+  });
+
+  it("limit caps the tail window (newest kept)", async () => {
+    const rows = await caller.portfolio.decisions({ limit: 1 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].symbol).toBe("TMO"); // newest
+  });
+
+  it.each([[0], [501], [1.5]])("rejects limit=%s (zod)", async (limit) => {
+    await expect(caller.portfolio.decisions({ limit })).rejects.toThrow();
+  });
+
+  it("returns [] when a jsonl file is missing (fail-honest)", async () => {
+    rmSync(path.join(root, "workspace", "trades.jsonl"));
+    expect(await caller.portfolio.trades({ limit: 50 })).toEqual([]);
+  });
 });
