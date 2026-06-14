@@ -1,11 +1,8 @@
-// F79 C5 — ConfirmSheet (FR-3 UI). Presentational: the shell passes the pending approval
-// and injected handlers (onApprove -> permission.respondSigned, onReject -> plain reject).
-// This component owns only busy/error UX and renders the WebAuthn failure reasons in Korean.
-// Approve runs the passkey ceremony (via onApprove); cancel/lock/error keep the action
-// un-sent (fail-closed) and surface a reason. Reject needs no signature (F75 topology).
-//
-// Plain elements + tailwind so it restyles cleanly once seen on a real phone; behavior is
-// fully covered by the tested cores (signed-mutation, approval-queue).
+// F79 C5 — ConfirmSheet (FR-3 UI). Presentational bottom sheet: the shell passes the pending
+// approval + injected handlers (onApprove -> permission.respondSigned, onReject -> plain
+// reject). Owns busy/error UX and renders WebAuthn failure reasons in Korean. Approve runs the
+// passkey ceremony; cancel/lock/error keep the action un-sent (fail-closed) and surface a
+// reason. Reject needs no signature (F75 topology). Host opencode tokens — no new palette.
 
 import { createSignal, Show } from "solid-js"
 import type { PendingApproval } from "./approval-queue"
@@ -54,43 +51,57 @@ export function ConfirmSheet(props: ConfirmSheetProps) {
   return (
     <Show when={props.request}>
       {(req) => (
-        <div class="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-surface p-4 pb-6 shadow-lg">
-          <div class="mx-auto flex max-w-md flex-col gap-3">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm font-semibold text-text">승인 요청</span>
-              <span class="text-sm text-text-weak">{req().title ?? req().permission ?? req().id}</span>
-              <span class="text-xs text-text-weak">패스키 서명이 필요한 작업입니다.</span>
-            </div>
+        <div class="fixed inset-0 z-50 flex flex-col justify-end">
+          {/* scrim */}
+          <div class="absolute inset-0 bg-background-base/70 backdrop-blur-sm" />
+          {/* sheet */}
+          <div class="relative animate-in slide-in-from-bottom rounded-t-2xl border-t border-border-base bg-surface-raised-base p-5 pb-8 shadow-lg-border-base">
+            <div class="mx-auto flex max-w-md flex-col gap-4">
+              <div class="mx-auto h-1 w-10 rounded-full bg-border-base" />
 
-            <Show when={error()}>
-              <span class="text-xs text-text-danger">{error()}</span>
-            </Show>
+              <div class="flex items-start gap-3">
+                <span class="mt-1 size-3 shrink-0 rounded-full bg-icon-interactive-base" />
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <span class="text-base font-semibold text-text-strong">승인 요청</span>
+                  <span class="truncate text-sm text-text-weak">{req().title ?? req().permission ?? req().id}</span>
+                  <span class="text-xs text-text-faint">패스키 지문 서명이 필요한 작업입니다.</span>
+                </div>
+              </div>
 
-            <div class="flex gap-2">
-              <button
-                type="button"
-                class="flex-1 rounded-md bg-primary px-3 py-2 text-sm font-medium text-text-invert disabled:opacity-50"
-                disabled={busy()}
-                onClick={() => approve("once")}
-              >
-                {busy() ? "처리 중…" : "승인 (지문)"}
-              </button>
-              <button
-                type="button"
-                class="rounded-md border border-border px-3 py-2 text-sm text-text disabled:opacity-50"
-                disabled={busy()}
-                onClick={() => approve("always")}
-              >
-                항상 허용
-              </button>
-              <button
-                type="button"
-                class="rounded-md border border-border px-3 py-2 text-sm text-text-weak disabled:opacity-50"
-                disabled={busy()}
-                onClick={reject}
-              >
-                거절
-              </button>
+              <Show when={error()}>
+                <div class="rounded-md border border-border-base bg-surface-base px-3 py-2 text-xs text-icon-critical-base">
+                  {error()}
+                </div>
+              </Show>
+
+              <div class="flex flex-col gap-2">
+                <button
+                  type="button"
+                  class="flex h-12 items-center justify-center rounded-xl bg-icon-interactive-base text-base font-semibold text-text-invert-base transition active:scale-[0.98] disabled:opacity-50"
+                  disabled={busy()}
+                  onClick={() => approve("once")}
+                >
+                  {busy() ? "처리 중…" : "승인 — 지문 서명"}
+                </button>
+                <div class="flex gap-2">
+                  <button
+                    type="button"
+                    class="h-11 flex-1 rounded-xl border border-border-base text-sm font-medium text-text-strong transition active:scale-[0.98] disabled:opacity-50"
+                    disabled={busy()}
+                    onClick={() => approve("always")}
+                  >
+                    항상 허용
+                  </button>
+                  <button
+                    type="button"
+                    class="h-11 flex-1 rounded-xl border border-border-base text-sm font-medium text-text-weak transition active:scale-[0.98] disabled:opacity-50"
+                    disabled={busy()}
+                    onClick={reject}
+                  >
+                    거절
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
