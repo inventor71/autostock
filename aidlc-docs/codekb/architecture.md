@@ -29,9 +29,9 @@ Autostock has **two distinct orchestration paths** sharing the same domain core 
        |                     |                             v
        |                     |                   DecisionExecutor              body
        |                     |                   (cursor-idempotent)
-       |                     |                             |
+       |                     |
        |                     |   [SteeringRuntime + CommandBus — optional]
-       |                     |                             |
+       |                     |
        +---------+-----------+--------------+--------------+
                  v                          v
            RiskManager  <----------->  BaseBroker
@@ -39,6 +39,12 @@ Autostock has **two distinct orchestration paths** sharing the same domain core 
                  ^
                  |
            src/core/  (models, enums, exceptions — depended on by all)
+
+Background (F82):
+  AgentTradingMode ─> IntradayAutoCollector (thread)
+                          ├── gap-backfill on start (per-symbol)
+                          └── EOD append after close
+                               └── IntradayFeatureStore (data/intraday/*.parquet)
 ```
 
 ## Component Descriptions
@@ -77,6 +83,18 @@ Autostock has **two distinct orchestration paths** sharing the same domain core 
 - **Purpose**: Pre-research signal assembly (F61/F77/F78) — movers, peer read-through, earnings, IPO calendar, retail sentiment
 - **Responsibilities**: Scans price movers (price % or volume multiple), propagates to sector peers via static PeerMap (R6/R7), fetches Finnhub earnings calendar (R3) and IPO calendar (F78), aggregates StockTwits retail sentiment z-outliers (F77), builds markdown/structured brief injected into research prompt; TTL-cached to share between push (prompt) and pull (agent tools) paths
 - **Dependencies**: AlpacaProvider, FinnhubEarnings, FinnhubIpo, StockTwitsSource, PeerMap
+- **Type**: Shared
+
+### IntradayFeatureStore (`src/data/intraday/store.py`)
+- **Purpose**: Parquet-backed persistent store for per-symbol intraday session feature vectors (F80/F82)
+- **Responsibilities**: Upsert/read feature rows keyed on `(date, symbol)`; idempotent (same date overwrites); one `.parquet` file per symbol under `data/intraday/`; lazy one-time migration from legacy `.csv` files (renames to `.csv.migrated` after conversion); provides columnar numeric feature set for pattern analysis
+- **Dependencies**: pandas, pyarrow
+- **Type**: Shared
+
+### IntradayAutoCollector (`src/data/intraday/auto.py`)
+- **Purpose**: Automated gap-aware backfill + EOD append for the IntradayFeatureStore (F82)
+- **Responsibilities**: On daemon start — per-symbol gap detection (compares last stored date to today); triggers deep-history backfill (default 3 years) via Alpaca 5-min bars for missing symbols or incremental top-up for stale ones; after each market close — appends current day's intraday session features; runs in a background daemon thread so the agent loop is never blocked
+- **Dependencies**: IntradayFeatureStore, AlpacaDataProvider, collector.collect()
 - **Type**: Shared
 
 ### TradingEngine (`src/trading/engine.py`)
@@ -157,6 +175,10 @@ sequenceDiagram
 ### Single-Writer CommandBus
 - **Location**: `src/agent/steering/bus.py`
 - **Purpose**: All broker mutations serialised on one worker thread (NFR-2); prevents concurrent order/fill corruption
+
+### Gap-Aware Background Collection (F82)
+- **Location**: `src/data/intraday/auto.py`
+- **Purpose**: Daemon-thread gap-backfill + EOD append keeps the intraday feature store current without blocking the main agent loop; provider = Alpaca by default (yfinance degrades to ~60d, no crash)
 
 ## Layer Dependency Rule
 

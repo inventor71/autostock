@@ -9,7 +9,7 @@ All core entities are Pydantic v2 models / enums defined in `src/core/` — depe
 - **Key Fields**: `timestamp: datetime`, `open: float`, `high: float`, `low: float`, `close: float`, `volume: int`, `symbol: str`, `timeframe: TimeFrame`
 - **Relationships**: Many Bars per Symbol per TimeFrame; produced by BaseDataProvider; consumed by BaseStrategy and BacktestEngine
 - **Defined In**: `src/core/models.py`
-- **Lifecycle**: Fetched from provider; TTL-cached in `IntraydayStore`; never mutated
+- **Lifecycle**: Fetched from provider; TTL-cached in `IntradayFeatureStore`; never mutated
 
 ### TradeSignal
 - **Purpose**: A strategy's directional output before risk sizing — the input to RiskManager
@@ -77,6 +77,13 @@ All core entities are Pydantic v2 models / enums defined in `src/core/` — depe
 - **Relationships**: Written by EOD `review.py`; recalled by `src/agent/learning/recall.py`; efficacy tracked by `src/agent/learning/efficacy.py`
 - **Defined In**: `src/agent/journal.py` — persisted to `lessons.jsonl`
 - **Lifecycle**: Written at EOD; recalled by regime/sector match; attribution tracks `lessons_cited` on Decision
+
+### IntradayFeatureRecord (F80/F82)
+- **Purpose**: Per-session feature vector for one symbol on one market date — used for intraday pattern analysis
+- **Key Fields**: `date: str` (ISO), `symbol: str`, + FEATURE_COLUMNS (numeric session-shape features computed from 5-min bars)
+- **Relationships**: Many records per symbol; stored in `data/intraday/<SYM>.parquet`; keyed on `(date, symbol)` for deduplication
+- **Defined In**: `src/data/intraday/features.py` (column schema), `src/data/intraday/store.py` (persistence)
+- **Lifecycle**: Populated by `IntradayAutoCollector` (gap-backfill on start + EOD append); read by analysis/tools for pattern detection; upsert is idempotent (same date overwrites)
 
 ### SurgeRecord
 - **Purpose**: Records a stock with an abnormal EOD move (surge/dive) beyond a threshold

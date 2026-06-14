@@ -16,6 +16,9 @@
 | Atomic JSONL writes | `steering/jsonl.py` uses temp-file + `os.replace()` for all JSONL line appends | `src/agent/steering/jsonl.py` |
 | Efficacy-cached singleton | `_efficacy_cached: (date, outcomes)` atomic tuple prevents redundant LLM retrospective calls within a day | `src/agent/orchestrator.py` |
 | Mandatory short stop | A SELL_SHORT with no resolvable stop is rejected fail-closed (not just a polled backup) | `src/risk/manager.py` |
+| Background intraday collection (F82) | Gap-backfill + EOD append run in a daemon thread; any per-symbol failure is isolated and logged; the agent loop is never blocked | `src/data/intraday/auto.py`, `src/trading/modes/agent.py` |
+| Parquet upsert idempotency (F80/F82) | `IntradayFeatureStore.upsert()` deduplicates by `(date, symbol)` — re-running the same day's collection overwrites, never duplicates | `src/data/intraday/store.py` |
+| F82 provider fallback | If Alpaca is unavailable, yfinance degrades gracefully to ~60d of backfill without crashing; store starts from what's available | `src/data/intraday/auto.py`, `src/data/intraday/collector.py` |
 
 ## Scalability
 
@@ -31,6 +34,7 @@
 | Market-time scheduling | APScheduler interval + US-market cron avoids unnecessary ticks during off-hours | `src/trading/scheduler.py` |
 | Signal TTL cache | SignalCollector TTL cache (`cache_ttl_seconds=300`) prevents duplicate fetch between push (prompt) and pull (tool) paths | `src/signals/collector.py` |
 | StockTwits rate limiting | Hourly sweep rate-limited to `hourly_budget` (150 req/hr) with `request_gap_s` (0.5s) pacing | `src/signals/sentiment_sweep.py` |
+| Parquet columnar store (F80) | Parquet compresses numeric intraday feature sets far better than CSV; pyarrow-backed for efficient columnar reads | `src/data/intraday/store.py` |
 
 ## Security
 

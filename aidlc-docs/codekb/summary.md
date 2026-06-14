@@ -23,6 +23,7 @@ Autostock is an automated equities trading platform targeting US markets (NYSE/N
 | `src/risk/` | shared | RiskManager — single gate from signal/decision to Order; circuit breaker, bracket validation, short rules |
 | `src/execution/` | shared | BaseBroker abstraction + Alpaca Trading, Alpaca Broker API, KIS, SimulatedBroker |
 | `src/data/` | shared | BaseDataProvider + Alpaca Data, yfinance (fallback), KIS, News providers |
+| `src/data/intraday/` | shared | Parquet-backed intraday feature store + F82 auto-collection (gap-backfill on start + EOD append per-symbol) |
 | `src/core/` | shared | Pydantic domain models, enums, exceptions — depended on by all, depends on nothing |
 | `src/signals/` | app | Research-turn signal assembly (F61/F77/F78): movers, peer read-through, Finnhub earnings + IPO calendar, StockTwits sentiment |
 | `src/agent/steering/` | shared | Human-in-the-loop: file-drop IPC, CommandBus (NFR-2), OrderGate |
@@ -37,8 +38,8 @@ Autostock is an automated equities trading platform targeting US markets (NYSE/N
 
 ## Current State
 
-- **Total Packages**: 16 major Python modules + TypeScript operator console
-- **Total Source Files**: 169 Python source files + ~90 test files
+- **Total Packages**: 17 major Python modules + TypeScript operator console
+- **Total Source Files**: ~188 Python source files in `src/` + ~125 test files
 - **Primary Markets**: US equities (Alpaca paper/live); Korean equities (KIS paper; live pending)
-- **Storage**: File-based — JSONL logs, journal files, file-drop IPC; no relational/NoSQL database
-- **Last Significant Change**: F78 event-radar Tier1 — imminent IPO/catalyst awareness channel via Finnhub (awareness-only, not universe-filtered; size-ranked, capped); F77 StockTwits retail sentiment signal (hourly sweep + baseline z-outlier detection + intraday brief); R7 BrokerApiBroker short-cover fix + fail-closed TIF; F68 self-learning stack; F60 shorting master switch; F61 market-signal brief; F3 intraday event-driven wakes
+- **Storage**: File-based — JSONL logs, journal files, Parquet intraday feature store, file-drop IPC; no relational/NoSQL database
+- **Last Significant Change**: F82 — intraday feature auto-collection (universe gap-backfill on daemon start + EOD append to `data/intraday/<SYM>.parquet`); F80 — intraday store CSV→Parquet backend migration (lazy on first access, auto-migrates legacy `.csv` → `.csv.migrated`)
