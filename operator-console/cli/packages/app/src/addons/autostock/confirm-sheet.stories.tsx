@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { onMount } from "solid-js"
 import { ConfirmSheet } from "./confirm-sheet"
 import { WebAuthnError } from "./signed-mutation"
 
@@ -37,16 +38,24 @@ export const Default = {
   ),
 }
 
+// Auto-taps 승인 on mount so the failure (error) state is visible without interaction —
+// the error only renders after an approve attempt rejects.
 export const SignatureFailed = {
-  render: () => (
-    <Phone>
-      <ConfirmSheet
-        request={req}
-        onApprove={async () => {
-          throw new WebAuthnError("사용자가 패스키 서명을 취소했습니다")
-        }}
-        onReject={() => {}}
-      />
-    </Phone>
-  ),
+  render: () => {
+    let root
+    onMount(() => setTimeout(() => root?.querySelector("button")?.click(), 60))
+    return (
+      <Phone>
+        <div ref={root}>
+          <ConfirmSheet
+            request={req}
+            onApprove={async () => {
+              throw new WebAuthnError("사용자가 패스키 서명을 취소했습니다")
+            }}
+            onReject={() => {}}
+          />
+        </div>
+      </Phone>
+    )
+  },
 }
