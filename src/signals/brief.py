@@ -127,14 +127,17 @@ def to_prompt_text(brief: MarketSignalBrief) -> str:
             )
 
     if brief.disclosed_holdings:
-        lines.append(
-            "Institutional disclosed holdings (13F — what big managers filed; "
-            "LONG = held shares, SHORT = puts/bearish. Lagged ~45d, context only):"
-        )
-        from src.signals.holdings.brief import render_line
+        from src.signals.holdings.brief import render_push_line
 
-        for h in brief.disclosed_holdings:
-            lines.append("  - " + render_line(h))
+        rendered = [r for r in (render_push_line(h) for h in brief.disclosed_holdings) if r]
+        if rendered:
+            lines.append(
+                "Disclosed 13F long positions (a manager's filed longs, ~45d lagged — "
+                "ONE manager's view, NOT consensus or a recommendation; independently "
+                "judge. Their bearish/put side is omitted here to avoid anchoring — run "
+                "`disclosed_holdings` if you want it):"
+            )
+            lines.extend("  - " + r for r in rendered)
 
     if brief.degraded_sources:
         lines.append(

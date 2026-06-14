@@ -662,3 +662,22 @@ def ipo_calendar(collector, days: int | None = None) -> dict:
         "imminent_ipos": [i.model_dump(mode="json") for i in brief.imminent_ipos],
         "degraded_sources": brief.degraded_sources,
     }
+
+
+def disclosed_holdings(collector=None) -> dict:
+    """Institutional 13F disclosed holdings — the FULL picture incl. the bearish/
+    put (SHORT) side (F81/F87, on-demand pull).
+
+    The every-turn push brief shows only the LONG side (to avoid anchoring on a
+    single contrarian manager's directional bets); this pull surfaces both sides
+    on demand. Each entry: manager, filing date, top LONG and SHORT names, the
+    NEW/EXIT diff, unmapped count, and a staleness flag. Read-only, fail-honest.
+
+    Direction note for the agent: SHORT here = the manager holds PUTS (a bearish
+    bet), NOT advice to short. It is lagged ~45d and is ONE manager's view."""
+    brief = collector.collect()
+    return {
+        "as_of": brief.as_of.isoformat(),
+        "disclosed_holdings": [h.model_dump(mode="json") for h in brief.disclosed_holdings],
+        "degraded_sources": brief.degraded_sources,
+    }

@@ -116,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     ec.add_argument("--days", type=int, default=None, help="Horizon override (default: config)")
     ic = sub.add_parser("ipo_calendar")
     ic.add_argument("--days", type=int, default=None, help="IPO horizon override (default: config)")
+    sub.add_parser("disclosed_holdings")  # no args: institutional 13F (incl. SHORT side)
 
     args = parser.parse_args(argv)
 
@@ -222,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
         out = market.earnings_calendar(_signal_collector(), days=args.days)
     elif args.cmd == "ipo_calendar":
         out = market.ipo_calendar(_signal_collector(), days=args.days)
+    elif args.cmd == "disclosed_holdings":
+        out = market.disclosed_holdings(_signal_collector())
     elif args.cmd == "surge-list":
         out = market.surge_list(args.date)
     elif args.cmd == "surge-analyze":
