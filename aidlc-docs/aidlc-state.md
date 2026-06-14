@@ -107,7 +107,10 @@
 | F80 | JSONL/CSV → Parquet 저장 후보 평가 및 전환 (intraday CSV store가 designed swap point) | merged | feat/F80 → main 9e8ae56 | — | — (monorepo) | 01ced61→rebased d8ceda3 | 2026-06-14 |
 | F81 | 13F 보유종목 시그널 소스 — Situational Awareness LP(Aschenbrenner) 등 기관 13F를 주기적으로 따와 리서치 브리프에 공급 (F61 소스) | active | feat/F81 (TBD) | .claude/worktrees/F81 (TBD) | — (monorepo) | 01ced61 | 2026-06-13 |
 | F82 | Intraday 피처 자동 수집 — 유니버스 갭 백필 + 매 장마감 EOD append (F80 위 스택, intraday store 채우기) | merged | feat/F82 → main 2c9ddad | — | — (monorepo) | dd3c784→rebased 9e8ae56 | 2026-06-14 |
-| F83 | 공유 산출물 카탈로그 (SSOT) — 데몬 산출물 {경로+읽기전략+스키마} 단일 소스 + TUI/viz-shell/mobile 공통 read 게이트 (viz-shell 미머지 제약: main 측만, vibeshell 교체는 후속) | active | feat/F83 (TBD) | .claude/worktrees/F83 (TBD) | — (monorepo) | d8ceda3 | 2026-06-14 |
+| F83 | 공유 산출물 카탈로그 (SSOT) — 데몬 산출물 공통 read 게이트 | abandoned (critic: 명분 약화 — torn-read 거짓(producer atomic), 실질 TUI 1소비자, 원문제 우회. viz-shell 지표 직접 추가 우선. 설계 문서 보존, 재개 가능) | (never branched) | — | — (monorepo) | d8ceda3 | 2026-06-14 |
+| F84 | 모바일 PWA 차트 — Lightweight Charts(+@dschz/solid-lightweight-charts)로 포지션 시세 + 자산 곡선 + 결정 마커 (F79 위 추가형·스택, 단독 머지 불가) | active | feat/F84 (TBD) | .claude/worktrees/F84 (TBD) | — (monorepo) | F79(3cbf2b4) 스택 | 2026-06-14 |
+| F85 | Aggressiveness 노브 — 한 개 운영자 다이얼로 매매 공격성 조절 (프롬프트 엔지니어링 + 결정론적 리스크 게이트 동시 구동) | active | feat/F85 (TBD) | .claude/worktrees/F85 (TBD) | — (monorepo) | TBD | 2026-06-14 |
+| D1 | 죽은 의존성(transformers/quantstats/plotly/matplotlib/torch/sklearn) + 사전 ML 전략(lstm/rf/base_ml) 폐기 — feature_eng 보존, F70 baseline 경계 (Tier1+2) | active | deprecate/D1 | .claude/worktrees/D1 | — (monorepo) | 1a7645e | 2026-06-14 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
