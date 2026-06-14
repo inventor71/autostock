@@ -27,6 +27,7 @@ def assemble_brief(
     *,
     imminent_ipos: list[ImminentIpo] | None = None,
     sentiment_outliers: list[SentimentOutlier] | None = None,
+    disclosed_holdings: list | None = None,
     as_of: datetime | None = None,
 ) -> MarketSignalBrief:
     """Pure: bundle the parts into a brief (no I/O, no clock unless ``as_of`` omitted)."""
@@ -37,6 +38,7 @@ def assemble_brief(
         imminent_earnings=imminent_earnings,
         imminent_ipos=list(imminent_ipos or []),
         sentiment_outliers=list(sentiment_outliers or []),
+        disclosed_holdings=list(disclosed_holdings or []),
         degraded_sources=list(degraded_sources or []),
     )
 
@@ -123,6 +125,16 @@ def to_prompt_text(brief: MarketSignalBrief) -> str:
                 f"{o.baseline_ratio:.0%}, {rz}, n={o.tagged_n}) — "
                 f"{o.direction} shift"
             )
+
+    if brief.disclosed_holdings:
+        lines.append(
+            "Institutional disclosed holdings (13F — what big managers filed; "
+            "LONG = held shares, SHORT = puts/bearish. Lagged ~45d, context only):"
+        )
+        from src.signals.holdings.brief import render_line
+
+        for h in brief.disclosed_holdings:
+            lines.append("  - " + render_line(h))
 
     if brief.degraded_sources:
         lines.append(

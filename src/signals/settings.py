@@ -14,6 +14,31 @@ class SignalSources(BaseModel):
     ipo_provider: Literal["finnhub", "none"] = "finnhub"  # F78
 
 
+class DisclosedHoldingsConfig(BaseModel):
+    """Disclosed-holdings ingestion (F81) — source-agnostic, providers listed below.
+
+    The daemon refresher does the only HTTP (every ``refresh_hours``) and writes a
+    normalized snapshot per source to ``workspace/holdings/``; the universe overlay
+    and the brief read that cache. Shipped OFF — set ``enabled: true`` to activate.
+
+    Each provider entry is ``{type, ...}`` (type-tagged so a new disclosure source
+    plugs in without touching the consumers): for ``sec_13f`` →
+    ``{type: sec_13f, cik, manager_name?, overlay?}``.
+    """
+
+    enabled: bool = False
+    refresh_hours: float = Field(default=24.0, gt=0.0)  # FR-7 poll cadence (13F is quarterly)
+    max_age_days: int = Field(default=135, ge=1)        # staleness drop (~1 quarter + 45d lag)
+    brief_top_n: int = Field(default=6, ge=1)           # names per side shown in the brief
+    # SEC fair-access (NFR-4). Put a real contact in the UA per SEC policy.
+    user_agent: str = "autostock/1.0 (contact: ops@example.com)"
+    request_gap_s: float = Field(default=0.5, ge=0.0)
+    http_connect_timeout: float = Field(default=3.0, gt=0.0)
+    http_read_timeout: float = Field(default=10.0, gt=0.0)
+    cusip_map_path: str = "config/holdings/cusip_ticker.json"
+    providers: list[dict] = Field(default_factory=list)
+
+
 class SentimentConfig(BaseModel):
     """Retail sentiment sweep + outlier selection (F77).
 
@@ -80,6 +105,9 @@ class SignalsConfig(BaseModel):
 
     # Retail sentiment (F77)
     sentiment: SentimentConfig = Field(default_factory=SentimentConfig)
+
+    # Disclosed holdings (F81) — institutional 13F → universe overlay + brief
+    disclosed_holdings: DisclosedHoldingsConfig = Field(default_factory=DisclosedHoldingsConfig)
 
     # Caching / latency (NFR-2/3)
     cache_ttl_seconds: float = Field(default=300.0, ge=0.0)
