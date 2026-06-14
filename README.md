@@ -16,11 +16,11 @@
 ---
 
 **autostock** is an automated equities trading system for US (NYSE/NASDAQ via Alpaca) and
-Korean (KIS) markets. It ships two orchestration paths over one shared, safety-first core:
-
-- a classic **strategy engine** (technical / ML / LLM / ensemble), and
-- an **agentic LLM portfolio manager** that reasons over the whole book every trading day,
-  journals its decisions, and lets a deterministic executor place the orders.
+Korean (KIS) markets, built around an **agentic LLM portfolio manager that you supervise in
+natural language**. The model reasons over the whole book every trading day, journals its
+decisions, and lets a deterministic executor place the orders — while you steer it live from
+an operator console. (A classic strategy engine — technical / ML / ensemble — also rides the
+same safety-first core, kept mainly for offline research.)
 
 > ⚠️ Research / paper-trading project. Live trading is at your own risk — markets are
 > adversarial and nothing here is financial advice.
@@ -42,7 +42,7 @@ The LLM is the **brain** — it researches, forms theses, and writes machine-rea
 file with an idempotent cursor, so a crash and restart never double-submits.
 
 ### 🚦 One risk gate, no exceptions
-Every order — from the LLM, from a backtest strategy, from a human typing a console command —
+Every order — from the LLM, from a strategy-engine signal, from a human typing a console command —
 passes through a single `RiskManager.validate_order()` before any broker call. Position
 sizing, the portfolio circuit breaker, and bracket-leg validation live there. Nothing routes
 around it. Not even you.
@@ -83,19 +83,18 @@ resting orders with their stop/take rails, recent fills, and the deterministic
 
 ## What it can do
 
+The core is an **LLM portfolio manager you supervise in natural language** — everything else
+is the safety rail and execution reach around it.
+
 | Capability | Notes |
 |---|---|
 | **Agent mode (LLM PM)** | `--mode agent`: daily research → journal → deterministic bracket execution; intraday event-driven wake turns; EOD self-review & self-learning |
-| **Operator console** | Human-in-the-loop steering of a live agent in natural language; advisor-only, gate-enforced |
-| **Backtesting** | Vectorised bar-by-bar engine; look-ahead-safe; shares the *same* RiskManager and strategy code as live |
-| **Paper & live trading** | Alpaca paper/live (US), KIS paper (KR); batch or realtime (WebSocket) modes |
-| **Technical strategies** | MA Crossover, RSI, MACD, Bollinger Bands |
-| **ML strategies** | Random Forest, LSTM (feature engineering + persisted models) |
-| **LLM strategy** | Claude / OpenAI signal generation with an automatic prompt-improvement loop |
-| **Ensemble** | Voting / weighted combination of multiple strategies |
-| **Risk management** | Risk-budget sizing, resting bracket (OCO) orders, stop/take-profit, circuit breaker, shorting master switch (off by default) |
+| **Operator console** | Human-in-the-loop steering of a live agent in natural language ("trim AAPL", "halt new entries"); advisor-only, gate-enforced |
+| **Risk management** | The single order gate: risk-budget sizing, resting bracket (OCO) orders, stop/take-profit, circuit breaker, shorting master switch (off by default) |
 | **Research signals** | Price movers, sector peer read-through, Finnhub earnings & IPO calendars, StockTwits retail-sentiment z-outliers |
+| **Paper & live trading** | Alpaca paper/live (US), KIS paper (KR); batch or realtime (WebSocket) modes |
 | **Multi-broker** | Pluggable `BaseBroker` — Alpaca Trading, Alpaca Broker API (account farm), KIS, Simulated |
+| **Classic strategy engine** *(non-agent path)* | A pre-LLM-PM signal path through the *same* risk gate, kept mainly for offline research & comparison: technical (MA/RSI/MACD/Bollinger), ML (RF/LSTM), ensemble voting, and a vectorised look-ahead-safe backtester |
 
 ---
 
@@ -113,15 +112,12 @@ export ALPACA_API_SECRET="your-secret-key"
 Get free Alpaca paper-trading keys at <https://app.alpaca.markets>.
 
 ```bash
-# backtest a strategy
-python main.py --mode backtest --symbols AAPL MSFT SPY
-
-# paper trade (strategy engine)
-python main.py --mode paper
-
 # run the agentic LLM portfolio manager
 python main.py --mode agent            # resume today's session
 python main.py --mode agent --fresh    # start clean
+
+# paper trade (strategy engine)
+python main.py --mode paper
 ```
 
 Agent mode uses the local `claude` CLI as its brain (subscription auth at `~/.claude/`).
