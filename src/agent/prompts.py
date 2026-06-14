@@ -197,6 +197,7 @@ _SIGNAL_TOOL_GUIDE = {
     "readthrough": "`python -m src.agent.tools readthrough <SYM>` — peer names a big move in SYM may read through to",
     "earnings_calendar": "`python -m src.agent.tools earnings_calendar` — imminent earnings (universe / held) within the horizon",
     "ipo_calendar": "`python -m src.agent.tools ipo_calendar` — imminent US IPOs within the horizon (size-ranked; awareness, NOT a buy menu)",
+    "disclosed_holdings": "`python -m src.agent.tools disclosed_holdings` — institutional 13F filed holdings incl. the bearish/put (SHORT) side (the push brief shows only longs); ONE manager's view, ~45d lagged, NOT advice",
 }
 
 

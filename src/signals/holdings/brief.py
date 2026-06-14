@@ -53,7 +53,8 @@ def _by_weight(snap: HoldingsSnapshot):
 
 
 def render_line(h: HoldingsHighlight) -> str:
-    """One human-readable brief line for a manager's disclosure (FR-5)."""
+    """Full human-readable line (LONG + SHORT + diff) — used by the on-demand pull
+    tool, NOT the every-turn push brief (which uses ``render_push_line``)."""
     parts: list[str] = []
     if h.long_top:
         parts.append("LONG " + ",".join(h.long_top))
@@ -68,3 +69,22 @@ def render_line(h: HoldingsHighlight) -> str:
     stale = " [stale]" if h.stale else ""
     body = " · ".join(parts) if parts else "(no mapped holdings)"
     return f"[기관공시] {h.manager_name} (13F {h.as_of.isoformat()}){stale}: {body}"
+
+
+def render_push_line(h: HoldingsHighlight) -> str:
+    """LONG-only line for the every-turn push brief (F87 — bias mitigation).
+
+    The manager's bearish/put (SHORT) side is deliberately omitted from the prompt
+    that's prepended to EVERY research turn: a single contrarian manager's directional
+    bet, repeated for ~90 days, anchors the agent — and when shorting is off the bot
+    can't act on it anyway. The short side stays available on demand via the
+    ``disclosed_holdings`` pull tool. Returns "" when the manager has no mapped
+    longs (so we don't emit an empty line that itself hints "all short").
+    """
+    if not h.long_top:
+        return ""
+    parts = ["LONG " + ",".join(h.long_top)]
+    if h.unmapped_n:
+        parts.append(f"unmapped {h.unmapped_n}")
+    stale = " [stale]" if h.stale else ""
+    return f"[기관 13F] {h.manager_name} ({h.as_of.isoformat()}){stale}: {' · '.join(parts)}"
