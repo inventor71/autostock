@@ -26,6 +26,7 @@ dependencies = [
     "plotly>=5.18.0",
     "matplotlib>=3.8.0",
     "pandas>=2.1.0",
+    "pyarrow>=14.0.0",  # Parquet backend for the intraday feature store (data/intraday/*.parquet)
     "numpy>=1.25.0",
     "anthropic>=0.18.0",
     "openai>=1.12.0",
