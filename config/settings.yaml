@@ -128,6 +128,16 @@ intraday:
   price:
     cache_seconds: 3.0  # latest-price cache TTL (keeps the 5s detector non-blocking)
 
+# F82: intraday feature auto-collection. On daemon start, gap-backfill each
+# universe symbol's per-session features (data/intraday/<SYM>.parquet) in a
+# background thread; after each close, append the day's session. Fills the
+# IntradayFeatureStore that intraday pattern analysis consumes.
+intraday_collection:
+  enabled: true           # ON: backfill on start + append every EOD (set false to disable)
+  backfill_years: 3       # initial deep-history depth (alpaca minute bars)
+  provider: alpaca        # backfill source; yfinance caps at ~60d (degrades, no crash)
+  timeframe: 5m           # bar interval for session features
+
 # F47: EOD surge/dive detection. Scans the universe after market close and
 # records stocks that moved beyond the threshold. The agent analyses each one
 # during the EOD review turn.
