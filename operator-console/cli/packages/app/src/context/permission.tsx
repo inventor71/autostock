@@ -260,7 +260,9 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
               )
               .then(() => undefined),
         )
-        responded.set(permission.id, Date.now())
+        const now = Date.now()
+        responded.set(permission.id, now)
+        pruneResponded(now) // bound the map (TTL + MAX) like respondOnce does
       },
       autoResponds(permission: PermissionRequest, directory?: string) {
         return shouldAutoRespond(permission, directory)

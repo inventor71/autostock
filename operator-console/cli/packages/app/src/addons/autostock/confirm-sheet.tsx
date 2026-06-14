@@ -10,8 +10,10 @@ import { LockedError, WebAuthnError } from "./signed-mutation"
 
 export type ConfirmSheetProps = {
   request: PendingApproval | null
-  /** Runs the WebAuthn ceremony + signed reply. Throws on cancel/lock/error (fail-closed). */
-  onApprove: (response: "once" | "always") => Promise<void>
+  /** Runs the WebAuthn ceremony + signed single-use reply. Throws on cancel/lock/error
+   *  (fail-closed). Single-use only — no "always" (a persistent allow rule would bypass the
+   *  passkey gate for future mutations). */
+  onApprove: () => Promise<void>
   /** Reject — no signature required. */
   onReject: () => Promise<void> | void
   /** Called after a successful approve or a reject, to dismiss + advance the queue. */
@@ -22,11 +24,11 @@ export function ConfirmSheet(props: ConfirmSheetProps) {
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
 
-  async function approve(response: "once" | "always") {
+  async function approve() {
     setError(null)
     setBusy(true)
     try {
-      await props.onApprove(response)
+      await props.onApprove()
       props.onClose?.()
     } catch (e) {
       if (e instanceof LockedError) setError("화면이 잠겨 있습니다 — 재인증 후 다시 시도하세요.")
@@ -74,33 +76,26 @@ export function ConfirmSheet(props: ConfirmSheetProps) {
                 </div>
               </Show>
 
+              {/* Only single-use approval — every mutating action requires a fresh passkey.
+                  No "always": a persistent allow rule would let future trades execute
+                  server-side without a signature, defeating the F75/F79 gate. */}
               <div class="flex flex-col gap-2">
                 <button
                   type="button"
                   class="flex h-12 items-center justify-center rounded-xl bg-icon-interactive-base text-base font-semibold text-text-invert-base transition active:scale-[0.98] disabled:opacity-50"
                   disabled={busy()}
-                  onClick={() => approve("once")}
+                  onClick={() => approve()}
                 >
                   {busy() ? "처리 중…" : "승인 — 지문 서명"}
                 </button>
-                <div class="flex gap-2">
-                  <button
-                    type="button"
-                    class="h-11 flex-1 rounded-xl border border-border-base text-sm font-medium text-text-strong transition active:scale-[0.98] disabled:opacity-50"
-                    disabled={busy()}
-                    onClick={() => approve("always")}
-                  >
-                    항상 허용
-                  </button>
-                  <button
-                    type="button"
-                    class="h-11 flex-1 rounded-xl border border-border-base text-sm font-medium text-text-weak transition active:scale-[0.98] disabled:opacity-50"
-                    disabled={busy()}
-                    onClick={reject}
-                  >
-                    거절
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  class="h-11 rounded-xl border border-border-base text-sm font-medium text-text-weak transition active:scale-[0.98] disabled:opacity-50"
+                  disabled={busy()}
+                  onClick={reject}
+                >
+                  거절
+                </button>
               </div>
             </div>
           </div>

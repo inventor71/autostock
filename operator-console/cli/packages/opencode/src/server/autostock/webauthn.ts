@@ -292,13 +292,26 @@ export function promptNeedsAssertion(remoteAddress: string | undefined, tailscal
 }
 
 /** One-call gate for session-prompt handlers: null = proceed, string = deny reason. */
-export async function checkPrompt(input: {
-  remoteAddress: string | undefined
-  tailscaleUserLogin: string | undefined
-  header: string | undefined
-}): Promise<string | null> {
+export async function checkPrompt(
+  input: {
+    remoteAddress: string | undefined
+    tailscaleUserLogin: string | undefined
+    header: string | undefined
+  },
+  deps: {
+    env?: Record<string, string | undefined>
+    load?: typeof loadStore
+    save?: typeof saveStore
+    consume?: typeof consumeChallenge
+  } = {},
+): Promise<string | null> {
   if (!promptNeedsAssertion(input.remoteAddress, input.tailscaleUserLogin !== undefined)) return null
-  const v = await verifyAssertionHeader(input.header)
+  // Opt-in to the autostock secure topology: only gate remote prompts when WebAuthn is
+  // actually configured (origin set). Without it there is no passkey to satisfy the gate —
+  // gating would dead-lock a plain (non-autostock / un-configured) serve. Matches the reply
+  // gate, which can only pass when an origin is set too.
+  if (!expectedOrigin(deps.env)) return null
+  const v = await verifyAssertionHeader(input.header, deps)
   return v.ok
     ? null
     : `autostock: 원격 세션 입력(프롬프트)은 WebAuthn 패스키 서명이 필요합니다 ` +

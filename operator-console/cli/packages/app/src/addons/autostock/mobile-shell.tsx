@@ -52,7 +52,10 @@ export default function MobileShell() {
         if (!isAutostockAsk(req.permission)) return
         setAsks(produce((d) => void (d[req.id] = req)))
       } else if (ev?.type === "permission.replied") {
-        const id = (ev.properties as { id?: string }).id
+        // EventPermissionReplied.properties = { sessionID, requestID, reply } — keyed by
+        // requestID, not id. Removes the ask when it is resolved anywhere (here, desktop,
+        // auto-accept) so the sheet never shows a phantom already-resolved approval.
+        const id = ev.properties.requestID
         if (id) setAsks(produce((d) => void delete d[id]))
       }
     })
@@ -74,10 +77,12 @@ export default function MobileShell() {
     setAsks(produce((d) => void delete d[id]))
   }
 
-  async function approve(response: "once" | "always") {
+  async function approve() {
     const req = currentReq()
     if (!req) return
-    await permission.respondSigned(req, response) // throws on cancel/lock → ConfirmSheet shows reason
+    // Single-use only — never "always" (a persistent allow rule would let future mutations
+    // run server-side without a passkey, defeating the gate).
+    await permission.respondSigned(req, "once") // throws on cancel/lock → ConfirmSheet shows reason
     dismiss(req.id)
   }
   function reject() {
@@ -94,10 +99,21 @@ export default function MobileShell() {
   const touch = () => setLastActivity(Date.now())
 
   onMount(() => {
-    for (const ev of ["pointerdown", "keydown", "visibilitychange"] as const) {
+    // Real interaction resets the idle timer — NOT visibilitychange (backgrounding the PWA
+    // must not count as activity, or cycling background/foreground would defer the lock
+    // forever, NFR-6).
+    for (const ev of ["pointerdown", "keydown"] as const) {
       window.addEventListener(ev, touch, { passive: true })
       onCleanup(() => window.removeEventListener(ev, touch))
     }
+    // On returning to the foreground, lock immediately if idle exceeded while hidden.
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && shouldLock(lastActivity(), Date.now(), DEFAULT_LOCK_TIMEOUT_MS)) {
+        setLocked(true)
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    onCleanup(() => document.removeEventListener("visibilitychange", onVisible))
     const timer = setInterval(() => {
       if (!locked() && shouldLock(lastActivity(), Date.now(), DEFAULT_LOCK_TIMEOUT_MS)) setLocked(true)
     }, 15_000)
