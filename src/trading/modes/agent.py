@@ -49,6 +49,11 @@ class AgentTradingMode:
         self.experiment_start = experiment_start
         self.min_trade_notional = min_trade_notional
         self.scheduler = TradingScheduler()
+        # F82: intraday feature auto-collection state (wired in start()).
+        self._intraday_collect_enabled = False
+        self._intraday_store = None
+        self._intraday_tf = None
+        self._intraday_backfill_thread = None
         # Tell the agent subprocess which journal root to write watch.jsonl to, so
         # the `watch` tool and the daemon's WatchStore never split on a non-default
         # workspace (review #5). Inherited via session._invoke's env copy.
@@ -332,6 +337,66 @@ class AgentTradingMode:
             logger.exception("surge scan failed (non-fatal)")
             return 0
 
+    def _setup_intraday_collection(self) -> None:
+        """F82: auto-collect intraday session features for the universe.
+
+        On start, gap-backfill each symbol's history in a daemon thread (so a
+        multi-year × ~100-symbol backfill never blocks startup); the EOD job then
+        appends each day's session (see ``_eod``). Best-effort — any failure here
+        disables collection but never the daemon."""
+        try:
+            from config.config import CONFIG_DIR, get_settings, load_yaml_config
+            from src.core.types import TimeFrame
+            from src.data.intraday.auto import CollectionConfig
+            from src.data.intraday.store import IntradayFeatureStore
+
+            # Read yaml directly: Settings(extra="ignore") drops the block.
+            cfg = CollectionConfig.from_yaml(load_yaml_config(CONFIG_DIR / "settings.yaml"))
+            if not cfg.enabled:
+                logger.info("intraday auto-collection disabled (config) — not scheduled")
+                return
+
+            timeframe = TimeFrame(cfg.timeframe)
+            self._intraday_collect_enabled = True
+            self._intraday_store = IntradayFeatureStore()
+            self._intraday_tf = timeframe
+
+            # Backfill needs deep history → alpaca range fetch; else reuse the
+            # daemon's provider (EOD append always uses it — recent bars suffice).
+            if cfg.provider == "alpaca":
+                from src.data.intraday.collector import _provider
+                backfill_provider = _provider("alpaca", get_settings())
+            else:
+                backfill_provider = self.executor.data_provider
+
+            import threading
+            from src.core.markettime import et_today
+            from src.data.intraday.auto import backfill_universe
+
+            store = self._intraday_store
+
+            def _run_backfill() -> None:
+                try:
+                    backfill_universe(
+                        backfill_provider, store, sorted(self.executor.universe),
+                        today=et_today(), backfill_years=cfg.backfill_years,
+                        timeframe=timeframe,
+                    )
+                except Exception:
+                    logger.exception("intraday backfill failed (non-fatal)")
+
+            t = threading.Thread(
+                target=_run_backfill, name="intraday-backfill", daemon=True
+            )
+            self._intraday_backfill_thread = t
+            t.start()
+            logger.info(
+                "intraday auto-collection enabled (provider={}, backfill {}y, tf={})",
+                cfg.provider, cfg.backfill_years, cfg.timeframe,
+            )
+        except Exception:
+            logger.exception("intraday auto-collection wiring failed (non-fatal)")
+
     def _setup_early_session(self) -> None:
         """F51/F56: wire the early-session monitor into the scheduler.
 
@@ -378,6 +443,20 @@ class AgentTradingMode:
         # F47: scan for surge/dive stocks before the EOD review so the agent
         # can run ``surge-list`` / ``surge-analyze`` during the review turn.
         surge_count = self._run_surge_scan()
+
+        # F82: append today's intraday session features for the universe.
+        # Best-effort — never block the EOD trading cycle on a data-collection error.
+        if self._intraday_collect_enabled:
+            try:
+                from src.core.markettime import et_today
+                from src.data.intraday.auto import collect_today
+                collect_today(
+                    self.executor.data_provider, self._intraday_store,
+                    sorted(self.executor.universe), today=et_today(),
+                    timeframe=self._intraday_tf,
+                )
+            except Exception:
+                logger.exception("intraday EOD collect failed (non-fatal)")
 
         if not self._paused():
             decisions = self.executor.journal.read_decisions()
@@ -493,6 +572,8 @@ class AgentTradingMode:
         self._setup_early_session()
         # F77: hourly retail-sentiment sweep (steering-independent, plain HTTP).
         self._setup_sentiment_sweep()
+        # F82: intraday feature auto-collection (gap-backfill thread + EOD append).
+        self._setup_intraday_collection()
         # Always-on (steering-independent) OCO reconcile for brokers that emulate
         # OCO at the exchange (KIS): cancels the dangling leg once a position exits.
         # The steering seconds-jobs below are gated on steering, so a standalone KIS
