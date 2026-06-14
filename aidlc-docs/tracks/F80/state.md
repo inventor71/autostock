@@ -8,7 +8,7 @@
 - **Track ID**: F80
 - **Title**: JSONL/CSV → Parquet 저장 후보 평가 및 전환
 - **Type**: feature (storage/infra; intraday store는 behavior-preserving swap)
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-13 → /ai-dlc-merge -->
+- **Status**: merged → main 9e8ae56 (2026-06-14)
 - **Branch**: feat/F80
 - **Worktree**: .claude/worktrees/F80
 - **Submodule branch**: — (monorepo)
