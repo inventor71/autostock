@@ -11,9 +11,15 @@
 
 ### Python Daemon (`autostockd`)
 - **Purpose**: Main trading daemon — backtest / paper / live / agent modes
-- **Key Resources**: Python 3.11+ process, `workspace/` file system for state (JSONL logs + journal), `.env` for credentials
+- **Key Resources**: Python 3.11+ process, `workspace/` file system for state (JSONL logs + journal), `data/intraday/*.parquet` feature store, `.env` for credentials
 - **Defined In**: `main.py`, `pyproject.toml` (entry point: `autostockd = "main:main"`)
 - **Startup**: `autostockd --mode agent --steering` or `python main.py --mode <mode>`
+
+### Intraday Feature Store (`data/intraday/`)
+- **Purpose**: Persistent Parquet store for per-symbol intraday session feature vectors (F80/F82)
+- **Key Resources**: One `.parquet` file per universe symbol (via pyarrow); gap-backfill on daemon start (daemon thread); EOD append after close; migrates legacy `.csv` files to Parquet on first access
+- **Defined In**: `src/data/intraday/store.py`, `src/data/intraday/auto.py`
+- **Config**: `intraday_collection.enabled`, `backfill_years`, `provider`, `timeframe` in `settings.yaml`
 
 ### Operator Console (`operator-console/`)
 - **Purpose**: Human-steering TUI for the agent daemon — system-tray app (macOS/Linux)
@@ -74,7 +80,12 @@
 ├── steering/                  # File-drop IPC channel (daemon ↔ console)
 ├── surge/                     # EOD surge event store
 ├── early_session/             # Pre-market rapid-move events
-├── data/cache/                # Intraday bar cache (TTL-bounded)
+├── data/
+│   ├── intraday/              # Per-symbol Parquet feature store (F80/F82)
+│   │   ├── AAPL.parquet       #   one file per symbol (5-min session features)
+│   │   ├── NVDA.parquet
+│   │   └── ...
+│   └── cache/                 # Intraday bar cache (TTL-bounded)
 ├── quality/                   # Quality metrics JSONL (F24)
 ├── config/
 │   ├── config.py              # Pydantic Settings root
@@ -103,6 +114,10 @@
 | `multi_agent.n_agents` | `3` | Number of sub-agents in research turn |
 | `multi_agent.mode` | `sequential` | Sub-agent parallelism: sequential / parallel |
 | `intraday.atr_k` | `1.5` | ATR multiplier for abnormal-move wake trigger |
+| `intraday_collection.enabled` | `true` | F82 master switch: backfill on start + EOD append |
+| `intraday_collection.backfill_years` | `3` | F82 deep-history depth (Alpaca minute bars) |
+| `intraday_collection.provider` | `alpaca` | F82 backfill source (yfinance degrades to ~60d) |
+| `intraday_collection.timeframe` | `5m` | F82 bar interval for session features |
 | `surge.threshold_pct` | `7.0` | EOD surge detection threshold (7%) |
 | `early_session.threshold_pct` | `5.0` | Early-session rapid-move threshold (5%) |
 | `signals.ipo_horizon_days` | `5` | F78: surface IPOs within this many days |

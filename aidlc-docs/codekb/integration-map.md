@@ -6,14 +6,14 @@
 |---|---|---|---|---|
 | Alpaca Trading API | US equities order execution, portfolio state, account info (paper + live) | REST (`alpaca-py>=0.21`) | `ALPACA_API_KEY` + `ALPACA_SECRET_KEY` (env) | High |
 | Alpaca Broker API | Sandbox account farm creation and funding | REST (`alpaca-py`) | `BROKER_API_KEY` + `BROKER_SECRET_KEY` (env) | Medium |
-| Alpaca Data API | US equities historical bars, latest quotes, news | REST + WebSocket (`alpaca-py`) | Same keys as Trading API | High |
+| Alpaca Data API | US equities historical bars, latest quotes, news; also primary provider for F82 intraday 5-min backfill | REST + WebSocket (`alpaca-py`) | Same keys as Trading API | High |
 | KIS OpenAPI (`python-kis` 2.1.6, import `pykis`) | Korean equities paper broker + market data | REST | `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT_NO` (env) | High (KR mode) |
 | local `claude` CLI (`claude -p`) | Agent brain — agentic portfolio manager (AgentSession) | Subprocess | OAuth subscription (`.claude/` dir on host) | High (agent mode) |
 | Anthropic SDK (`anthropic>=0.18`) | LLM strategy signal generation (`src/strategy/llm/`) | REST | `ANTHROPIC_API_KEY` (env) | Medium |
 | OpenAI API (`openai>=1.12`) | Alternate LLM strategy | REST | `OPENAI_API_KEY` (env) | Low (optional) |
 | Finnhub — earnings calendar | Earnings calendar for signal collection (F61) | REST (`requests`) | `FINNHUB_API_KEY` (env) | Medium |
 | Finnhub — IPO calendar | Imminent US IPO/catalyst awareness channel (F78); NOT universe-filtered | REST (`requests`, `/calendar/ipo`) | `FINNHUB_API_KEY` (env) | Low (best-effort) |
-| Yahoo Finance (`yfinance>=0.2.30`) | Fallback / secondary market data + news | HTTP scrape | None (public) | Low (fallback) |
+| Yahoo Finance (`yfinance>=0.2.30`) | Fallback / secondary market data + news; F82 backfill fallback (degrades to ~60d, no crash) | HTTP scrape | None (public) | Low (fallback) |
 | StockTwits API | Retail sentiment — author self-labels (Bullish/Bearish) per symbol; hourly sweep with z-score baseline deviation detection (F77) | REST (`src/signals/sources/stocktwits.py`, unauthenticated ~200 req/hr) | None (unauthenticated) | Low (best-effort) |
 
 ## Databases & Data Stores
@@ -30,6 +30,7 @@
 | `monitor.json` | JSON file | Live daemon state snapshot (positions, turn status, run state) | Overwrite on each state change |
 | `surge/` store | JSONL files | EOD extreme-mover events for agent EOD analysis | Append write |
 | `early_session/` | JSONL + index files | Pre-market rapid-move events (first 60 min of session) | Append write + index read |
+| `data/intraday/<SYM>.parquet` | Parquet files (pyarrow) | Per-symbol intraday session feature vectors (F80/F82); keyed on `(date, symbol)`; one file per symbol; replaces legacy `.csv`; F82 auto-collects on daemon start + EOD | Upsert write (collector) + columnar read (analysis/tools) |
 | `data/cache/` | File cache (TTL-bounded) | Intraday bar cache; prevents redundant provider calls | Read-write with TTL expiry |
 | `quality/` | JSONL files | Per-decision quality metric snapshots (F24) | Append write |
 | `config/universe/*.json` | JSON files | Cached trading universe snapshots (US S&P100 / KR market-cap) | Read at startup; occasional rebuild |
@@ -52,5 +53,7 @@
 - **Auth model**: All external credentials loaded from environment variables / `.env`; no secrets in repo; `AUTOSTOCK_ENV_FILE` allows test harness to load a separate `.env.test`.
 - **Signal sources**: movers/news via Alpaca Data API (primary) + yfinance (fallback); earnings via Finnhub; IPO calendar via Finnhub (F78 — awareness-only, not universe-filtered); retail sentiment via StockTwits (unauthenticated, hourly sweep, baseline z-score, F77); toggleable per `settings.yaml` `signals.sources`, `signals.sentiment`, and `signals.ipo_provider` sections.
 - **F78 IPO awareness (important distinction)**: IPOs are NOT filtered to the trading universe — the whole point is to surface upcoming names NOT yet in the universe. Rows are ranked by estimated value (largest first, None last), then capped at `max_ipos` (default 8). Withdrawn IPOs are always dropped. `in_universe` and `is_held` are tags, not filters.
+- **F82 intraday backfill provider fallback**: `intraday_collection.provider = alpaca` is the default. If yfinance is selected it degrades gracefully (limited to ~60 days of history) without crashing; the store simply starts from what yfinance provides. The gap-backfill logic in `auto.py` is tolerant of partial or empty results.
+- **F80 Parquet migration**: Legacy `<SYM>.csv` files are migrated to `<SYM>.parquet` on first access (lazy); renamed to `<SYM>.csv.migrated` afterward. Subsequent daemon restarts skip them. The public upsert/read interface (`IntradayFeatureStore`) is unchanged from callers' perspective.
 - **Extended hours / OCO**: OCO orders do not set `extended_hours=True` — Alpaca DAY+LIMIT restriction makes extended-hours OCOs unreliable.
 - **Claude CLI auth**: Agent mode requires the `claude` CLI installed and authenticated on the host (OAuth subscription token at `~/.claude/`). CI uses `CLAUDE_CODE_OAUTH_TOKEN` secret.

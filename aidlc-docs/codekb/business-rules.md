@@ -101,6 +101,25 @@
 - **Rationale**: Prevents costly LLM calls on every tick; only meaningful events warrant re-analysis.
 - **Implemented In**: `src/agent/intraday/wake.py`, `src/agent/intraday/abnormal.py`
 
+### Intraday Feature Collection (F82)
+
+#### Gap-Backfill on Start
+- **Rule**: On daemon start, `IntradayAutoCollector` checks each universe symbol's last stored date in the Parquet feature store and backfills any gap (from `last_stored + 1` to `today`; deep-fill if absent, up to `backfill_years` years). Backfill runs in a background daemon thread — never blocks the agent loop.
+- **Rationale**: Keeps the intraday pattern analysis data current without manual intervention; a daemon restart after a holiday or downtime auto-heals.
+- **Implemented In**: `src/data/intraday/auto.py`, `src/trading/modes/agent.py`
+
+#### EOD Append After Close
+- **Rule**: After each market close, `IntradayAutoCollector` appends the current day's session features for every universe symbol. The upsert is idempotent — re-running the same date overwrites, not duplicates.
+- **Implemented In**: `src/data/intraday/auto.py`
+
+#### Provider Fallback (F82)
+- **Rule**: `intraday_collection.provider = alpaca` (default) fetches full-history minute bars. If `yfinance` is configured, it degrades gracefully to ~60 days of history — the store simply starts from what's available, no crash.
+- **Implemented In**: `src/data/intraday/auto.py`, `src/data/intraday/collector.py`
+
+#### Parquet Migration (F80)
+- **Rule**: Legacy `<SYM>.csv` files in `data/intraday/` are automatically migrated to `<SYM>.parquet` on first `IntradayFeatureStore` access, then renamed to `<SYM>.csv.migrated`. Migration is lazy and idempotent — if the Parquet sibling already exists, the CSV is just renamed.
+- **Implemented In**: `src/data/intraday/store.py:_migrate_legacy`
+
 ### Signal Collection Rules
 
 #### IPO Awareness is NOT Universe-Filtered (F78)
