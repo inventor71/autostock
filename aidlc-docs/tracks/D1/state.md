@@ -6,7 +6,7 @@
 - **Track ID**: D1 (first deprecate track)
 - **Title**: 죽은 의존성(transformers/quantstats/plotly/matplotlib) + 사전 ML 전략(lstm/rf/base_ml) 폐기
 - **Type**: deprecate
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-14 → /ai-dlc-merge -->
+- **Status**: merged → main 628a0fc (2026-06-15)
 - **Branch**: deprecate/D1
 - **Worktree**: .claude/worktrees/D1
 - **Base commit**: 1a7645e

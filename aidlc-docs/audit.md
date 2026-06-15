@@ -299,3 +299,7 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 
 ## /ai-dlc-merge — F87 (F81 follow-up)
 - 2026-06-14 — **F87 merged** (c392f3d) — 13F brief bias mitigation: every-turn push brief now LONG-only + neutral framing ("ONE manager's view, NOT consensus/recommendation, independently judge"); bearish/put SHORT side moved to on-demand `disclosed_holdings` pull tool (market.py + __main__ subcommand + prompts entry). render_push_line(long-only) added, render_line(full) kept for pull. Addresses user concern that SA LP's mostly-put 13F repeated every turn anchors the agent. 45 tests green; brief/push/tools regression 18 green. Base f7b751d→c392f3d.
+
+## /ai-dlc-merge — D1
+- 2026-06-15 — **merge run start** — triage: untracked tracks F76/F85/F86(active, OK noise) + F83(abandoned, docs intentionally preserved per its row — isolated, D1 close-commit stages only tracks/D1/+shared); no foreign paths. Queue: D1 only (deprecate/D1, ↑1 bff76e1, base 1a7645e). main now b97a09e (F79/F81/F87 merged since). No file intersection with D1 → clean rebase expected.
+- 2026-06-15 — **D1 merged** (628a0fc) — deprecate Tier1+2: removed dead deps (transformers/quantstats/plotly/matplotlib) + torch/scikit-learn + pre-agent ML strategies (lstm/rf/base_ml); kept feature_eng + F70 baseline. Rebased onto b97a09e clean, full suite 1329 passed (4 pre-existing unrelated). 435 deletions.
