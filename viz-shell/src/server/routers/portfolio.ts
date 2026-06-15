@@ -6,20 +6,52 @@ import { router, publicProcedure } from "@/server/trpc";
 import {
   decisionsPath,
   equityPath,
+  healthPath,
   positionsDir,
+  qualityDir,
+  regimePath,
   snapshotPath,
   tradesPath,
   turnsPath,
+  watchlistPath,
 } from "@/server/paths";
 import { readFileStable, readJsonFile, tailJsonl } from "@/server/safe-read";
 import {
   DecisionSchema,
   EquityRecordSchema,
+  HealthSchema,
+  QualitySchema,
   SnapshotSchema,
   TradeSchema,
   TurnSchema,
+  type MarkdownDoc,
   type ThesisDoc,
 } from "@/server/schemas";
+
+/** YYYY-MM-DD.json — guards the quality-dir listing against unexpected names. */
+const QUALITY_FILE_RE = /^(\d{4}-\d{2}-\d{2})\.json$/;
+
+async function latestQualityFile(): Promise<{ date: string; path: string } | null> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(qualityDir());
+  } catch {
+    return null; // missing dir — no metrics yet (fail-honest)
+  }
+  const dates = entries
+    .map((name) => QUALITY_FILE_RE.exec(name)?.[1])
+    .filter((d): d is string => d !== undefined)
+    .sort();
+  const date = dates.at(-1);
+  if (date === undefined) return null;
+  return { date, path: path.join(qualityDir(), `${date}.json`) };
+}
+
+async function readMarkdownDoc(absPath: string): Promise<MarkdownDoc | null> {
+  const read = await readFileStable(absPath);
+  if (read === null) return null;
+  return { markdown: read.content, mtimeMs: read.mtimeMs, stale: read.stale };
+}
 
 /** Shared "recent N rows" input for jsonl tail procedures. */
 const limitInput = z
@@ -105,4 +137,19 @@ export const portfolioRouter = router({
   trades: publicProcedure
     .input(limitInput)
     .query(({ input }) => tailJsonl(tradesPath(), TradeSchema, { maxLines: input.limit })),
+
+  /** Latest decision-quality metrics (most recent quality/<date>.json), or null. */
+  quality: publicProcedure.query(async () => {
+    const latest = await latestQualityFile();
+    if (latest === null) return null;
+    const metrics = await readJsonFile(latest.path, QualitySchema);
+    return metrics === null ? null : { date: latest.date, metrics };
+  }),
+
+  /** System health verdict (steering/health.json), or null when absent. */
+  health: publicProcedure.query(() => readJsonFile(healthPath(), HealthSchema)),
+
+  /** Opaque watchlist / regime markdown (workspace/*.md), or null. */
+  watchlist: publicProcedure.query((): Promise<MarkdownDoc | null> => readMarkdownDoc(watchlistPath())),
+  regime: publicProcedure.query((): Promise<MarkdownDoc | null> => readMarkdownDoc(regimePath())),
 });

@@ -31,6 +31,22 @@ export function decisionsPath(): string {
   return path.join(repoRoot(), "workspace", "decisions.jsonl");
 }
 
+export function healthPath(): string {
+  return path.join(repoRoot(), "steering", "health.json");
+}
+
+export function qualityDir(): string {
+  return path.join(repoRoot(), "workspace", "quality");
+}
+
+export function watchlistPath(): string {
+  return path.join(repoRoot(), "workspace", "watchlist.md");
+}
+
+export function regimePath(): string {
+  return path.join(repoRoot(), "workspace", "regime.md");
+}
+
 export function turnsPath(): string {
   return path.join(repoRoot(), "workspace", "turns.jsonl");
 }

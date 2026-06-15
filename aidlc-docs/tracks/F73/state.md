@@ -93,7 +93,12 @@ vibeOS(caffeinum/vibeOS) 패턴의 "방향 A"를 autostock에 이식: 레포에 
   router 3 query(tailJsonl, limit 1..500) + 위젯 2종(RecentDecisions: action/confidence + reason
   펼침, TradesTable: 청산 라운드트립) + view-contract에 신규 훅 4개 안내. turns는 라우터만(생성뷰용).
   테스트 118 통과(+7 라우터), Tier1 코드 tsc 클린, 라이브 스모크(decisions 3/turns 2/trades 5 실데이터, 위젯 렌더).
-- [ ] **Tier 2** — quality/health/watchlist·regime.
+- [x] **Tier 2** (2026-06-14) — quality/health/watchlist/regime. paths 4 + schemas(Quality/Health
+  중첩 loose + MarkdownDoc) + router 4 query(quality=최신 날짜파일 선택, health=atomic, watchlist/
+  regime=stat-stable md). **시드 탭 배열화** — `seed-tabs.tsx`(Overview/Analysis), TabBar/page 일반화
+  (생성뷰 자동활성·hidden-views 로직 보존). AnalysisTab = QualityPanel + HealthPanel + MarkdownDoc×2
+  (거대 md는 펼침-온디맨드 fetch). Overview 비대화 해소. 테스트 124 통과(+6), tsc 클린, 라이브
+  스모크(quality 최신 22 outcomes/health ERROR 5dim/watchlist 102KB/시드탭 2개).
 - [ ] **Tier 3** — screening/sentiment/surge/lessons/daily (여력 시).
 
 > ⚠️ **발견(F73 갭, Tier 0 중)**: 사용자가 채팅으로 만든 생성 뷰(`src/generated/

@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ChatPanel } from "@/components/chat/chat-panel";
-import { OVERVIEW_TAB, TabBar } from "@/components/tab-bar";
+import { TabBar } from "@/components/tab-bar";
 import { TopBar } from "@/components/top-bar";
 import { GeneratedViewHost, discoverGeneratedViews } from "@/components/view-host";
-import { OverviewTab } from "@/components/overview/overview-tab";
+import { OVERVIEW_TAB, SEED_TABS, isSeedTab } from "@/components/seed-tabs";
 import {
   hideView,
   loadHiddenViews,
@@ -49,12 +49,18 @@ export default function DashboardPage() {
       if (added.length > 0) setActive(added[0]);
     }
     knownFiles.current = current;
-    setActive((prev) => (prev !== OVERVIEW_TAB && !current.has(prev) ? OVERVIEW_TAB : prev));
+    // Fall back to Overview only when the active selection is neither a seed tab
+    // nor an existing generated view (e.g. the active view file was deleted).
+    setActive((prev) => (!isSeedTab(prev) && !current.has(prev) ? OVERVIEW_TAB : prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileKey]);
 
   const visibleViews = views.filter((v) => !hidden.includes(v.fileName));
+  const activeSeed = SEED_TABS.find((t) => t.id === active);
   const activeView = visibleViews.find((v) => v.fileName === active);
+  // Render a generated view only when it's the active selection and not a seed
+  // tab; otherwise show the active seed (default to the first seed = Overview).
+  const ActiveSeedComponent = (activeSeed ?? SEED_TABS[0]).Component;
 
   const onHide = (fileName: string) => {
     updateHidden(hideView(hidden, fileName));
@@ -73,12 +79,16 @@ export default function DashboardPage() {
         />
         <TabBar
           views={visibleViews}
-          active={activeView ? active : OVERVIEW_TAB}
+          active={activeSeed || activeView ? active : OVERVIEW_TAB}
           onSelect={setActive}
           onHide={onHide}
         />
         <main className="relative min-h-0 flex-1 overflow-y-auto">
-          {activeView ? <GeneratedViewHost view={activeView} /> : <OverviewTab />}
+          {activeView && !activeSeed ? (
+            <GeneratedViewHost view={activeView} />
+          ) : (
+            <ActiveSeedComponent />
+          )}
         </main>
       </div>
       {chatOpen && <ChatPanel onCollapse={() => updateChatOpen(false)} />}

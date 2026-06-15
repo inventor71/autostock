@@ -135,6 +135,80 @@ export type Decision = z.infer<typeof DecisionSchema>;
 export type Turn = z.infer<typeof TurnSchema>;
 export type Trade = z.infer<typeof TradeSchema>;
 
+// workspace/quality/<date>.json — decision-quality metrics (nested, loose).
+const StatBlock = z.looseObject({
+  mean: z.coerce.number().optional(),
+  median: z.coerce.number().optional(),
+  min: z.coerce.number().optional(),
+  max: z.coerce.number().optional(),
+  count: z.coerce.number().optional(),
+});
+
+export const QualitySchema = z.looseObject({
+  direction_hit_rate: z
+    .looseObject({
+      total: z.coerce.number().optional(),
+      hits: z.coerce.number().optional(),
+      rate: z.coerce.number().optional(),
+    })
+    .optional(),
+  stop_quality: z
+    .looseObject({
+      appropriate: z.coerce.number().optional(),
+      noise_hit: z.coerce.number().optional(),
+      held: z.coerce.number().optional(),
+      total: z.coerce.number().optional(),
+    })
+    .optional(),
+  target_quality: z
+    .looseObject({
+      reached_count: z.coerce.number().optional(),
+      total: z.coerce.number().optional(),
+      reach_rate: z.coerce.number().optional(),
+    })
+    .optional(),
+  realized_rr: StatBlock.optional(),
+  exit_timing: StatBlock.optional(),
+  benchmark_excess_spy: StatBlock.optional(),
+  benchmark_excess_qqq: StatBlock.optional(),
+  // confidence_calibration buckets are dynamic keys → keep loose.
+  confidence_calibration: z.record(z.string(), z.looseObject({})).optional(),
+  total_outcomes: z.coerce.number().optional(),
+});
+
+// steering/health.json — system health verdict (F63/F69). atomic write.
+export const HealthCheckSchema = z.looseObject({
+  name: z.string(),
+  status: z.string(), // OK | WARNING | ERROR | SKIPPED | ...
+  detail: z.string().nullish(),
+  severity: z.string().nullish(),
+  error: z.string().nullish(),
+});
+
+export const HealthDimensionSchema = z.looseObject({
+  dimension: z.string().optional(),
+  status: z.string(),
+  checks: z.array(HealthCheckSchema).default([]),
+});
+
+export const HealthSchema = z.looseObject({
+  overall: z.string().optional(), // OK | WARNING | ERROR
+  summary: z.string().nullish(),
+  ts: z.string().optional(),
+  dimensions: z.record(z.string(), HealthDimensionSchema).default({}),
+});
+
+export type Quality = z.infer<typeof QualitySchema>;
+export type Health = z.infer<typeof HealthSchema>;
+export type HealthDimension = z.infer<typeof HealthDimensionSchema>;
+
+/** Opaque markdown doc (watchlist/regime) — same shape as ThesisDoc, not parsed. */
+export type MarkdownDoc = {
+  markdown: string;
+  mtimeMs: number;
+  stale: boolean;
+};
+
 /** positions/<SYMBOL>.md thesis docs are opaque markdown — never parsed (E3). */
 export type ThesisDoc = {
   symbol: string;

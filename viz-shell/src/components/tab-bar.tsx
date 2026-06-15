@@ -1,8 +1,9 @@
 "use client";
 
 import type { GeneratedView } from "@/components/view-host";
+import { SEED_TABS } from "@/components/seed-tabs";
 
-export const OVERVIEW_TAB = "overview";
+export { OVERVIEW_TAB } from "@/components/seed-tabs";
 
 export function TabBar({
   views,
@@ -27,14 +28,17 @@ export function TabBar({
       data-testid="tab-bar"
       className="flex items-end gap-1 overflow-x-auto border-b border-edge bg-surface-1 px-2"
     >
-      <button
-        type="button"
-        data-testid="tab-overview"
-        onClick={() => onSelect(OVERVIEW_TAB)}
-        className={tabClass(active === OVERVIEW_TAB)}
-      >
-        Overview
-      </button>
+      {SEED_TABS.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          data-testid={`tab-${t.id}`}
+          onClick={() => onSelect(t.id)}
+          className={tabClass(active === t.id)}
+        >
+          {t.label}
+        </button>
+      ))}
       {views.map((v) => (
         <div key={v.fileName} className={tabClass(active === v.fileName)}>
           <button

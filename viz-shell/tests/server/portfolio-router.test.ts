@@ -49,6 +49,35 @@ function seedFixture() {
     path.join(root, "workspace", "trades.jsonl"),
     JSON.stringify({ symbol: "AAPL", qty: 10, entry_price: 309, exit_price: 298.79, realized_pnl: -102.14, return_pct: -3.31, closed_at: "2026-06-09T13:34:29Z" }) + "\n",
   );
+  // Tier 2: quality (dated dir), health (steering), watchlist/regime (md).
+  mkdirSync(path.join(root, "workspace", "quality"), { recursive: true });
+  writeFileSync(
+    path.join(root, "workspace", "quality", "2026-06-12.json"),
+    JSON.stringify({ total_outcomes: 1, direction_hit_rate: { total: 1, hits: 0, rate: 0 } }),
+  );
+  writeFileSync(
+    path.join(root, "workspace", "quality", "2026-06-13.json"),
+    JSON.stringify({
+      total_outcomes: 22,
+      direction_hit_rate: { total: 6, hits: 0, rate: 0 },
+      target_quality: { reached_count: 0, total: 22, reach_rate: 0 },
+      realized_rr: { mean: 0, count: 0 },
+      confidence_calibration: { "0.51-0.7": { count: 6, hits: 0, rate: 0 } },
+    }),
+  );
+  writeFileSync(
+    path.join(root, "steering", "health.json"),
+    JSON.stringify({
+      overall: "ERROR",
+      ts: "2026-06-14T10:47:00Z",
+      dimensions: {
+        resources: { dimension: "resources", status: "OK", checks: [{ name: "disk_space", status: "OK", detail: "ok" }] },
+        account: { dimension: "account", status: "ERROR", checks: [{ name: "broker", status: "ERROR", detail: "down" }] },
+      },
+    }),
+  );
+  writeFileSync(path.join(root, "workspace", "watchlist.md"), "# Watchlist\nbody");
+  writeFileSync(path.join(root, "workspace", "regime.md"), "# Regime\nbody");
 }
 
 const caller = appRouter.createCaller({});
@@ -178,5 +207,42 @@ describe("Tier 1 jsonl tail procedures (decisions/turns/trades)", () => {
   it("returns [] when a jsonl file is missing (fail-honest)", async () => {
     rmSync(path.join(root, "workspace", "trades.jsonl"));
     expect(await caller.portfolio.trades({ limit: 50 })).toEqual([]);
+  });
+});
+
+describe("Tier 2 (quality/health/watchlist/regime)", () => {
+  it("quality returns the LATEST dated file", async () => {
+    const out = await caller.portfolio.quality();
+    expect(out?.date).toBe("2026-06-13"); // newest of the two
+    expect(out?.metrics.total_outcomes).toBe(22);
+    expect(out?.metrics.direction_hit_rate?.total).toBe(6);
+  });
+
+  it("quality returns null when the dir is missing", async () => {
+    rmSync(path.join(root, "workspace", "quality"), { recursive: true });
+    expect(await caller.portfolio.quality()).toBeNull();
+  });
+
+  it("health parses overall + dimensions (dict keyed)", async () => {
+    const h = await caller.portfolio.health();
+    expect(h?.overall).toBe("ERROR");
+    expect(h?.dimensions["account"].status).toBe("ERROR");
+    expect(h?.dimensions["resources"].checks[0].name).toBe("disk_space");
+  });
+
+  it("health returns null when absent", async () => {
+    rmSync(path.join(root, "steering", "health.json"));
+    expect(await caller.portfolio.health()).toBeNull();
+  });
+
+  it("watchlist/regime return opaque markdown", async () => {
+    expect((await caller.portfolio.watchlist())?.markdown).toContain("# Watchlist");
+    expect((await caller.portfolio.regime())?.markdown).toContain("# Regime");
+    expect((await caller.portfolio.watchlist())?.stale).toBe(false);
+  });
+
+  it("watchlist returns null when absent", async () => {
+    rmSync(path.join(root, "workspace", "watchlist.md"));
+    expect(await caller.portfolio.watchlist()).toBeNull();
   });
 });

@@ -29,8 +29,11 @@ autostock agent. You create and modify dashboard views on request.
   trpc.portfolio.listPositions / trpc.portfolio.thesis({symbol}) /
   trpc.portfolio.decisions({limit}) (agent decisions + reason) /
   trpc.portfolio.turns({limit}) (cost_usd, tokens, turn_type, summary) /
-  trpc.portfolio.trades({limit}) (closed round trips). No fetch(), no fs, no
-  dynamic imports.
+  trpc.portfolio.trades({limit}) (closed round trips) /
+  trpc.portfolio.quality ({date, metrics} — decision-quality metrics) /
+  trpc.portfolio.health (overall + dimensions) /
+  trpc.portfolio.watchlist / trpc.portfolio.regime (opaque markdown docs). No
+  fetch(), no fs, no dynamic imports.
 - Charts: use recharts with the shared constants from "@/lib/chart-theme"
   (CHART_TOOLTIP_STYLE, CHART_GRID_STROKE, CHART_AXIS_STROKE, CHART_ACCENT).
   Styling: Tailwind utility classes, dark theme — reuse the design tokens
