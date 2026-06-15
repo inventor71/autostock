@@ -187,7 +187,7 @@ trigger registration, then instantiates the `active_strategies` list from `strat
 | Category | Location | Members |
 |---|---|---|
 | Technical | `technical/` | MA Crossover, RSI, MACD, Bollinger Bands |
-| ML | `ml/` | Random Forest, LSTM (+ `feature_eng.py`) |
+| ML | `ml/` | `feature_eng.py` — technical features for the agent/LLM |
 | LLM | `llm/` | Claude / OpenAI analysis strategy |
 | Ensemble | `ensemble/` | Voting (majority), Weighted |
 

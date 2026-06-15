@@ -160,7 +160,7 @@ create_strategy("rsi", params)     # 이름 문자열 → 인스턴스 (팩토�
 | 분류 | 위치 | 종류 |
 |------|------|------|
 | 기술적 | `technical/` | MA Crossover, RSI, MACD, Bollinger Bands |
-| 머신러닝 | `ml/` | RandomForest, LSTM (+ `feature_eng.py`) |
+| 머신러닝 | `ml/` | `feature_eng.py` — agent/LLM용 기술적 피처 |
 | LLM | `llm/` | Claude/OpenAI 기반 분석 전략 |
 | 앙상블 | `ensemble/` | Voting(다수결), Weighted(가중치) |
 

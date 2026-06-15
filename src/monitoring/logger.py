@@ -43,7 +43,6 @@ _NOISY_LOGGERS = (
     "urllib3",
     "apscheduler",
     "asyncio",
-    "matplotlib",
     "httpx",
     "httpcore",
     "alpaca",

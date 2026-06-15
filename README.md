@@ -94,7 +94,7 @@ is the safety rail and execution reach around it.
 | **Research signals** | Price movers, sector peer read-through, Finnhub earnings & IPO calendars, StockTwits retail-sentiment z-outliers |
 | **Paper & live trading** | Alpaca paper/live (US), KIS paper (KR); batch or realtime (WebSocket) modes |
 | **Multi-broker** | Pluggable `BaseBroker` — Alpaca Trading, Alpaca Broker API (account farm), KIS, Simulated |
-| **Classic strategy engine** *(non-agent path)* | A pre-LLM-PM signal path through the *same* risk gate, kept mainly for offline research & comparison: technical (MA/RSI/MACD/Bollinger), ML (RF/LSTM), ensemble voting, and a vectorised look-ahead-safe backtester |
+| **Classic strategy engine** *(non-agent path)* | A pre-LLM-PM signal path through the *same* risk gate, kept mainly for offline research & comparison: technical (MA/RSI/MACD/Bollinger), ensemble voting, and a vectorised look-ahead-safe backtester |
 
 ---
 

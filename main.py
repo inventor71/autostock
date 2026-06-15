@@ -97,8 +97,6 @@ def create_strategies(strategies_config: dict, settings):
     import src.strategy.technical.rsi
     import src.strategy.technical.macd
     import src.strategy.technical.bollinger
-    import src.strategy.ml.rf
-    import src.strategy.ml.lstm
     import src.strategy.ensemble.voting
     import src.strategy.ensemble.weighted
     import src.strategy.llm.strategy
