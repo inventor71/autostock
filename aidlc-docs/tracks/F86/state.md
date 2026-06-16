@@ -8,7 +8,7 @@
 - **Track ID**: F86
 - **Title**: 모바일 대시보드 데이터 엔드포인트 — PWA `/autostock` 대시보드에 실데이터 공급 (F79 후속)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- re-enqueued after code-review fixes, re-verified green 2026-06-16 -->
+- **Status**: merged → main f3fef72 (2026-06-16)
 - **Branch**: feat/F86
 - **Worktree**: .claude/worktrees/F86
 - **Submodule branch**: — (monorepo; operator-console/cli 변경 예상)
