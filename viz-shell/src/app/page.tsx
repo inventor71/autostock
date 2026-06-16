@@ -24,10 +24,17 @@ export default function DashboardPage() {
   // Hydrate after mount to avoid SSR/client markup mismatch.
   const [hidden, setHidden] = useState<string[]>([]);
   const [chatOpen, setChatOpen] = useState(true);
+  const [presetPrompt, setPresetPrompt] = useState<string | null>(null);
   useEffect(() => {
     setHidden(loadHiddenViews(window.localStorage));
     setChatOpen(window.localStorage.getItem(CHAT_OPEN_KEY) !== "false");
   }, []);
+
+  // Preset chip → open chat + queue the prompt; ChatPanel sends it and calls back.
+  const onPreset = (prompt: string) => {
+    updateChatOpen(true);
+    setPresetPrompt(prompt);
+  };
 
   const updateHidden = (next: string[]) => {
     setHidden(next);
@@ -87,11 +94,17 @@ export default function DashboardPage() {
           {activeView && !activeSeed ? (
             <GeneratedViewHost view={activeView} />
           ) : (
-            <ActiveSeedComponent />
+            <ActiveSeedComponent onPreset={onPreset} />
           )}
         </main>
       </div>
-      {chatOpen && <ChatPanel onCollapse={() => updateChatOpen(false)} />}
+      {chatOpen && (
+        <ChatPanel
+          onCollapse={() => updateChatOpen(false)}
+          presetPrompt={presetPrompt}
+          onPresetConsumed={() => setPresetPrompt(null)}
+        />
+      )}
     </div>
   );
 }

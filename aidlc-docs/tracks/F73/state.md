@@ -117,7 +117,25 @@ vibeOS(caffeinum/vibeOS) 패턴의 "방향 A"를 autostock에 이식: 레포에 
   (decisions jsonl-tail + 집계 + recharts 패턴 시연) + view-contract에 16훅 + 날짜조회 안내 +
   "시드 탭에 국한 말고 무엇이든 표면화하라" 명시. 서비스 계층의 풍부함을 생성 경로가 따라가게.
 - **잔여 긴장(기록)**: 시드 위젯 20개+로 정적 대시보드화 경향 — 즉시 가치 있으나 vibeOS는
-  최소 시드+생성 위임이 정신. 향후 Tier는 시드 절제 + 생성 모범 우선 고려.
+  최소 시드+생성 위임이 정신. 향후 Tier는 시드 절제 + 생성 모범 우선 고려. → **아래 보정 3에서 해소.**
+
+### 🟣 시드 위젯 절제 (중도) — vibeOS 본질 강화 (2026-06-16)
+> 사용자 결정: "중도로 가자". 상시 운영 핵심(돈/리스크)은 검증된 시드로 안정성 유지,
+> 탐색적 데이터는 생성으로 위임.
+- **Overview 시드 유지** — 계좌/포지션/미체결 주문/run-state/체결/결정/트레이드 (항상 정확해야
+  하는 운영 상태 = 안정성. 생성 뷰의 조용한 오집계 위험을 피함).
+- **Analysis + Research 탭 → Explore 탭 하나로 통합**. 정형 위젯 6종(QualityPanel/HealthPanel/
+  ScreeningFunnel/SentimentPanel + analysis/research-tab) **삭제**. 대신:
+  - **프리셋 칩 갤러리**(`preset-gallery.tsx`, 6칩) — 칩=하드코딩 위젯이 아니라 **생성 프롬프트**.
+    클릭 → ChatPanel `presetPrompt` 주입 → 자동 전송 → 에이전트가 `generated/`에 뷰 생성.
+  - 경량 health 배지(overall만, 상시) + 마크다운 문서 뷰어 5종(watchlist/regime/surge/daily/
+    lessons, 열람용 — 생성 아님).
+- **배선**: page `presetPrompt` 상태 + `onPreset`(칩→채팅), ChatPanel `presetPrompt`/`onPresetConsumed`
+  (single-flight 존중). SeedTab.Component 타입을 `{onPreset?}` 수용으로 넓힘.
+- 효과: 시드 정형 위젯 6 제거, 탐색은 생성 경로로. "풍부한 라우터(16) → 생성으로 활용"의 vibeOS
+  본질 강화. 라우터는 전부 유지(생성 연료).
+- 검증: vitest **135 통과**(+3 PresetGallery, -6 삭제 위젯 테스트 없었음), tsc 클린, 라이브
+  스모크(시드탭 Overview+Explore, 프리셋류 프롬프트 → 에이전트 generated/ 생성 확인).
 
 > ⚠️ **발견(F73 갭, Tier 0 중)**: 사용자가 채팅으로 만든 생성 뷰(`src/generated/
 > unrealized-pnl-by-symbol.tsx`)에 타입 에러가 있어 `tsc --noEmit`·`next build`를 깨뜨림.

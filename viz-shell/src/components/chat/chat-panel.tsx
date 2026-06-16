@@ -48,7 +48,16 @@ function MessageParts({ message }: { message: VizUIMessage }) {
   );
 }
 
-export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
+export function ChatPanel({
+  onCollapse,
+  presetPrompt,
+  onPresetConsumed,
+}: {
+  onCollapse: () => void;
+  /** A preset-chip prompt to send automatically (Explore tab). */
+  presetPrompt?: string | null;
+  onPresetConsumed?: () => void;
+}) {
   const { messages, sendMessage, stop, status, error, setMessages, clearError } =
     useChat<VizUIMessage>({
       transport: new DefaultChatTransport({ api: "/api/chat" }),
@@ -61,6 +70,15 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status]);
+
+  // Preset chip → send once. Ignored while a turn is in flight (single-flight).
+  useEffect(() => {
+    if (presetPrompt && !inFlight) {
+      void sendMessage({ text: presetPrompt });
+      onPresetConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetPrompt]);
 
   const submit = () => {
     const text = input.trim();
