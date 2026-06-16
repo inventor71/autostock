@@ -87,6 +87,14 @@ class Decision(BaseModel):
     # covers every pre-F64 decision). Legacy lines parse with the defaults.
     lessons_cited: list[str] = Field(default_factory=list)
     prompt_version: str = "seed"
+    # F85: the trading aggressiveness live when this call was made (Python-stamped
+    # post-hoc alongside prompt_version) and the grading horizon it implies. The
+    # quality collector grades a decision only once `today - ts >= grading_horizon_days`
+    # (or its round-trip closed), so a short-horizon (aggressive) call and a
+    # long-horizon (conservative) call are each judged on their own time-axis.
+    # Legacy lines parse with these defaults (== the shipped 'balanced' level).
+    aggressiveness: str = "balanced"
+    grading_horizon_days: int = 20
 
     @field_validator("symbol")
     @classmethod

@@ -63,6 +63,22 @@ def _reduce(excesses: list[float]) -> tuple[int, float | None, float | None]:
     return n, win_rate, avg_excess
 
 
+def _gradeable_excess(o: DecisionOutcome) -> float | None:
+    """F85: the efficacy contribution of one outcome, or None to skip it.
+
+    Skips decisions whose grading horizon has not yet elapsed (``mature`` False) so
+    a long-horizon (conservative) call isn't graded prematurely. Normalizes excess
+    to a per-holding-day basis so a 2-day (aggressive) and a 45-day (conservative)
+    excess are comparable when they land in the same lesson/prompt-version bucket —
+    otherwise the longer hold's mechanically larger excess would dominate the mean
+    (and skew F64 auto-rollback). Sign is preserved (positive divisor) so win_rate
+    is unchanged. Pre-F85 callers (mature default True, holding_days default 1) get
+    the raw excess back."""
+    if not o.mature or o.excess is None:
+        return None
+    return o.excess / max(o.holding_days, 1)
+
+
 def lesson_efficacy(outcomes: list[DecisionOutcome]) -> dict[str, LessonEfficacy]:
     """Per-lesson efficacy, keyed by ``lesson_id``.
 
@@ -73,10 +89,11 @@ def lesson_efficacy(outcomes: list[DecisionOutcome]) -> dict[str, LessonEfficacy
     buckets: dict[str, list[float]] = defaultdict(list)
     seen: set[str] = set()
     for o in outcomes:
+        e = _gradeable_excess(o)
         for lid in o.decision.lessons_cited:
             seen.add(lid)
-            if o.excess is not None:
-                buckets[lid].append(o.excess)
+            if e is not None:
+                buckets[lid].append(e)
     out: dict[str, LessonEfficacy] = {}
     for lid in seen:
         n, wr, ae = _reduce(buckets.get(lid, []))
@@ -93,8 +110,9 @@ def prompt_version_efficacy(
     for o in outcomes:
         v = o.decision.prompt_version
         seen.add(v)
-        if o.excess is not None:
-            buckets[v].append(o.excess)
+        e = _gradeable_excess(o)
+        if e is not None:
+            buckets[v].append(e)
     out: dict[str, VersionEfficacy] = {}
     for v in seen:
         n, wr, ae = _reduce(buckets.get(v, []))

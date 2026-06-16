@@ -274,7 +274,6 @@ def _run_prompt_improvement(
 def run_paper(settings, strategies_config: dict) -> None:
     """Run paper trading mode."""
     from src.core.types import TimeFrame, timeframe_from_minutes
-    from src.risk.manager import RiskManager
     from src.trading.engine import TradingEngine
     from src.trading.modes.batch import BatchTradingMode
 
@@ -285,23 +284,8 @@ def run_paper(settings, strategies_config: dict) -> None:
 
     broker = create_broker(settings)
     data_provider = create_data_provider(settings, broker=broker)
-    risk_manager = RiskManager(
-        max_position_pct=settings.risk.max_position_pct,
-        max_portfolio_risk=settings.risk.max_portfolio_risk,
-        stop_loss_pct=settings.risk.stop_loss_pct,
-        take_profit_pct=settings.risk.take_profit_pct,
-        max_open_positions=settings.risk.max_open_positions,
-        max_stop_distance_pct=settings.risk.max_stop_distance_pct,
-        atr_stop_multiple=settings.risk.atr_stop_multiple,
-        market_halt_threshold_pct=settings.risk.market_halt_threshold_pct,
-        default_risk_reward=settings.risk.default_risk_reward,
-        shorting_enabled=settings.risk.shorting_enabled,
-        short_market_halt_threshold_pct=settings.risk.short_market_halt_threshold_pct,
-        individual_stock_halt_pct=settings.risk.individual_stock_halt_pct,
-        short_stop_loss_pct=settings.risk.short_stop_loss_pct,
-        short_take_profit_pct=settings.risk.short_take_profit_pct,
-        short_max_stop_distance_pct=settings.risk.short_max_stop_distance_pct,
-    )
+    # Deterministic-strategy path: no aggressiveness overlay (the knob is agent-scoped).
+    risk_manager = _build_risk_manager(settings, use_bracket_orders=False)
 
     # In batch mode the bar timeframe must align with how often the cycle runs:
     # a 5-minute interval should evaluate 5-minute bars, not re-read the same
@@ -389,28 +373,20 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
     from src.agent.executor import DecisionExecutor
     from src.agent.orchestrator import AgentTradingLoop
     from src.agent.session import AgentSession
-    from src.risk.manager import RiskManager
     from src.trading.modes.agent import AgentTradingMode
 
     broker = create_broker(settings)
     data_provider = create_data_provider(settings, broker=broker)
-    risk_manager = RiskManager(
-        max_position_pct=settings.risk.max_position_pct,
-        max_portfolio_risk=settings.risk.max_portfolio_risk,
-        stop_loss_pct=settings.risk.stop_loss_pct,
-        take_profit_pct=settings.risk.take_profit_pct,
-        max_open_positions=settings.risk.max_open_positions,
-        max_stop_distance_pct=settings.risk.max_stop_distance_pct,
-        atr_stop_multiple=settings.risk.atr_stop_multiple,
-        market_halt_threshold_pct=settings.risk.market_halt_threshold_pct,
-        default_risk_reward=settings.risk.default_risk_reward,
-        shorting_enabled=settings.risk.shorting_enabled,
-        short_market_halt_threshold_pct=settings.risk.short_market_halt_threshold_pct,
-        individual_stock_halt_pct=settings.risk.individual_stock_halt_pct,
-        short_stop_loss_pct=settings.risk.short_stop_loss_pct,
-        short_take_profit_pct=settings.risk.short_take_profit_pct,
-        short_max_stop_distance_pct=settings.risk.short_max_stop_distance_pct,
-        use_bracket_orders=True,
+    # F85: the agent path applies the aggressiveness risk overlay (bracket orders on).
+    risk_manager = _build_risk_manager(
+        settings, use_bracket_orders=True, apply_aggressiveness=True
+    )
+    from src.agent.aggressiveness import resolve as _resolve_aggr
+    _aggr = _resolve_aggr(settings.agent.aggressiveness)
+    logger.info(
+        "Aggressiveness: {} (grading_horizon={}d, max_position_pct={}, recall_recency={})",
+        _aggr.level, _aggr.grading_horizon_days,
+        risk_manager.position_sizer.max_position_pct, _aggr.recall_recency,
     )
 
     universe = resolve_universe(settings, client=getattr(broker, "client", None))
@@ -435,6 +411,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         reflection_enabled=reflection_cfg.get("enabled", True),
         reflection_max_lessons=reflection_cfg.get("max_lessons_injected", 10),
         shorting_enabled=settings.risk.shorting_enabled,
+        aggressiveness=settings.agent.aggressiveness,
         signal_brief_provider=signal_brief_provider,
     )
     executor = DecisionExecutor(
@@ -481,13 +458,21 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
             benchmark_runner.stop()
 
 
-def _build_risk_manager(settings, *, use_bracket_orders: bool):
-    """Build a RiskManager from settings.risk. ``use_bracket_orders`` is False for
-    deterministic benchmark baselines (they emit plain BUY/SELL, not bracket levels)."""
+def _build_risk_manager(settings, *, use_bracket_orders: bool, apply_aggressiveness: bool = False):
+    """Build a RiskManager from settings.risk — the single construction chokepoint.
+
+    ``use_bracket_orders`` is False for deterministic benchmark baselines (they emit
+    plain BUY/SELL, not bracket levels) and is kept a per-call-site kwarg so it can
+    never be dropped by the F85 overlay.
+
+    ``apply_aggressiveness`` (F85, agent path only) overlays the resolved
+    aggressiveness profile onto the named risk fields. The overlay is restricted to
+    ``ALLOWED_RISK_KEYS`` — short master toggle / short_* params are never in it, so
+    the short safety gate is carried through unchanged from settings."""
     from src.risk.manager import RiskManager
 
     r = settings.risk
-    return RiskManager(
+    kwargs = dict(
         max_position_pct=r.max_position_pct,
         max_portfolio_risk=r.max_portfolio_risk,
         stop_loss_pct=r.stop_loss_pct,
@@ -503,8 +488,16 @@ def _build_risk_manager(settings, *, use_bracket_orders: bool):
         short_stop_loss_pct=r.short_stop_loss_pct,
         short_take_profit_pct=r.short_take_profit_pct,
         short_max_stop_distance_pct=r.short_max_stop_distance_pct,
-        use_bracket_orders=use_bracket_orders,
     )
+    if apply_aggressiveness:
+        from src.agent.aggressiveness import ALLOWED_RISK_KEYS, resolve
+
+        overlay = resolve(settings.agent.aggressiveness).risk_overlay
+        # Defensive: only allowlisted keys; max_open_positions stays an int.
+        for k, v in overlay.items():
+            if k in ALLOWED_RISK_KEYS:
+                kwargs[k] = int(v) if k == "max_open_positions" else v
+    return RiskManager(use_bracket_orders=use_bracket_orders, **kwargs)
 
 
 def _maybe_start_benchmark(settings, *, data_provider, universe, broker):
