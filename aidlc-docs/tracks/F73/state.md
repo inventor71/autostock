@@ -12,7 +12,8 @@
 - **Branch**: `vibeshell` (사용자 지정 — `feat/F73` 컨벤션 대신 명시 요청)
 - **Worktree**: .claude/worktrees/F73 (2026-06-13 생성)
 - **Submodule branch**: — (monorepo; operator-console/cli 미접촉 예정)
-- **Base commit**: 5a00442 (최신 main에서 분기 — R13·F75 머지 포함; 트랙 생성 시점 main = 76ff7b6)
+- **Base commit**: 8fa4e4b (2026-06-16 rebase — 원분기 5a00442에서 main 54커밋 위로 재배치;
+  트랙 생성 시점 main = 76ff7b6). 데이터 표면 drift 없음, build/test/16라우터 스모크 green.
 - **Start Date**: 2026-06-12T00:07:10Z
 
 ## Merge Policy (사용자 지정 — 표준과 다름, 글로벌 룰 명시적 override)
