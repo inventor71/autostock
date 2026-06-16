@@ -303,3 +303,6 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 ## /ai-dlc-merge — D1
 - 2026-06-15 — **merge run start** — triage: untracked tracks F76/F85/F86(active, OK noise) + F83(abandoned, docs intentionally preserved per its row — isolated, D1 close-commit stages only tracks/D1/+shared); no foreign paths. Queue: D1 only (deprecate/D1, ↑1 bff76e1, base 1a7645e). main now b97a09e (F79/F81/F87 merged since). No file intersection with D1 → clean rebase expected.
 - 2026-06-15 — **D1 merged** (628a0fc) — deprecate Tier1+2: removed dead deps (transformers/quantstats/plotly/matplotlib) + torch/scikit-learn + pre-agent ML strategies (lstm/rf/base_ml); kept feature_eng + F70 baseline. Rebased onto b97a09e clean, full suite 1329 passed (4 pre-existing unrelated). 435 deletions.
+
+## /ai-dlc-merge — F89 (F81/F87 follow-up)
+- 2026-06-16 — **F89 merged** (7d772ff) — 13F를 참조 데이터화(pull 전용): 단일 기관 자동 유니버스 편입이 자의적·단일소스 bias라는 사용자 판단 반영. SA LP provider overlay:false(유니버스 미편입) + to_prompt_text의 disclosed_holdings push 섹션 제거(매 턴 프롬프트 미주입) + render_push_line(F87) 제거. 데이터 파이프(데몬 refresh→캐시→collector→brief.disclosed_holdings)와 market.disclosed_holdings 풀 툴은 유지 → 에이전트 on-demand 참조만. 봇 매매 영향 0. 54 tests green. Base f17a36f→7d772ff.

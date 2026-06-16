@@ -6,7 +6,7 @@
 - **Track ID**: F89
 - **Title**: 13F disclosed-holdings를 참조 데이터(pull 전용)로 전환 — 유니버스 자동 편입 OFF + 매 턴 push 브리프 제거, on-demand `disclosed_holdings` 툴로만 노출
 - **Type**: feature (behavior change, F81/F87 follow-up)
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-16 -->
+- **Status**: merged → main 7d772ff (2026-06-16)
 - **Branch**: feat/F89
 - **Worktree**: .claude/worktrees/F89
 - **Base commit**: f17a36f

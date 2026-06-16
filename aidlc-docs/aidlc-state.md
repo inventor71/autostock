@@ -113,6 +113,8 @@
 | D1 | 죽은 의존성(transformers/quantstats/plotly/matplotlib/torch/sklearn) + 사전 ML 전략(lstm/rf/base_ml) 폐기 — feature_eng 보존, F70 baseline 경계 (Tier1+2) | merged | deprecate/D1 → main 628a0fc | — | — (monorepo) | 1a7645e→rebased b97a09e | 2026-06-15 |
 | F86 | 모바일 대시보드 데이터 엔드포인트 — opencode serve에 autostock read 라우트 추가, 데몬 steering 산출물을 PWA 대시보드에 실데이터 공급 (F79 후속; F84 차트 의존) | active | feat/F86 (TBD) | .claude/worktrees/F86 (TBD) | — (monorepo) | f7b751d | 2026-06-14 |
 | F87 | 13F 브리프 bias 완화 — 숏/풋 방향을 매 턴 push 프롬프트에서 제거하고 on-demand pull 툴로만 노출 (F81 후속) | merged | feat/F87 → main c392f3d | — | — (monorepo) | f7b751d→c392f3d | 2026-06-14 |
+| F88 | Agent self-authored long-horizon triggers — agent가 macro/news 조건을 Python predicate로 직접 작성, Docker 샌드박스(src 미마운트/net off) 평가, brokered 데이터 주입, daemon-호스팅 MCP authoring, fire→self-wake | active | feat/F88 (TBD) | .claude/worktrees/F88 (TBD) | — (monorepo) | f17a36f | 2026-06-16 |
+| F89 | 13F를 참조 데이터화(pull 전용) — 유니버스 자동 편입 OFF + push 브리프 제거, disclosed_holdings 툴로만 (F81/F87 후속) | merged | feat/F89 → main 7d772ff | — | — (monorepo) | f17a36f→7d772ff | 2026-06-16 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
