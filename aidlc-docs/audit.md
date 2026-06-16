@@ -306,3 +306,9 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 
 ## /ai-dlc-merge — F89 (F81/F87 follow-up)
 - 2026-06-16 — **F89 merged** (7d772ff) — 13F를 참조 데이터화(pull 전용): 단일 기관 자동 유니버스 편입이 자의적·단일소스 bias라는 사용자 판단 반영. SA LP provider overlay:false(유니버스 미편입) + to_prompt_text의 disclosed_holdings push 섹션 제거(매 턴 프롬프트 미주입) + render_push_line(F87) 제거. 데이터 파이프(데몬 refresh→캐시→collector→brief.disclosed_holdings)와 market.disclosed_holdings 풀 툴은 유지 → 에이전트 on-demand 참조만. 봇 매매 영향 0. 54 tests green. Base f17a36f→7d772ff.
+
+## /ai-dlc-merge — 큐 (F85 + F86)
+- 2026-06-16 — **triage**: working-tree noise = `aidlc-state.md`(M, F85 registry edit, shared) + untracked `tracks/{F76,F88}`(active=정상 노이즈) + untracked `tracks/F83`(**abandoned** — 비active, 머지가 건드리지 않음[어느 feat 브랜치에도 없음], 보존된 폐기-트랙 설계문서로 추정 → 보고만, 큐 무관). foreign 변경 없음. 큐 후보 = F85·F86(둘 다 merge-awaiting, 상호 파일 겹침 0). 제안 순서 F86→F85(F86 TS 클린, F85 Python은 main의 F89와 config/settings.yaml 겹쳐 rebase 충돌 가능). 사용자 승인 대기.
+- 2026-06-16 — **/ai-dlc-merge triage** — 작업트리: 공유(aidlc-state.md, audit.md) + active 트랙 문서(F76/F83/F88 untracked) = 정상 노이즈, 통과. foreign/비active 변경 없음. Merge 큐: F85(merge-awaiting, ahead 1)·F86(merge-awaiting, ahead 3). 겹침 0(F85=Python / F86=TS operator-console). F67/F68 state.md는 stale merge-awaiting(레지스트리 merged) — 제외.
+- 2026-06-16 — **/ai-dlc-merge 승인** — 사용자 "둘다 머지". 큐: F85 → F86 (겹침 0, 자율 진행).
+- 2026-06-16 — **F85 merged** → main 207b8be (rebased f17a36f→57f7f82, clean). Aggressiveness 노브: 단일 `agent.aggressiveness` 다이얼 → 프롬프트 성향 + 리스크 overlay + 학습 horizon(per-day 정규화·maturity 게이트·grades.jsonl). balanced=현행 동일. pytest 1371 pass(사전존재 sentiment_sweep 3건 무관). 3R critic.

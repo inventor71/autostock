@@ -8,7 +8,7 @@
 - **Track ID**: F85
 - **Title**: Aggressiveness knob — 한 개의 운영자 다이얼로 매매 공격성 조절 (프롬프트 + 리스크 게이트)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-16 -->
+- **Status**: merged → main 207b8be (2026-06-16)
 - **Branch**: feat/F85
 - **Worktree**: .claude/worktrees/F85
 - **Submodule branch**: — (monorepo)

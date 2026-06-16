@@ -109,7 +109,7 @@
 | F82 | Intraday 피처 자동 수집 — 유니버스 갭 백필 + 매 장마감 EOD append (F80 위 스택, intraday store 채우기) | merged | feat/F82 → main 2c9ddad | — | — (monorepo) | dd3c784→rebased 9e8ae56 | 2026-06-14 |
 | F83 | 공유 산출물 카탈로그 (SSOT) — 데몬 산출물 공통 read 게이트 | abandoned (critic: 명분 약화 — torn-read 거짓(producer atomic), 실질 TUI 1소비자, 원문제 우회. viz-shell 지표 직접 추가 우선. 설계 문서 보존, 재개 가능) | (never branched) | — | — (monorepo) | d8ceda3 | 2026-06-14 |
 | F84 | 모바일 PWA 차트 — Lightweight Charts(+@dschz/solid-lightweight-charts)로 포지션 시세 + 자산 곡선 + 결정 마커 (F79 위 추가형·스택, 단독 머지 불가) | active | feat/F84 (TBD) | .claude/worktrees/F84 (TBD) | — (monorepo) | F79(3cbf2b4) 스택 | 2026-06-14 |
-| F85 | Aggressiveness 노브 — 한 개 운영자 다이얼로 매매 공격성 조절 (프롬프트 엔지니어링 + 결정론적 리스크 게이트 동시 구동) | active | feat/F85 (TBD) | .claude/worktrees/F85 (TBD) | — (monorepo) | TBD | 2026-06-14 |
+| F85 | Aggressiveness 노브 — 한 개 운영자 다이얼로 매매 공격성 조절 (프롬프트 + 리스크 게이트 + 학습 horizon 동시 구동) | merged | feat/F85 → main 207b8be | — | — (monorepo) | f17a36f→rebased 57f7f82 | 2026-06-16 |
 | D1 | 죽은 의존성(transformers/quantstats/plotly/matplotlib/torch/sklearn) + 사전 ML 전략(lstm/rf/base_ml) 폐기 — feature_eng 보존, F70 baseline 경계 (Tier1+2) | merged | deprecate/D1 → main 628a0fc | — | — (monorepo) | 1a7645e→rebased b97a09e | 2026-06-15 |
 | F86 | 모바일 대시보드 데이터 엔드포인트 — opencode serve에 autostock read 라우트 추가, 데몬 steering 산출물을 PWA 대시보드에 실데이터 공급 (F79 후속; F84 차트 의존) | active | feat/F86 (TBD) | .claude/worktrees/F86 (TBD) | — (monorepo) | f7b751d | 2026-06-14 |
 | F87 | 13F 브리프 bias 완화 — 숏/풋 방향을 매 턴 push 프롬프트에서 제거하고 on-demand pull 툴로만 노출 (F81 후속) | merged | feat/F87 → main c392f3d | — | — (monorepo) | f7b751d→c392f3d | 2026-06-14 |
