@@ -137,6 +137,22 @@ vibeOS(caffeinum/vibeOS) 패턴의 "방향 A"를 autostock에 이식: 레포에 
 - 검증: vitest **135 통과**(+3 PresetGallery, -6 삭제 위젯 테스트 없었음), tsc 클린, 라이브
   스모크(시드탭 Overview+Explore, 프리셋류 프롬프트 → 에이전트 generated/ 생성 확인).
 
+#### critic 반영 (2026-06-16, "vibeOS 본질 유지하며 critic")
+> 코드 교차검증 후 반영. LOW 3건은 critic이 safe 확인(무조치).
+- **[HIGH] 프리셋 자동전송 stuck** — inFlight 중 칩 클릭 시 sendMessage·onPresetConsumed 둘 다
+  skip + deps [presetPrompt]만이라 턴 종료 후 재실행 안 됨 → 프롬프트 영영 손실. **수정: 자동전송
+  → textarea 프리필(편집 가능, 사용자가 명시 전송)으로 전환.** 자동전송 effect 제거 → stuck 경로
+  구조적 소멸 + 사용자 agency 회복(vibeOS 본질). ChatPanel `prefill={text,nonce}`, page nonce++.
+- **[MEDIUM] 같은 칩 재클릭 value-equality drop** — prefill `nonce`로 monotonic 트리거(같은 텍스트도
+  재발화). 동시 해결.
+- **[설계/#3 vibeOS 본질]** critic: "프리셋이 파일명/라이브러리/버킷까지 과지정 = 생성 의상 입은
+  큐레이션, 자동전송은 agency 박탈". **반영: ① 프리필(편집 후 전송) ② 프롬프트 under-specify(의도
+  + tRPC 훅만, 파일명/recharts/버킷 제거 — 시각설계는 에이전트 판단) ③ 자유입력을 헤드라인으로,
+  칩은 "막막할 때 예시".** 진짜 생성 표면=자유 채팅임을 UI가 반영. 테스트도 "src/generated/·
+  recharts 미포함" 검증으로 갱신.
+- Overview 시드(계좌/포지션/주문) 유지 = critic도 타당 인정(trust-critical·money-adjacent → LLM
+  전사 오류 위험, 비결정 생성에 맡기지 않음).
+
 > ⚠️ **발견(F73 갭, Tier 0 중)**: 사용자가 채팅으로 만든 생성 뷰(`src/generated/
 > unrealized-pnl-by-symbol.tsx`)에 타입 에러가 있어 `tsc --noEmit`·`next build`를 깨뜨림.
 > 런타임은 ErrorBoundary로 격리되나 **빌드/타입체크 게이트는 generated/를 포함해 오염**.

@@ -24,16 +24,17 @@ export default function DashboardPage() {
   // Hydrate after mount to avoid SSR/client markup mismatch.
   const [hidden, setHidden] = useState<string[]>([]);
   const [chatOpen, setChatOpen] = useState(true);
-  const [presetPrompt, setPresetPrompt] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
   useEffect(() => {
     setHidden(loadHiddenViews(window.localStorage));
     setChatOpen(window.localStorage.getItem(CHAT_OPEN_KEY) !== "false");
   }, []);
 
-  // Preset chip → open chat + queue the prompt; ChatPanel sends it and calls back.
-  const onPreset = (prompt: string) => {
+  // Preset chip → open chat + drop the prompt into the input as an editable
+  // draft (ChatPanel does not auto-send). nonce makes repeat clicks re-fill.
+  const onPreset = (text: string) => {
     updateChatOpen(true);
-    setPresetPrompt(prompt);
+    setPrefill((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
   };
 
   const updateHidden = (next: string[]) => {
@@ -99,11 +100,7 @@ export default function DashboardPage() {
         </main>
       </div>
       {chatOpen && (
-        <ChatPanel
-          onCollapse={() => updateChatOpen(false)}
-          presetPrompt={presetPrompt}
-          onPresetConsumed={() => setPresetPrompt(null)}
-        />
+        <ChatPanel onCollapse={() => updateChatOpen(false)} prefill={prefill} />
       )}
     </div>
   );

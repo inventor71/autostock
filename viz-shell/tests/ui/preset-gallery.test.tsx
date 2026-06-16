@@ -21,10 +21,13 @@ describe("PresetGallery (vibeOS: chip = seed prompt, not a widget)", () => {
     expect(onPick).toHaveBeenCalledWith(PRESETS[0].prompt);
   });
 
-  it("every preset prompt targets src/generated/ (boundary-respecting)", () => {
+  it("every preset prompt names a data source but stays under-specified (intent, not a widget spec)", () => {
     for (const p of PRESETS) {
-      expect(p.prompt).toContain("src/generated/");
+      // Names which router to use, so the agent knows the data...
       expect(p.prompt).toMatch(/trpc\.portfolio\./);
+      // ...but does NOT dictate filename/library/encoding — that's the agent's job.
+      expect(p.prompt).not.toContain("src/generated/");
+      expect(p.prompt.toLowerCase()).not.toContain("recharts");
     }
   });
 });

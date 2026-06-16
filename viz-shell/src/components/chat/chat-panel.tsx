@@ -50,13 +50,15 @@ function MessageParts({ message }: { message: VizUIMessage }) {
 
 export function ChatPanel({
   onCollapse,
-  presetPrompt,
-  onPresetConsumed,
+  prefill,
 }: {
   onCollapse: () => void;
-  /** A preset-chip prompt to send automatically (Explore tab). */
-  presetPrompt?: string | null;
-  onPresetConsumed?: () => void;
+  /**
+   * A preset-chip prompt to drop into the input as an EDITABLE draft (not
+   * auto-sent) — the user keeps agency to tweak/send. `nonce` makes repeat
+   * clicks of the same chip re-fire (value-equality wouldn't).
+   */
+  prefill?: { text: string; nonce: number } | null;
 }) {
   const { messages, sendMessage, stop, status, error, setMessages, clearError } =
     useChat<VizUIMessage>({
@@ -64,6 +66,7 @@ export function ChatPanel({
     });
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const inFlight = status === "submitted" || status === "streaming";
 
@@ -71,14 +74,16 @@ export function ChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status]);
 
-  // Preset chip → send once. Ignored while a turn is in flight (single-flight).
+  // Preset chip → prefill the editable input and focus it (no auto-send, so a
+  // turn in flight can never strand a queued prompt). Keyed on nonce so clicking
+  // the same chip twice still re-fills.
   useEffect(() => {
-    if (presetPrompt && !inFlight) {
-      void sendMessage({ text: presetPrompt });
-      onPresetConsumed?.();
+    if (prefill) {
+      setInput(prefill.text);
+      inputRef.current?.focus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetPrompt]);
+  }, [prefill?.nonce]);
 
   const submit = () => {
     const text = input.trim();
@@ -180,6 +185,7 @@ export function ChatPanel({
 
       <div className="border-t border-edge p-2">
         <textarea
+          ref={inputRef}
           data-testid="chat-input"
           value={input}
           onChange={(e) => setInput(e.target.value.slice(0, MAX_INPUT_CHARS))}
