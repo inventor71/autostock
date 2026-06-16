@@ -48,6 +48,8 @@ export type DashboardPayload = {
   market: { open: boolean | null; phase?: string; label?: string } | null
   agent: {
     current: string | null
+    // `ts` is the daemon's pre-formatted clock string ("HH:MM"), for DISPLAY only — it is NOT
+    // an ISO timestamp (unlike `published_at`). Do not Date.parse() it.
     recent: Array<{ ts?: string; action: string; symbol?: string; summary?: string }>
   }
   published_at: string | null
@@ -188,8 +190,14 @@ export function assembleDashboardPayload(raw: RawSteering): DashboardPayload {
       summary: str(d.summary) ?? str(d.detail),
     }))
 
-  // published_at: monitor.ts → snapshot file mtime → null
-  const published_at = str(monitor.ts) ?? (typeof raw.snapshotMtimeIso === "string" ? raw.snapshotMtimeIso : null)
+  // published_at = the SNAPSHOT's own freshness, NOT monitor's. account/positions/market_open
+  // all come from snapshot.json, which the daemon stamps with `published_at` ONLY when it
+  // actually writes it (channel.publish_snapshot). If publish_snapshot fails (broker error) it
+  // returns without writing, so this stamp freezes — the correct stale signal. monitor.json's
+  // `ts` ticks on an independent timer and must NOT vouch for snapshot freshness (it would mask
+  // a frozen snapshot as fresh — NFR-2/SECURITY-15). Fall back to the snapshot file mtime.
+  const published_at =
+    str(snapshot.published_at) ?? (typeof raw.snapshotMtimeIso === "string" ? raw.snapshotMtimeIso : null)
 
   return {
     account: {
@@ -198,7 +206,9 @@ export function assembleDashboardPayload(raw: RawSteering): DashboardPayload {
       day_pnl_pct: null,
       buying_power: null,
       open_pnl: num(account.open_pnl),
-      position_count: Math.max(0, Math.trunc(num(account.position_count) ?? positions.length)),
+      // Single source of truth = the positions we actually return (matches the F79 core,
+      // which derives positionCount from the positions list — never let the two disagree).
+      position_count: positions.length,
     },
     positions,
     health,
@@ -229,6 +239,8 @@ function unauthorized(): Response {
   return new Response("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Basic" } })
 }
 
+let warnedCwdFallback = false
+
 export async function route(request: Request): Promise<Response | null> {
   const url = new URL(request.url)
   if (url.pathname !== "/autostock/dashboard") return null
@@ -239,6 +251,15 @@ export async function route(request: Request): Promise<Response | null> {
 
   try {
     const dir = resolveSteeringDir()
+    // Neither STEERING_DIR nor AUTOSTOCK_ROOT set → we fell back to a cwd-relative guess, which
+    // is only correct when the server's cwd is operator-console/cli. Warn once so an operator
+    // can spot a wrong/empty dashboard caused by a non-standard launch cwd (see post-merge-guide).
+    if (!warnedCwdFallback && !process.env.STEERING_DIR && !process.env.AUTOSTOCK_ROOT) {
+      warnedCwdFallback = true
+      console.warn(
+        `[autostock] dashboard: STEERING_DIR/AUTOSTOCK_ROOT unset; using cwd-relative steering dir guess (${dir ?? "none found"}). Set STEERING_DIR to be explicit.`,
+      )
+    }
     const raw: RawSteering = dir
       ? {
           snapshot: readJson(dir, "snapshot.json"),

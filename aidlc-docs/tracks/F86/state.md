@@ -8,7 +8,7 @@
 - **Track ID**: F86
 - **Title**: 모바일 대시보드 데이터 엔드포인트 — PWA `/autostock` 대시보드에 실데이터 공급 (F79 후속)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-16 -->
+- **Status**: merge-awaiting  <!-- re-enqueued after code-review fixes, re-verified green 2026-06-16 -->
 - **Branch**: feat/F86
 - **Worktree**: .claude/worktrees/F86
 - **Submodule branch**: — (monorepo; operator-console/cli 변경 예상)
@@ -69,3 +69,10 @@ F79가 남긴 명시적 후속: 모바일 PWA `/autostock` 셸의 DashboardView�
     - 클라: dashboard-source.ts + mobile-shell 폴링 배선 + app addon test 52 pass
     - real-data 스모크로 버그 2건(미정규화 카운트, health overall 스키마) 발견·수정
 - [x] Build & Test — typecheck/unit/PBT/회귀/real-data 스모크 ALL GREEN → merge-awaiting
+- [x] Code Review (/code-review high) — 5 findings, 수정 적용 후 재검증 그린:
+  - **#1 [HIGH] published_at 앵커 오류**: monitor.ts(독립 타이머)로 신선도 판정 → 데몬 publish_snapshot 실패로 snapshot.json 동결돼도 fresh로 위장(NFR-2 위반). 수정: snapshot.json 자체 `published_at`(채널이 write 시에만 갱신) → mtime → null. real-data 스모크로 확인.
+  - **#2 [MED] 클라 staleness 시계 동결**: http() 부재 시 poll 조기반환으로 nowMs 동결 → stale 미발화. 수정: interval이 매 tick nowMs 무조건 갱신 후 네트워크 poll만 스킵.
+  - **#3 [MED] resolveSteeringDir cwd 폴백**: STEERING_DIR/AUTOSTOCK_ROOT 미설정 시 cwd 상대경로 추정 → 1회 console.warn 추가 + post-merge-guide 전제조건 명시.
+  - **#5 [LOW] position_count 불일치**: account.position_count 신뢰 → positions.length 단일소스로 변경(F79 코어와 정합).
+  - **#4 [LOW] recent[].ts 'HH:MM'**: ISO 아님 — 타입 주석으로 표시(Date.parse 금지). 데몬 ISO 발행은 후속.
+  - auth-bypass 의혹은 refuted(fail-closed 확인).

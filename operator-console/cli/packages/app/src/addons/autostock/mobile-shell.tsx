@@ -157,15 +157,17 @@ export default function MobileShell() {
 
   async function poll() {
     const h = http()
-    if (!h) return
+    if (!h) return // no connection — keep the staleness clock advancing (below) so it trips
     setPayload(await fetchDashboard(h)) // null on failure → offline model (no stale hold)
-    setNowMs(Date.now())
   }
 
   onMount(() => {
     void poll() // initial load
     const t = setInterval(() => {
-      // Don't poll while backgrounded or locked — no needless traffic (NFR-4).
+      // Advance the staleness clock EVERY tick, independent of whether we poll. Otherwise a lost
+      // connection (http() unavailable) would freeze nowMs and a held-over payload would never be
+      // flagged stale (NFR-2/SECURITY-15). Then skip the network poll while backgrounded/locked.
+      setNowMs(Date.now())
       if (document.hidden || locked()) return
       void poll()
     }, POLL_MS)

@@ -22,6 +22,7 @@ describe("assembleDashboardPayload — examples (PBT-10)", () => {
           TSLA: { qty: 5, avg_entry_price: 200, current_price: 180, side: "long", market_value: 900, unrealized_pnl: -100 },
         },
         market_open: true,
+        published_at: "2026-06-16T14:29:58Z", // the snapshot's own freshness stamp
       },
       health: { status: "ok" },
       monitor: {
@@ -45,7 +46,40 @@ describe("assembleDashboardPayload — examples (PBT-10)", () => {
     expect(p.market).toEqual({ open: true, phase: "regular", label: "정규장" })
     expect(p.agent.current).toBe("research")
     expect(p.agent.recent[0]).toMatchObject({ action: "BUY", symbol: "AAPL" })
-    expect(p.published_at).toBe("2026-06-16T14:30:00Z")
+    // freshness anchored to the snapshot's own stamp, NOT monitor.ts (see staleness test below)
+    expect(p.published_at).toBe("2026-06-16T14:29:58Z")
+  })
+
+  test("published_at is the SNAPSHOT's freshness, not monitor.ts — a frozen snapshot is not masked fresh", () => {
+    // Snapshot stamp frozen at 14:00 (publish_snapshot stopped writing); monitor still ticking at 14:30.
+    const stale = assembleDashboardPayload({
+      snapshot: { account: { equity: 1 }, published_at: "2026-06-16T14:00:00Z" },
+      monitor: { ts: "2026-06-16T14:30:00Z" },
+    })
+    expect(stale.published_at).toBe("2026-06-16T14:00:00Z") // monitor.ts must NOT win
+
+    // No snapshot stamp → fall back to the snapshot file mtime (still not monitor.ts).
+    const viaMtime = assembleDashboardPayload({
+      snapshot: { account: { equity: 1 } },
+      monitor: { ts: "2026-06-16T14:30:00Z" },
+      snapshotMtimeIso: "2026-06-16T14:05:00Z",
+    })
+    expect(viaMtime.published_at).toBe("2026-06-16T14:05:00Z")
+
+    // Neither stamp nor mtime → null (client treats as stale), even though monitor.ts exists.
+    const none = assembleDashboardPayload({ monitor: { ts: "2026-06-16T14:30:00Z" } })
+    expect(none.published_at).toBeNull()
+  })
+
+  test("position_count == returned positions length (single source of truth, even if account disagrees)", () => {
+    const p = assembleDashboardPayload({
+      snapshot: {
+        account: { position_count: 99 }, // stale/wrong account count must not win
+        positions: { AAPL: { avg_entry_price: 1, current_price: 1, side: "long" } },
+      },
+    })
+    expect(p.account.position_count).toBe(1)
+    expect(p.positions.length).toBe(1)
   })
 
   test("all sources missing → empty payload, published_at null (stale)", () => {
