@@ -202,12 +202,53 @@ export type Quality = z.infer<typeof QualitySchema>;
 export type Health = z.infer<typeof HealthSchema>;
 export type HealthDimension = z.infer<typeof HealthDimensionSchema>;
 
-/** Opaque markdown doc (watchlist/regime) — same shape as ThesisDoc, not parsed. */
+/** Opaque markdown doc (watchlist/regime/surge/daily/lessons) — not parsed. */
 export type MarkdownDoc = {
   markdown: string;
   mtimeMs: number;
   stale: boolean;
 };
+
+// workspace/screening/<date>.scan.json — universe scan rows (F72).
+export const ScanRowSchema = z.looseObject({
+  symbol: z.string(),
+  close: z.coerce.number().optional(),
+  chg_1d: z.coerce.number().optional(),
+  chg_5d: z.coerce.number().optional(),
+  chg_20d: z.coerce.number().optional(),
+  rsi_14: z.coerce.number().optional(),
+  vol_ratio: z.coerce.number().optional(),
+  dist_high_20d_pct: z.coerce.number().optional(),
+});
+
+export const ScanSchema = z.looseObject({
+  et_date: z.string().optional(),
+  ts: z.string().optional(),
+  count: z.coerce.number().optional(),
+  rows: z.array(ScanRowSchema).default([]),
+});
+
+// workspace/screening/<date>.verdicts.jsonl — one screening verdict per line.
+export const VerdictSchema = z.looseObject({
+  ts: z.string(),
+  symbol: z.string(),
+  verdict: z.string(), // passed | rejected | ...
+  reason: z.string().optional(),
+});
+
+// workspace/sentiment/<date>.jsonl — StockTwits retail sentiment (F77).
+export const SentimentSchema = z.looseObject({
+  ts: z.string(),
+  symbol: z.string(),
+  bullish_n: z.coerce.number().optional(),
+  bearish_n: z.coerce.number().optional(),
+  untagged_n: z.coerce.number().optional(),
+});
+
+export type ScanRow = z.infer<typeof ScanRowSchema>;
+export type Scan = z.infer<typeof ScanSchema>;
+export type Verdict = z.infer<typeof VerdictSchema>;
+export type Sentiment = z.infer<typeof SentimentSchema>;
 
 /** positions/<SYMBOL>.md thesis docs are opaque markdown — never parsed (E3). */
 export type ThesisDoc = {

@@ -78,6 +78,31 @@ function seedFixture() {
   );
   writeFileSync(path.join(root, "workspace", "watchlist.md"), "# Watchlist\nbody");
   writeFileSync(path.join(root, "workspace", "regime.md"), "# Regime\nbody");
+  writeFileSync(path.join(root, "workspace", "lessons.md"), "# Lessons\nbody");
+  // Tier 3: dated research artifacts (two dates each → latest = 2026-06-13).
+  mkdirSync(path.join(root, "workspace", "screening"), { recursive: true });
+  writeFileSync(
+    path.join(root, "workspace", "screening", "2026-06-12.scan.json"),
+    JSON.stringify({ et_date: "2026-06-12", count: 50, rows: [] }),
+  );
+  writeFileSync(
+    path.join(root, "workspace", "screening", "2026-06-13.scan.json"),
+    JSON.stringify({ et_date: "2026-06-13", count: 131, rows: [{ symbol: "AAPL", close: 291 }] }),
+  );
+  writeFileSync(
+    path.join(root, "workspace", "screening", "2026-06-13.verdicts.jsonl"),
+    JSON.stringify({ ts: "2026-06-13T18:10:00Z", symbol: "JNJ", verdict: "passed", reason: "defensive" }) + "\n",
+  );
+  mkdirSync(path.join(root, "workspace", "sentiment"), { recursive: true });
+  writeFileSync(
+    path.join(root, "workspace", "sentiment", "2026-06-13.jsonl"),
+    JSON.stringify({ ts: "2026-06-13T08:31:00Z", symbol: "DIS", bullish_n: 11, bearish_n: 2, untagged_n: 17 }) + "\n",
+  );
+  mkdirSync(path.join(root, "workspace", "surge"), { recursive: true });
+  writeFileSync(path.join(root, "workspace", "surge", "2026-06-12.md"), "# Surge 12");
+  writeFileSync(path.join(root, "workspace", "surge", "2026-06-13.md"), "# Surge 13");
+  mkdirSync(path.join(root, "workspace", "daily"), { recursive: true });
+  writeFileSync(path.join(root, "workspace", "daily", "2026-06-13.md"), "# Daily 13");
 }
 
 const caller = appRouter.createCaller({});
@@ -244,5 +269,53 @@ describe("Tier 2 (quality/health/watchlist/regime)", () => {
   it("watchlist returns null when absent", async () => {
     rmSync(path.join(root, "workspace", "watchlist.md"));
     expect(await caller.portfolio.watchlist()).toBeNull();
+  });
+});
+
+describe("Tier 3 research funnel (dated; latest default + any-date)", () => {
+  it("screening defaults to the latest date with scan + verdicts", async () => {
+    const out = await caller.portfolio.screening();
+    expect(out?.date).toBe("2026-06-13");
+    expect(out?.dates).toEqual(["2026-06-12", "2026-06-13"]);
+    expect(out?.scan?.count).toBe(131);
+    expect(out?.verdicts[0].verdict).toBe("passed");
+  });
+
+  it("screening can pull a specific existing date", async () => {
+    const out = await caller.portfolio.screening({ date: "2026-06-12" });
+    expect(out?.date).toBe("2026-06-12");
+    expect(out?.scan?.count).toBe(50);
+  });
+
+  it("screening falls back to latest for a non-existent date (no path injection)", async () => {
+    const out = await caller.portfolio.screening({ date: "1999-01-01" });
+    expect(out?.date).toBe("2026-06-13"); // latest, not the requested phantom date
+  });
+
+  it("screening rejects malformed date at the schema layer", async () => {
+    await expect(caller.portfolio.screening({ date: "../etc" })).rejects.toThrow();
+  });
+
+  it("sentiment returns latest-date rows", async () => {
+    const out = await caller.portfolio.sentiment();
+    expect(out?.date).toBe("2026-06-13");
+    expect(out?.rows[0].symbol).toBe("DIS");
+    expect(out?.rows[0].bullish_n).toBe(11);
+  });
+
+  it("surge/daily return dated markdown (latest)", async () => {
+    const s = await caller.portfolio.surge();
+    expect(s?.date).toBe("2026-06-13");
+    expect(s?.markdown).toBe("# Surge 13");
+    expect((await caller.portfolio.daily())?.markdown).toBe("# Daily 13");
+  });
+
+  it("lessons returns the single markdown doc", async () => {
+    expect((await caller.portfolio.lessons())?.markdown).toContain("# Lessons");
+  });
+
+  it("returns null when a research dir is missing", async () => {
+    rmSync(path.join(root, "workspace", "sentiment"), { recursive: true });
+    expect(await caller.portfolio.sentiment()).toBeNull();
   });
 });

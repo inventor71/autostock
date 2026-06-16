@@ -4,18 +4,23 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 import { trpc } from "@/lib/trpc";
-import type { MarkdownDoc as MarkdownDocType } from "@/server/schemas";
 
-type DocProcedure = "watchlist" | "regime";
+type DocProcedure = "watchlist" | "regime" | "lessons" | "surge" | "daily";
+type AnyDoc = { markdown: string; stale?: boolean } | null | undefined;
 
 /**
- * Large opaque markdown doc (watchlist.md ~100KB / regime.md ~190KB). Collapsed
- * by default — these are huge, so render only on expand to keep the panel light.
+ * Large opaque markdown doc (watchlist/regime/lessons/surge/daily). Collapsed by
+ * default — some are huge (regime ~190KB), so render only on expand. Dated docs
+ * (surge/daily) default to the latest; a generated view can pass a date instead.
  */
 export function MarkdownDoc({ which, title }: { which: DocProcedure; title: string }) {
   const [open, setOpen] = useState(false);
-  const query = trpc.portfolio[which].useQuery(undefined, { enabled: open });
-  const doc = query.data as MarkdownDocType | null | undefined;
+  // The five doc procedures share a markdown-bearing return shape; the union of
+  // their query signatures isn't inferable, so address the namespace loosely and
+  // narrow the result via AnyDoc.
+  const useDoc = (trpc.portfolio[which] as { useQuery: (i: undefined, o: { enabled: boolean }) => { data: unknown; isLoading: boolean } }).useQuery;
+  const query = useDoc(undefined, { enabled: open });
+  const doc = query.data as AnyDoc;
 
   return (
     <div className="rounded-lg border border-edge bg-surface-1 p-4">

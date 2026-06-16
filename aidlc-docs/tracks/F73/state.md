@@ -99,7 +99,25 @@ vibeOS(caffeinum/vibeOS) 패턴의 "방향 A"를 autostock에 이식: 레포에 
   (생성뷰 자동활성·hidden-views 로직 보존). AnalysisTab = QualityPanel + HealthPanel + MarkdownDoc×2
   (거대 md는 펼침-온디맨드 fetch). Overview 비대화 해소. 테스트 124 통과(+6), tsc 클린, 라이브
   스모크(quality 최신 22 outcomes/health ERROR 5dim/watchlist 102KB/시드탭 2개).
-- [ ] **Tier 3** — screening/sentiment/surge/lessons/daily (여력 시).
+- [x] **Tier 3** (2026-06-15) — screening/sentiment/surge/daily/lessons. paths 5 + schemas(Scan/
+  Verdict/Sentiment) + router 6 query(**날짜 파라미터** {date?} optional — 최신 기본 + 임의 날짜,
+  목록 대조로 경로주입 차단). 신규 시드 탭 **Research**(seed-tabs 3엔트리화). 정형 위젯 2종
+  (ScreeningFunnel: scan→verdicts 퍼널, SentimentPanel: bull/bear 막대) + MarkdownDoc 5종 일반화
+  (surge/daily/lessons 추가). 테스트 132 통과(+8), tsc 클린, 라이브 스모크(screening 최신+특정날짜
+  06-14 조회, sentiment 500, surge/daily/lessons md, 시드탭 3개).
+
+### 🟣 vibeOS 철학 점검 + 보정 (2026-06-15)
+> 사용자 요청: "지금까지 코드가 vibeOS 철학 살리는지 체크". 점검 결과 + 반영:
+- **충실**: tRPC 서비스 계층(query 16개로 확장) = vibeOS "시스템 서비스 계층" 정신, HMR 자동
+  레지스트리·ErrorBoundary 탭 격리·채팅 생성 경로(사용자 실제 뷰 2개 생성) = 반응성/격리 핵심.
+- **보정 1 (빌드 격리 갭)**: 생성뷰(unrealized-pnl)가 tsc/next build를 깨뜨리던 문제 → `tsconfig`
+  exclude `src/generated` (런타임 ErrorBoundary가 유일 안전망이라는 vibeOS 철학과 빌드 게이트를
+  일관화). 이제 깨진 생성뷰가 빌드를 막지 않음. tsc 트릭(mv) 불필요.
+- **보정 2 (생성 모범 빈약)**: _example이 snapshot 하나뿐 → `_example-research.tsx` 추가
+  (decisions jsonl-tail + 집계 + recharts 패턴 시연) + view-contract에 16훅 + 날짜조회 안내 +
+  "시드 탭에 국한 말고 무엇이든 표면화하라" 명시. 서비스 계층의 풍부함을 생성 경로가 따라가게.
+- **잔여 긴장(기록)**: 시드 위젯 20개+로 정적 대시보드화 경향 — 즉시 가치 있으나 vibeOS는
+  최소 시드+생성 위임이 정신. 향후 Tier는 시드 절제 + 생성 모범 우선 고려.
 
 > ⚠️ **발견(F73 갭, Tier 0 중)**: 사용자가 채팅으로 만든 생성 뷰(`src/generated/
 > unrealized-pnl-by-symbol.tsx`)에 타입 에러가 있어 `tsc --noEmit`·`next build`를 깨뜨림.

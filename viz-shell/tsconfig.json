@@ -17,5 +17,6 @@
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "//exclude-generated": "Chat-generated views are untrusted output — their only safety net is the runtime ErrorBoundary (vibeOS philosophy). Keep them out of tsc/next build so one broken view can't fail the whole typecheck/build.",
+  "exclude": ["node_modules", "src/generated"]
 }

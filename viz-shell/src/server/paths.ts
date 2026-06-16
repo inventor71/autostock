@@ -47,6 +47,24 @@ export function regimePath(): string {
   return path.join(repoRoot(), "workspace", "regime.md");
 }
 
+export function lessonsPath(): string {
+  return path.join(repoRoot(), "workspace", "lessons.md");
+}
+
+/** Dated-artifact directories (one file per ET date). */
+export function screeningDir(): string {
+  return path.join(repoRoot(), "workspace", "screening");
+}
+export function sentimentDir(): string {
+  return path.join(repoRoot(), "workspace", "sentiment");
+}
+export function surgeDir(): string {
+  return path.join(repoRoot(), "workspace", "surge");
+}
+export function dailyDir(): string {
+  return path.join(repoRoot(), "workspace", "daily");
+}
+
 export function turnsPath(): string {
   return path.join(repoRoot(), "workspace", "turns.jsonl");
 }

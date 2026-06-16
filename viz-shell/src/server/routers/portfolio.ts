@@ -4,13 +4,18 @@ import { z } from "zod";
 
 import { router, publicProcedure } from "@/server/trpc";
 import {
+  dailyDir,
   decisionsPath,
   equityPath,
   healthPath,
+  lessonsPath,
   positionsDir,
   qualityDir,
   regimePath,
+  screeningDir,
+  sentimentDir,
   snapshotPath,
+  surgeDir,
   tradesPath,
   turnsPath,
   watchlistPath,
@@ -21,12 +26,46 @@ import {
   EquityRecordSchema,
   HealthSchema,
   QualitySchema,
+  ScanSchema,
+  SentimentSchema,
   SnapshotSchema,
   TradeSchema,
   TurnSchema,
+  VerdictSchema,
   type MarkdownDoc,
   type ThesisDoc,
 } from "@/server/schemas";
+
+/** Optional ET date selector for dated artifacts; validated + whitelisted below. */
+const dateInput = z
+  .object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() })
+  .optional();
+
+/** ET dates present in a dir (extracted from filenames matching `match`). */
+async function listDates(dir: string, match: RegExp): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
+  const dates = new Set<string>();
+  for (const name of entries) {
+    const m = match.exec(name);
+    if (m) dates.add(m[1]);
+  }
+  return [...dates].sort();
+}
+
+/**
+ * Pick the requested date ONLY if it actually exists (double whitelist — the
+ * date never becomes a path without being in the listing); else the latest.
+ */
+function pickDate(dates: string[], requested?: string): string | null {
+  if (dates.length === 0) return null;
+  if (requested !== undefined && dates.includes(requested)) return requested;
+  return dates[dates.length - 1];
+}
 
 /** YYYY-MM-DD.json — guards the quality-dir listing against unexpected names. */
 const QUALITY_FILE_RE = /^(\d{4}-\d{2}-\d{2})\.json$/;
@@ -149,7 +188,56 @@ export const portfolioRouter = router({
   /** System health verdict (steering/health.json), or null when absent. */
   health: publicProcedure.query(() => readJsonFile(healthPath(), HealthSchema)),
 
-  /** Opaque watchlist / regime markdown (workspace/*.md), or null. */
+  /** Opaque watchlist / regime / lessons markdown (workspace/*.md), or null. */
   watchlist: publicProcedure.query((): Promise<MarkdownDoc | null> => readMarkdownDoc(watchlistPath())),
   regime: publicProcedure.query((): Promise<MarkdownDoc | null> => readMarkdownDoc(regimePath())),
+  lessons: publicProcedure.query((): Promise<MarkdownDoc | null> => readMarkdownDoc(lessonsPath())),
+
+  // ── Tier 3: research funnel (dated; latest by default, any date via input) ──
+
+  /** Screening scan rows + verdicts for a date (latest by default). */
+  screening: publicProcedure.input(dateInput).query(async ({ input }) => {
+    const dates = await listDates(
+      screeningDir(),
+      /^(\d{4}-\d{2}-\d{2})\.(?:scan\.json|verdicts\.jsonl)$/,
+    );
+    const date = pickDate(dates, input?.date);
+    if (date === null) return null;
+    const scan = await readJsonFile(path.join(screeningDir(), `${date}.scan.json`), ScanSchema);
+    const verdicts = await tailJsonl(
+      path.join(screeningDir(), `${date}.verdicts.jsonl`),
+      VerdictSchema,
+      { maxLines: 500 },
+    );
+    return { date, dates, scan, verdicts };
+  }),
+
+  /** StockTwits sentiment rows for a date (latest by default). */
+  sentiment: publicProcedure.input(dateInput).query(async ({ input }) => {
+    const dates = await listDates(sentimentDir(), /^(\d{4}-\d{2}-\d{2})\.jsonl$/);
+    const date = pickDate(dates, input?.date);
+    if (date === null) return null;
+    const rows = await tailJsonl(path.join(sentimentDir(), `${date}.jsonl`), SentimentSchema, {
+      maxLines: 500,
+    });
+    return { date, dates, rows };
+  }),
+
+  /** Surge/dive summary markdown for a date (latest by default). */
+  surge: publicProcedure.input(dateInput).query(async ({ input }) => {
+    const dates = await listDates(surgeDir(), /^(\d{4}-\d{2}-\d{2})\.md$/);
+    const date = pickDate(dates, input?.date);
+    if (date === null) return null;
+    const doc = await readMarkdownDoc(path.join(surgeDir(), `${date}.md`));
+    return doc === null ? null : { date, dates, ...doc };
+  }),
+
+  /** Daily report markdown for a date (latest by default). */
+  daily: publicProcedure.input(dateInput).query(async ({ input }) => {
+    const dates = await listDates(dailyDir(), /^(\d{4}-\d{2}-\d{2})\.md$/);
+    const date = pickDate(dates, input?.date);
+    if (date === null) return null;
+    const doc = await readMarkdownDoc(path.join(dailyDir(), `${date}.md`));
+    return doc === null ? null : { date, dates, ...doc };
+  }),
 });
