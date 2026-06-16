@@ -4,8 +4,8 @@
 //   - approve → usePermission().respondSigned (passkey-signed, FR-3)
 //   - reject  → usePermission().respond (no signature, F75 topology)
 //   - inactivity → LockController curtain, unlocked by a passkey assertion (NFR-6)
-//   - DashboardView renders; its LIVE data source (account/positions/health/portfolio) is a
-//     follow-up (no mobile read endpoint yet — F83 catalog defers mobile). Graceful until then.
+//   - DashboardView renders LIVE data: F86 polls GET /autostock/dashboard (~5s) and feeds the
+//     payload through the F79 cores (toSnapshotSources → buildDashboard) + per-position rows.
 //
 // Mounted at /autostock (see app.tsx). Behavior-critical pieces are the tested cores; this
 // file is the live composition — verify the round-trip on a real device (post-merge-guide).
@@ -16,15 +16,25 @@ import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
 import { useServerSDK } from "@/context/server-sdk"
 import { usePermission } from "@/context/permission"
 import { useServer } from "@/context/server"
-import { DashboardView } from "./dashboard-view"
+import { DashboardView, type PositionRow } from "./dashboard-view"
 import { ConfirmSheet } from "./confirm-sheet"
 import { badgeCount, nextForSheet, type PendingApproval } from "./approval-queue"
 import { DEFAULT_LOCK_TIMEOUT_MS, shouldLock } from "./lock"
 import { withWebAuthn } from "./signed-mutation"
 import { browserCredentialsGet, serverFetcher } from "./webauthn-fetch"
 import { toDashboard } from "./dashboard"
+import { buildDashboard, isStale } from "./snapshot"
+import {
+  POLL_MS,
+  STALE_THRESHOLD_MS,
+  fetchDashboard,
+  toSnapshotSources,
+  toPositionRows,
+  toMarket,
+  type DashboardPayload,
+} from "./dashboard-source"
 
-const EMPTY_MODEL = toDashboard(null, { offline: false })
+const OFFLINE_MODEL = toDashboard(null, { offline: true })
 
 /** Only autostock tools prompt for approval here; read tools are auto-allowed upstream. */
 function isAutostockAsk(permission: string): boolean {
@@ -141,6 +151,39 @@ export default function MobileShell() {
     }
   }
 
+  // --- live dashboard data (F86): poll GET /autostock/dashboard, feed F79 cores -----
+  const [payload, setPayload] = createSignal<DashboardPayload | null>(null)
+  const [nowMs, setNowMs] = createSignal(Date.now())
+
+  async function poll() {
+    const h = http()
+    if (!h) return
+    setPayload(await fetchDashboard(h)) // null on failure → offline model (no stale hold)
+    setNowMs(Date.now())
+  }
+
+  onMount(() => {
+    void poll() // initial load
+    const t = setInterval(() => {
+      // Don't poll while backgrounded or locked — no needless traffic (NFR-4).
+      if (document.hidden || locked()) return
+      void poll()
+    }, POLL_MS)
+    onCleanup(() => clearInterval(t))
+  })
+
+  const model = createMemo(() => {
+    const p = payload()
+    return p ? buildDashboard(toSnapshotSources(p)) : OFFLINE_MODEL
+  })
+  const rows = createMemo<PositionRow[]>(() => {
+    const p = payload()
+    return p ? toPositionRows(p.positions) : []
+  })
+  const market = createMemo(() => toMarket(payload()?.market ?? null))
+  const agent = createMemo(() => payload()?.agent)
+  const stale = createMemo(() => isStale(model(), nowMs(), STALE_THRESHOLD_MS))
+
   return (
     <div class="relative min-h-full bg-background-base">
       {/* Header */}
@@ -159,9 +202,20 @@ export default function MobileShell() {
         </span>
       </header>
 
-      {/* Dashboard (live data source = follow-up) */}
-      <DashboardView model={EMPTY_MODEL} onRefresh={touch} />
-      <p class="px-4 pb-4 text-center text-xs text-text-faint">실시간 데이터 연결은 후속 — 승인·세션은 동작합니다.</p>
+      {/* Dashboard — live data (F86), refresh on tap */}
+      <DashboardView
+        model={model()}
+        positions={rows()}
+        cash={payload()?.account.cash ?? null}
+        buyingPower={payload()?.account.buying_power ?? null}
+        market={market()}
+        agent={agent()}
+        stale={stale()}
+        onRefresh={() => {
+          touch()
+          void poll()
+        }}
+      />
 
       {/* Approval sheet (live) */}
       <ConfirmSheet request={current()} onApprove={approve} onReject={reject} onClose={() => {}} />

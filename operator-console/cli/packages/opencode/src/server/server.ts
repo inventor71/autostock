@@ -62,6 +62,9 @@ export const Default = lazy(() => {
     // HttpApi — fork-isolated in server/autostock/webauthn.ts to keep rebase surface small.
     fetch: async (request: Request) =>
       (await import("./autostock/webauthn").then((m) => m.route(request))) ??
+      // F86: read-only mobile dashboard data endpoint (GET /autostock/dashboard) — same
+      // fork-isolated, basic-auth-gated pattern as webauthn above.
+      (await import("./autostock/dashboard-read").then((m) => m.route(request))) ??
       handler(request, HttpApiApp.context),
     request(input, init) {
       return app.fetch(input instanceof Request ? input : new Request(new URL(input, "http://localhost"), init))
