@@ -126,18 +126,10 @@ def to_prompt_text(brief: MarketSignalBrief) -> str:
                 f"{o.direction} shift"
             )
 
-    if brief.disclosed_holdings:
-        from src.signals.holdings.brief import render_push_line
-
-        rendered = [r for r in (render_push_line(h) for h in brief.disclosed_holdings) if r]
-        if rendered:
-            lines.append(
-                "Disclosed 13F long positions (a manager's filed longs, ~45d lagged — "
-                "ONE manager's view, NOT consensus or a recommendation; independently "
-                "judge. Their bearish/put side is omitted here to avoid anchoring — run "
-                "`disclosed_holdings` if you want it):"
-            )
-            lines.extend("  - " + r for r in rendered)
+    # F89: disclosed 13F holdings are reference-only — NOT pushed into the every-turn
+    # brief (a single manager's positioning, repeated for ~90d, anchors the agent and
+    # the 45d lag makes it weak as timing). The data is still collected and available
+    # on demand via the `disclosed_holdings` tool, which the agent calls when relevant.
 
     if brief.degraded_sources:
         lines.append(

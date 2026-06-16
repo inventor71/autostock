@@ -203,10 +203,12 @@ signals:
     user_agent: "autostock/1.0 (contact: dice.jihoonpark@gmail.com)"
     request_gap_s: 0.5
     providers:
-      # LONG holdings → universe long candidates; PUT/short-side → universe short
-      # candidates ONLY when risk.shorting_enabled (else brief-only). overlay:false
-      # makes a source brief-only (never touches the tradeable universe).
-      - { type: sec_13f, cik: "0002045724", manager_name: "Situational Awareness LP", overlay: true }
+      # overlay:true → LONG holdings join the tradeable universe (PUT/short-side only
+      # when risk.shorting_enabled). overlay:false → reference data ONLY: never touches
+      # the universe and not pushed into the brief — query the `disclosed_holdings`
+      # tool on demand. (F89: single-manager auto-injection is too biased/arbitrary;
+      # kept as reference until/unless a multi-fund consensus source is built.)
+      - { type: sec_13f, cik: "0002045724", manager_name: "Situational Awareness LP", overlay: false }
   # Bellwether watchlist (R7): signal-only sources, never tradeable. SPY/QQQ/IWM/
   # DIA/VTI are already in the universe; these add sector ETFs.
   bellwether_watchlist: [SMH, SOXX, XLK, XLF, XLE, XLV, XLY, XLP, XLI]
