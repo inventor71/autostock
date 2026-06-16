@@ -21,6 +21,15 @@ _ADVISOR_REMINDER = (
 )
 
 
+def _lead(signal_brief: str | None, disposition: str = "") -> str:
+    """F85: compose the leading block prepended to a turn prompt — the optional
+    market-signal brief (F61) followed by the optional aggressiveness posture
+    (F85). ``disposition`` is empty for the shipped ``balanced`` level, so the
+    prompt is byte-for-byte unchanged when neither is supplied."""
+    parts = [p for p in (signal_brief, disposition) if p]
+    return "".join(f"{p}\n\n" for p in parts)
+
+
 def _screening_journal_block() -> str:
     """F72: per-candidate screening journal mandate for discovery steps.
 
@@ -50,6 +59,7 @@ def morning_research_prompt(
     today: date | None = None,
     shorting_enabled: bool = True,
     signal_brief: str | None = None,
+    disposition: str = "",
 ) -> str:
     """Deep morning turn: regime, pure-LLM discovery, theses, decisions.
 
@@ -64,7 +74,7 @@ def morning_research_prompt(
     today = today or date.today()
     held_str = ", ".join(held) if held else "none"
     universe_str = ", ".join(universe)
-    prefix = f"{signal_brief}\n\n" if signal_brief else ""
+    prefix = _lead(signal_brief, disposition)
     short_discovery = (
         " Equally, consider SHORT candidates (overvalued / broken / "
         "negative-catalyst names): run `short_data` first and add a SELL_SHORT "
@@ -123,13 +133,20 @@ def intraday_prompt(
     quotes: dict[str, float] | None = None,
     held: list[str] | None = None,
     brief: str | None = None,
+    disposition: str = "",
+    churn: str = "",
 ) -> str:
     """Light resumed turn: act only if a plan triggers or the thesis shifts.
 
     F3: when a Python-assembled ``brief`` is supplied (price/levels/distance,
     account truth, human context, delta, news), it replaces the bare quotes/held
-    lines so the agent reasons over a ready book instead of re-deriving it."""
+    lines so the agent reasons over a ready book instead of re-deriving it.
+
+    F85: ``churn`` overrides the default "do not churn" guidance per aggressiveness
+    level (empty → shipped behavior); ``disposition`` prepends the posture block."""
     lines = ["Intraday update turn (continuing today's session)."]
+    if disposition:
+        lines.append(disposition)
     if brief:
         lines.append(brief)
     else:
@@ -138,24 +155,30 @@ def intraday_prompt(
             rendered = "; ".join(f"{sym}={price}" for sym, price in quotes.items())
             lines.append(f"Current prices: {rendered}.")
         lines.append(f"Positions / watchlist to check: {held_str}.")
+    tail = churn or "If nothing is triggered, do nothing — do not churn."
     lines.append(
         "Re-check your existing plans: has price reached a planned entry, stop, "
         "or target, or has the thesis changed (fresh news/catalyst)? If so, "
         "update the relevant positions/<SYMBOL>.md and append the decision "
-        "(including ADJUST_STOP to tighten a stop) to decisions.jsonl. If nothing "
-        "is triggered, do nothing — do not churn."
+        f"(including ADJUST_STOP to tighten a stop) to decisions.jsonl. {tail}"
     )
     lines.append(_ADVISOR_REMINDER)
     return "\n".join(lines)
 
 
-def wake_prompt(brief: str | None, reasons: list[str] | None = None) -> str:
+def wake_prompt(
+    brief: str | None,
+    reasons: list[str] | None = None,
+    disposition: str = "",
+) -> str:
     """Event-driven wake turn (F3 FR-4): Python detected judgement-worthy events
     out-of-band (a fill, an abnormal move, a met watch condition, a protective
     fill) and woke the agent before the next scheduled tick. Scoped to the
     events — not a full re-survey."""
     lines = ["Event-driven wake turn (continuing today's session) — Python "
              "detected judgement-worthy events out-of-band."]
+    if disposition:
+        lines.append(disposition)
     if reasons:
         lines.append("Trigger(s):")
         lines.extend(f"  - {r}" for r in reasons)
@@ -264,7 +287,8 @@ def multi_research_initial_prompt(
     max_lessons: int = 10,
     today: date | None = None,
 shorting_enabled: bool = True,
-signal_brief: str | None = None,) -> str:
+signal_brief: str | None = None,
+    disposition: str = "",) -> str:
     today = today or date.today()
     held_str = ", ".join(held) if held else "none"
     universe_str = ", ".join(universe)
@@ -279,7 +303,7 @@ signal_brief: str | None = None,) -> str:
     )
     short_block = f"\n{_SHORT_GUIDANCE}\n" if shorting_enabled else ""
     screening_journal = _screening_journal_block()
-    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    prefix = _lead(signal_brief, disposition)  # F61 brief + F85 posture
     return f"""{prefix}Morning research turn — {today.isoformat()} (multi-agent, round 1 of {n_rounds + 1}).
 
 Start by reading CLAUDE.md, lessons.md, regime.md, watchlist.md, and the thesis
@@ -327,8 +351,10 @@ Do NOT write to decisions.jsonl — this is an evaluation round.
 {_ADVISOR_REMINDER}"""
 
 
-def synthesis_prompt(total_rounds: int, signal_brief: str | None = None) -> str:
-    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+def synthesis_prompt(
+    total_rounds: int, signal_brief: str | None = None, disposition: str = ""
+) -> str:
+    prefix = _lead(signal_brief, disposition)  # F61 brief + F85 posture
     return f"""{prefix}Final synthesis round (round {total_rounds + 1} of {total_rounds + 1}).
 
 You have completed {total_rounds} rounds of analysis and cross-validation.
@@ -353,11 +379,12 @@ def sub_agent_prompt(
     signals: list[str] | None = None,
     today: date | None = None,
     signal_brief: str | None = None,
+    disposition: str = "",
 ) -> str:
     today = today or date.today()
     universe_str = ", ".join(universe)
     signal_guide = _build_signal_guide(signals)
-    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    prefix = _lead(signal_brief, disposition)  # F61 brief + F85 posture
     return f"""{prefix}You are an independent analyst for a PM trading agent — {today.isoformat()}.
 
 Your assigned task: {task_description}
@@ -376,12 +403,14 @@ Your output (this response) is your full report.
 {_ADVISOR_REMINDER}"""
 
 
-def parallel_synthesis_prompt(reports: list[str], signal_brief: str | None = None) -> str:
+def parallel_synthesis_prompt(
+    reports: list[str], signal_brief: str | None = None, disposition: str = ""
+) -> str:
     sections = []
     for i, report in enumerate(reports):
         sections.append(f"--- Analyst {i + 1} Report ---\n{report}\n")
     reports_text = "\n".join(sections)
-    prefix = f"{signal_brief}\n\n" if signal_brief else ""  # F61 market-signal brief
+    prefix = _lead(signal_brief, disposition)  # F61 brief + F85 posture
     return f"""{prefix}You have received reports from {len(reports)} independent analysts:
 
 {reports_text}

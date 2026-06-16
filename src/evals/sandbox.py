@@ -143,6 +143,9 @@ def run_scenario_turn(
         # provider = network). The v1 turn types never consume recalled
         # lessons, so disable it outright — structural zero-network guarantee.
         reflection_enabled=False,
+        # F85: run the turn at the scenario's aggressiveness so behavior grading
+        # can compare conservative vs aggressive posture.
+        aggressiveness=scenario.aggressiveness,
     )
 
     with _fixture_env(sandbox):

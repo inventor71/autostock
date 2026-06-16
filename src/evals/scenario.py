@@ -55,6 +55,10 @@ class Scenario(BaseModel):
     description: str = ""
 
     universe: list[str]
+    #: F85: aggressiveness level the production loop runs at for this scenario
+    #: (drives the injected posture / intraday churn guidance). Default "balanced"
+    #: keeps every pre-F85 scenario byte-for-byte unchanged.
+    aggressiveness: Literal["conservative", "balanced", "aggressive"] = "balanced"
     #: brief text injected into the intraday/wake prompt (the Python-assembled
     #: book the production loop would build)
     brief: str | None = None

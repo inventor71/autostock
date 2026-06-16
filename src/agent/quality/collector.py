@@ -281,9 +281,14 @@ def collect_outcomes(
     # F62: include shorts (SELL_SHORT/BUY_TO_COVER) — the match/price-path logic
     # below is direction-agnostic. Excess (attached after the loop) is the part
     # that is direction-aware. HOLD/ADJUST_STOP carry no tradeable outcome.
+    # F85: ``d_index`` is the index into the full decisions list (NOT the filtered
+    # one) so it stays aligned with ExecutionRecord.decision_index. Human/steering
+    # decisions are excluded — they don't flow through the agent's stamping path
+    # (they keep default level/horizon) and are not agent behavior to attribute.
     buy_sell = [
         (i, d) for i, d in enumerate(decisions)
         if d.action in ("BUY", "SELL", "SELL_SHORT", "BUY_TO_COVER")
+        and getattr(d, "source", "agent") != "human"
     ]
     if not buy_sell:
         return []
@@ -296,10 +301,29 @@ def collect_outcomes(
     symbols = sorted({d.symbol for _, d in buy_sell})
     earliest = min(d.ts for _, d in buy_sell)
     latest = max(d.ts for _, d in buy_sell)
+    # F85: the fetch window must reach each decision's OWN grading horizon (a
+    # conservative 45-day horizon exceeds the flat 30-day lookback) AND any recently
+    # closed round-trip's exit (closed_at is independent of decision ts) AND today.
+    # Undersizing it truncates the price_path so matured decisions never grade.
+    # All end-window candidates are normalized to naive Timestamps so a tz-aware
+    # decision ts and a tz-naive round-trip close never raise on comparison.
+    def _naive(dt: object) -> pd.Timestamp:
+        ts = pd.Timestamp(dt)
+        return ts.tz_convert(None) if ts.tz is not None else ts
+
+    max_horizon = max((d.grading_horizon_days for _, d in buy_sell), default=lookback_days)
+    end = _naive(latest) + pd.Timedelta(days=max(lookback_days, max_horizon))
+    for rt in round_trips:
+        c = _to_naive_ts(rt.closed_at) if rt.closed_at else None
+        if c is not None and c > end:
+            end = c
+    now = _naive(datetime.now())
+    if now > end:
+        end = now
     ohlc_cache = _fetch_daily_ohlc(
         symbols,
         start=earliest - timedelta(days=1),
-        end=latest + timedelta(days=lookback_days),
+        end=end,
     )
 
     # Benchmark data — fetch alongside stock symbols (batched, not separate calls)
@@ -309,7 +333,7 @@ def collect_outcomes(
                 _fetch_daily_ohlc(
                     [bench],
                     start=earliest - timedelta(days=1),
-                    end=latest + timedelta(days=lookback_days),
+                    end=end,
                 )
             )
 
@@ -336,12 +360,20 @@ def collect_outcomes(
             price_path = _slice_price_path(
                 ohlc_cache, d.symbol, rt.opened_at, rt.closed_at
             )
+            # A closed round-trip is a realized outcome → always mature.
+            mature = True
         else:
+            # F85: window the OPEN slice to the decision's OWN grading horizon
+            # (not the flat lookback). The decision is mature for grading only once
+            # that horizon has elapsed; until then it's excluded from efficacy so a
+            # long-horizon (conservative) call isn't judged on ~1 day of noise.
             price_path = _slice_price_path(
                 ohlc_cache, d.symbol,
                 d.ts.isoformat(),
-                (d.ts + timedelta(days=lookback_days)).isoformat(),
+                (d.ts + timedelta(days=d.grading_horizon_days)).isoformat(),
             )
+            age_days = (datetime.now().date() - d.ts.date()).days
+            mature = age_days >= d.grading_horizon_days
 
         outcomes.append(DecisionOutcome(
             decision=d,
@@ -349,6 +381,9 @@ def collect_outcomes(
             round_trip=rt,
             price_path=price_path,
             match_method=method,
+            mature=mature,
+            holding_days=max(len(price_path) - 1, 1),
+            decision_index=d_index,
         ))
 
     # F62: attach direction-aware benchmark excess so the efficacy layer can
@@ -356,6 +391,56 @@ def collect_outcomes(
     # dropped the benchmark paths entirely).
     _attach_excess(outcomes, ohlc_cache)
     return outcomes
+
+
+def grade_matured(journal: Journal, outcomes: list[DecisionOutcome]) -> int:
+    """F85: append a one-time confirmed grade to ``workspace/grades.jsonl`` for each
+    decision that has newly reached maturity (its horizon elapsed or round-trip
+    closed). The horizon-windowed slice already freezes the score (recomputing gives
+    the same number), so this is the durable audit/freeze ledger of *when* each call
+    was graded and with what excess.
+
+    Writer invariant (critic): call this ONLY from the daemon EOD path — never from
+    inside ``collect_outcomes`` (the read-only ``python -m src.agent.quality`` CLI
+    calls that and must not become a second writer). Idempotent: re-reads the ledger
+    immediately before appending and skips ``decision_index`` already recorded; a
+    stored ``ts`` is cross-checked on read so a future prune/reorder that shifts
+    indices can't silently mis-point a frozen grade. Returns the number appended."""
+    path = journal.root / "grades.jsonl"
+    graded: set[int] = set()
+    if path.exists():
+        lines, _ = read_complete_lines(path, 0)
+        for line in lines:
+            try:
+                graded.add(int(json.loads(line)["decision_index"]))
+            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                continue
+    appended = 0
+    with path.open("a", encoding="utf-8") as fh:
+        for o in outcomes:
+            if (
+                o.decision_index < 0
+                or o.decision_index in graded
+                or not o.mature
+                or o.excess is None
+            ):
+                continue
+            rec = {
+                "decision_index": o.decision_index,
+                "ts": o.decision.ts.isoformat(),
+                "symbol": o.decision.symbol,
+                "graded_at": datetime.now(timezone.utc).isoformat(),
+                "level": o.decision.aggressiveness,
+                "horizon_days": o.decision.grading_horizon_days,
+                "holding_days": o.holding_days,
+                "excess": o.excess,
+                "excess_per_day": o.excess / max(o.holding_days, 1),
+                "win": o.excess > 0,
+            }
+            fh.write(json.dumps(rec) + "\n")
+            graded.add(o.decision_index)
+            appended += 1
+    return appended
 
 
 def _attach_excess(

@@ -1,0 +1,93 @@
+{
+  "id": "aggressive-momentum-breakout",
+  "turn_type": "intraday",
+  "aggressiveness": "aggressive",
+  "origin": "F85 aggressiveness knob — aggressive posture should act on a clean momentum breakout (day-trade edge), not wait for perfect conviction.",
+  "description": "NVDA breaks $190 resistance on 3.4x volume with strong MACD; flat book, ample cash. Under AGGRESSIVE posture the correct behavior is to enter (BUY) with a tight stop. Same setup as conservative-value-pass — the knob flips the answer.",
+  "universe": [
+    "NVDA",
+    "AAPL"
+  ],
+  "brief": "Intraday book: flat (no positions), cash 100000. NVDA 191.4 (+4.1%, vol 3.4x avg) just cleared the $190 multi-week resistance on heavy volume; MACD hist rising, RSI 67. AAPL 309.5 (+0.2%, vol 0.8x) quiet. No adverse headlines.",
+  "wake_reasons": [],
+  "eod_outcomes": null,
+  "tool_fixtures": {
+    "quote": {
+      "NVDA": {
+        "symbol": "NVDA",
+        "asof": "2026-06-08 15:30:00-04:00",
+        "price": 191.4,
+        "open": 184.2,
+        "high": 191.9,
+        "low": 184.0,
+        "volume": 51000000,
+        "change_1d_pct": 4.1,
+        "change_5d_pct": 7.8,
+        "change_20d_pct": 12.0,
+        "bars": 90
+      }
+    },
+    "indicators": {
+      "NVDA": {
+        "symbol": "NVDA",
+        "close": 191.4,
+        "rsi_14": 67.0,
+        "macd": 1.2,
+        "macd_signal": 0.7,
+        "macd_hist": 0.5,
+        "bb_pct_b": 0.93,
+        "price_to_sma20_pct": 6.0,
+        "price_to_sma50_pct": 9.0,
+        "sma20_to_sma50_pct": 3.0,
+        "volatility_20d_pct": 2.8,
+        "volume_ratio": 3.4,
+        "atr_pct": 2.6,
+        "atr_abs": 4.97
+      }
+    },
+    "news": {
+      "NVDA": {
+        "symbol": "NVDA",
+        "news": [
+          {
+            "title": "NVIDIA clears resistance as AI-infra demand commentary stays firm",
+            "publisher": "Benzinga",
+            "published_at": "2026-06-08T18:30:00+00:00",
+            "link": "",
+            "sentiment": 0.4
+          }
+        ]
+      }
+    },
+    "account": {
+      "_": {
+        "equity": 100000.0,
+        "cash": 100000.0,
+        "invested": 0.0,
+        "invested_pct": 0.0,
+        "position_count": 0,
+        "positions": [],
+        "open_orders": []
+      }
+    }
+  },
+  "workspace_files": {
+    "watchlist.md": "# Watchlist\n\n## NVDA\nCoiling under $190 multi-week resistance. A high-volume breakout above $190 is the trigger to engage.\n",
+    "regime.md": "# Regime\nRisk-on, AI leadership broadening; 10Y 4.4%; VIX 15.8.\n"
+  },
+  "decisions_history": [],
+  "held": {},
+  "prices": {
+    "NVDA": 191.4,
+    "AAPL": 309.5
+  },
+  "expectation": {
+    "no_churn": false,
+    "allowed_actions": [
+      "BUY"
+    ],
+    "focus_symbol": "NVDA",
+    "note": "aggressive posture acts on the volume breakout — enter NVDA with a stop"
+  },
+  "rubric": null
+}

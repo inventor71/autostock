@@ -331,7 +331,7 @@ class AgentTradingMode:
         JSON only; no prompt injection (LLM shouldn't see small-sample metrics).
         Fetches fills from the broker for round-trip matching (MAE/MFE/R:R)."""
         try:
-            from src.agent.quality.collector import collect_outcomes
+            from src.agent.quality.collector import collect_outcomes, grade_matured
             from src.agent.quality.aggregate import summary
 
             logger.info("Saving decision quality report")
@@ -344,6 +344,14 @@ class AgentTradingMode:
             if not outcomes:
                 logger.info("No decision outcomes to report")
                 return
+            # F85: freeze a confirmed grade for any decision newly matured (EOD-only
+            # writer; the read-only quality CLI never writes the ledger).
+            try:
+                n_graded = grade_matured(self.executor.journal, outcomes)
+                if n_graded:
+                    logger.info(f"Froze {n_graded} newly-matured decision grade(s)")
+            except Exception as exc:
+                logger.warning(f"grade_matured failed (non-fatal): {exc}")
             s = summary(outcomes)
             import json
             from datetime import date

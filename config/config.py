@@ -8,8 +8,14 @@ from typing import Any
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from loguru import logger
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
+
+# F85: aggressiveness knob. One operator dial that fans out to prompt disposition,
+# the RiskManager preset overlay, and the learning-loop time-axis. See
+# ``src/agent/aggressiveness.py`` for the level -> parameter mapping (SSOT).
+AggressivenessLevel = Literal["conservative", "balanced", "aggressive"]
 
 
 CONFIG_DIR = Path(__file__).parent
@@ -108,6 +114,23 @@ class AgentConfig(BaseModel):
     research_end_before_open: int = 5
     experiment_start: str | None = None
     min_trade_notional: float = 0.0
+    # F85: trading aggressiveness. Drives prompt disposition + RiskManager preset
+    # overlay + grading horizon / lesson recency (see src/agent/aggressiveness.py).
+    # Shipped ``balanced`` == prior behavior exactly (backward compatible).
+    aggressiveness: AggressivenessLevel = "balanced"
+
+    @field_validator("aggressiveness", mode="before")
+    @classmethod
+    def _coerce_aggressiveness(cls, v: Any) -> Any:
+        """Fail-safe: a typo/unknown value falls back to 'balanced' rather than
+        crashing the daemon at startup (a bare Literal would raise). Missing key
+        already defaults to 'balanced' via the field default."""
+        if v is None:
+            return "balanced"
+        if isinstance(v, str) and v.lower() in ("conservative", "balanced", "aggressive"):
+            return v.lower()
+        logger.warning(f"unknown aggressiveness {v!r}; falling back to 'balanced'")
+        return "balanced"
 
 
 class MultiAgentConfig(BaseModel):

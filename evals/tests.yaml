@@ -1,5 +1,16 @@
 # F74 test matrix: scenario corpus (x guidance versions for guidance-bearing turns).
 # Each row = one full agent turn. `vars.scenario` is relative to evals/.
+#
+# F85: the two aggressiveness rows below are an A/B pair — identical NVDA momentum
+# breakout, opposite posture — exercising the knob's behavioral effect (aggressive
+# enters; conservative passes). The level rides in the scenario's `aggressiveness`
+# field, not via guidance_file.
+- vars:
+    scenario: scenarios/intraday/aggressive-momentum-breakout.json
+  description: aggressive-momentum-breakout [aggressive]
+- vars:
+    scenario: scenarios/intraday/conservative-value-pass.json
+  description: conservative-value-pass [conservative]
 - vars:
     scenario: scenarios/intraday/aapl-wwdc-preempt.json
   description: aapl-wwdc-preempt [seed]

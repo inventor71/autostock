@@ -78,6 +78,7 @@ class AgentTradingLoop:
         reflection_enabled: bool = True,
         reflection_max_lessons: int = 10,
 shorting_enabled: bool = True,
+        aggressiveness: str = "balanced",
 signal_brief_provider: Callable[[], str | None] | None = None,    ):
         self.session = session or AgentSession()
         self.journal: Journal = self.session.journal
@@ -92,6 +93,11 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         self._reflection_enabled = reflection_enabled
         self._reflection_max_lessons = reflection_max_lessons
         self._shorting_enabled = shorting_enabled  # F60: gates short prompt guidance
+        # F85: resolve the aggressiveness profile once (pure, fail-safe to balanced).
+        # Drives prompt disposition injection, decision horizon/level stamping, and
+        # the lesson-recall recency weight.
+        from src.agent.aggressiveness import resolve as _resolve_aggr
+        self._aggr = _resolve_aggr(aggressiveness)
         # F61: optional callable that returns the market-signal brief text to
         # prepend to the research prompt. Fail-honest — any error → no brief.
         self._signal_brief_provider = signal_brief_provider
@@ -218,6 +224,16 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             logger.warning("signal brief provider failed, skipping: {}", exc)
             return None
 
+    def _disposition(self) -> str:
+        """F85: the aggressiveness posture block injected into decision-emitting
+        prompts. Combines the level disposition with the short tilt (only when
+        the F60 short master toggle is on — the knob never enables shorts itself).
+        Empty for ``balanced`` → prompts are byte-for-byte unchanged."""
+        parts = [self._aggr.disposition]
+        if self._shorting_enabled and self._aggr.short_tilt:
+            parts.append(self._aggr.short_tilt)
+        return "\n".join(p for p in parts if p)
+
     def run_morning_research(self) -> AgentTurnResult:
         if self._multi_agent_enabled and self._multi_agent_n >= 2:
             if self._multi_agent_mode == "parallel":
@@ -228,6 +244,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 self.universe, self.held_symbols(),
                 shorting_enabled=self._shorting_enabled,
                 signal_brief=self._signal_brief(),
+                disposition=self._disposition(),
             ),
             "research",
             model=self.research_model,
@@ -265,15 +282,26 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
 
     def _stamp_new(self, before: int) -> list[Decision]:
         """Read decisions the LLM just wrote, stamp the active guidance
-        ``prompt_version`` onto them (the LLM can't know it), and re-persist the
-        file atomically (F62). Runs between turns, so no race with the appender."""
+        ``prompt_version`` (F62) and aggressiveness level + grading horizon (F85)
+        onto them (the LLM can't know them), and re-persist the file atomically.
+        Runs between turns, so no race with the appender."""
         all_d = self.journal.read_decisions()
         new = all_d[before:]
         if new:
             ver = self._guidance_version()
-            if any(d.prompt_version != ver for d in new):
+            lvl = self._aggr.level
+            hzn = self._aggr.grading_horizon_days
+            needs_stamp = any(
+                d.prompt_version != ver
+                or d.aggressiveness != lvl
+                or d.grading_horizon_days != hzn
+                for d in new
+            )
+            if needs_stamp:
                 for d in new:
                     d.prompt_version = ver
+                    d.aggressiveness = lvl
+                    d.grading_horizon_days = hzn
                 self.journal.restamp_decisions(all_d)
         return new
 
@@ -315,7 +343,11 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         all_lessons = self.journal.read_lessons_jsonl()
         if not all_lessons:
             return []
-        from src.agent.learning.recall import build_fingerprint, recall_lessons
+        from src.agent.learning.recall import (
+            RecallWeights,
+            build_fingerprint,
+            recall_lessons,
+        )
 
         fp = build_fingerprint(regime_text=self.journal.read_regime())
         return recall_lessons(
@@ -323,6 +355,9 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             fp,
             self._lesson_efficacy(),
             k=self._reflection_max_lessons,
+            # F85: aggressive weights recency higher (momentum lessons go stale
+            # fast); conservative flattens it (value lessons stay valid for months).
+            weights=RecallWeights(recency=self._aggr.recall_recency),
             # rerank_fn left None for v1: deterministic pure ranking. The LLM
             # rerank turn is a documented activation point (recall.recall_lessons
             # accepts rerank_fn; fallback to this same order on any failure).
@@ -363,6 +398,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                     max_lessons=self._reflection_max_lessons,
                     shorting_enabled=self._shorting_enabled,
                     signal_brief=self._signal_brief(),
+                    disposition=self._disposition(),
                 )),
                 model=self.research_model,
                 timeout=per_round,
@@ -387,7 +423,9 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
 
             result = self.session.run_turn(
                 self._assemble_turn(
-                    prompts.synthesis_prompt(n_rounds, signal_brief=self._signal_brief())),
+                    prompts.synthesis_prompt(
+                        n_rounds, signal_brief=self._signal_brief(),
+                        disposition=self._disposition())),
                 model=self.research_model,
                 timeout=per_round,
             )
@@ -487,6 +525,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                 prompts.sub_agent_prompt(
                     task.description, self.universe, self._research_signals,
                     signal_brief=signal_brief,
+                    disposition=self._disposition(),
                 ),
                 model=self.research_model,
                 timeout=timeout,
@@ -537,6 +576,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                     self.universe, self.held_symbols(),
                     shorting_enabled=self._shorting_enabled,
                     signal_brief=self._signal_brief(),
+                    disposition=self._disposition(),
                 ),
                 "research", model=self.research_model, timeout=max(total_timeout * 0.3, 60.0),
             )
@@ -562,7 +602,9 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         try:
             result = self.session.run_turn(
                 self._assemble_turn(
-                    prompts.parallel_synthesis_prompt(report_texts, signal_brief=signal_brief),
+                    prompts.parallel_synthesis_prompt(
+                        report_texts, signal_brief=signal_brief,
+                        disposition=self._disposition()),
                     lessons=lesson_ctx),
                 model=self.research_model,
                 timeout=max(total_timeout * 0.3, 60.0),
@@ -633,9 +675,15 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         do NOT call ``held_symbols()`` (a broker hit on the turn thread, critic#6)
         — the brief already lists the book. Without a brief (steering disabled,
         NFR-8) it falls back to the legacy held-symbols prompt."""
+        disp, churn = self._disposition(), self._aggr.intraday_churn
         if brief is not None:
-            return self._run(prompts.intraday_prompt(brief=brief), "intraday")
-        return self._run(prompts.intraday_prompt(held=self.held_symbols()), "intraday")
+            return self._run(
+                prompts.intraday_prompt(brief=brief, disposition=disp, churn=churn),
+                "intraday")
+        return self._run(
+            prompts.intraday_prompt(
+                held=self.held_symbols(), disposition=disp, churn=churn),
+            "intraday")
 
     def run_wake(self, brief: str | None, events, *, timeout: float | None = None
                  ) -> AgentTurnResult:
@@ -645,7 +693,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         executor gate as every other turn."""
         reasons = [getattr(e, "reason", str(e)) for e in (events or [])]
         return self._run(
-            prompts.wake_prompt(brief, reasons), "wake",
+            prompts.wake_prompt(brief, reasons, disposition=self._disposition()), "wake",
             timeout=timeout, event_reasons=reasons,
         )
 
