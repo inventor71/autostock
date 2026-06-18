@@ -229,8 +229,11 @@ class Journal:
         return path.read_text(encoding="utf-8") if path.exists() else None
 
     def write_position(self, symbol: str, content: str) -> None:
-        self.positions_dir.mkdir(parents=True, exist_ok=True)
-        self.position_file(symbol).write_text(content, encoding="utf-8")
+        # F76: atomic write (temp + os.replace) so a concurrent reader never sees a
+        # torn thesis — same pattern as restamp_decisions / snapshot writes. The
+        # helper creates parent dirs, so no explicit mkdir is needed.
+        from src.agent.steering.jsonl import atomic_write_text
+        atomic_write_text(self.position_file(symbol), content)
 
     def list_positions(self) -> list[str]:
         """Symbols that have a thesis file, sorted."""

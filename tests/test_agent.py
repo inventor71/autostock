@@ -83,6 +83,19 @@ class TestJournal:
         assert "thesis" in j.read_position("AAPL")
         assert j.list_positions() == ["AAPL"]
 
+    def test_write_position_is_atomic(self, tmp_path):
+        # F76: write_position must use the temp+os.replace path (atomic_write_text)
+        # so a concurrent reader never sees a torn thesis. Verify a rewrite replaces
+        # content cleanly and leaves no .tmp litter behind.
+        j = Journal(root=tmp_path / "ws")
+        j.init()
+        j.write_position("AAPL", "v1 thesis")
+        j.write_position("AAPL", "v2 thesis is longer than v1")
+        assert j.read_position("AAPL") == "v2 thesis is longer than v1"
+        # atomic_write_text removes its temp on success; positions/ holds only the .md
+        leftovers = [p.name for p in j.positions_dir.iterdir() if p.suffix == ".tmp"]
+        assert leftovers == [], f"atomic write left temp files: {leftovers}"
+
     def test_lessons_append(self, tmp_path):
         j = Journal(root=tmp_path / "ws")
         j.init()
