@@ -90,7 +90,10 @@ class SentimentSweeper:
                 logger.debug("sentiment sweep: {} skipped ({})", symbol, exc)
 
         if records:
-            append_sweep(records, root=self._root)
+            # Partition by the sweep's own clock, not a second wallclock read in
+            # append_sweep — otherwise the two reads can straddle ET midnight and
+            # land the records in a different ET-date file than the sweep logic used.
+            append_sweep(records, root=self._root, ts=now_et)
         if aborted:
             logger.warning(
                 "sentiment sweep aborted after {} request(s) ({}); "
