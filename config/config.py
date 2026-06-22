@@ -196,7 +196,29 @@ def load_strategies_config() -> dict[str, Any]:
     return load_yaml_config(CONFIG_DIR / "strategies.yaml")
 
 
+# F90: per-instance settings overrides via environment. The Docker prod runtime
+# bind-mounts ONE shared code tree (`.:/app`) into every instance container, so
+# `config/settings.yaml` cannot differ per instance — instead each container sets
+# these env vars and we overlay them onto the loaded YAML before constructing
+# Settings (so the field validators, e.g. F85 aggressiveness fail-safe, still run).
+# Unset → the YAML value stands (backward compatible).
+_ENV_OVERRIDES: dict[str, tuple[str, str]] = {
+    # env var -> (settings section, key)
+    "AUTOSTOCK_AGGRESSIVENESS": ("agent", "aggressiveness"),
+    "AUTOSTOCK_BROKER_PROVIDER": ("broker", "provider"),
+}
+
+
+def _apply_env_overrides(cfg: dict) -> None:
+    """Overlay AUTOSTOCK_* instance overrides onto the YAML config dict in place."""
+    for env_var, (section, key) in _ENV_OVERRIDES.items():
+        value = os.environ.get(env_var)
+        if value:
+            cfg.setdefault(section, {})[key] = value
+
+
 @lru_cache
 def get_settings() -> Settings:
     yaml_config = load_yaml_config(CONFIG_DIR / "settings.yaml")
+    _apply_env_overrides(yaml_config)  # F90: per-instance env overrides
     return Settings(**yaml_config)

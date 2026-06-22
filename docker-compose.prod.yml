@@ -1,0 +1,76 @@
+# F90 — prod multi-instance runtime. SEPARATE from docker-compose.verify.yml: this runs the REAL
+# agent daemon on a REAL (paper) account, long-running. Per-instance isolation comes from
+# COMPOSE_PROJECT_NAME=autostock-<name> (set by scripts/prod-run.sh) — Docker then namespaces the
+# relative volumes (workspace/steering/logs) and the container as autostock-<name>_* so N instances
+# coexist with zero collision. Always launch via scripts/prod-run.sh (it injects DOCKER_UID/GID and
+# the per-instance env), never raw `docker compose`.
+#
+# Account isolation: the per-instance .env.<name> is mounted at /run/account.env (OUTSIDE the shared
+# .:/app code bind mount, so instances never clobber a shared /app/.env), and the Python daemon reads
+# it via AUTOSTOCK_ENV_FILE. settings.yaml is shared (code mount) — per-instance differences come from
+# the AUTOSTOCK_* env overrides (config.py _apply_env_overrides), NOT from editing the YAML.
+
+services:
+  # One-shot ROOT helper: named volumes are created owned root:root, so the non-root daemon can't
+  # write into them. Chown the volume mountpoints to the host UID:GID first (verify F27 pattern).
+  init-perms:
+    image: autostock-verify:latest
+    entrypoint: ["sh", "-c", "chown -R ${DOCKER_UID:?via prod-run.sh}:${DOCKER_GID:?via prod-run.sh} /v/workspace /v/steering /v/logs"]
+    user: "0:0"
+    volumes:
+      - workspace:/v/workspace
+      - steering:/v/steering
+      - logs:/v/logs
+    command: []
+
+  daemon:
+    image: autostock-verify:latest        # reuse the verify toolchain image (NFR-2: no new build)
+    working_dir: /app
+    restart: unless-stopped               # long-running prod daemon
+    # F27: run as the HOST user so anything written to the bind mount is host-owned. fail-loud.
+    user: "${DOCKER_UID:?via prod-run.sh}:${DOCKER_GID:?via prod-run.sh}"
+    labels:
+      # SR-1 dedup key + ls source. account is the masked-safe selector (BROKER_ACCOUNT_ID / alpaca key id).
+      autostock.instance: "${INSTANCE:?set by prod-run.sh}"
+      autostock.account: "${AUTOSTOCK_ACCOUNT_ID:?set by prod-run.sh}"
+      autostock.aggressiveness: "${AUTOSTOCK_AGGRESSIVENESS:-balanced}"
+    volumes:
+      - .:/app                                              # shared code (read-mostly)
+      - ${HOME}/.claude:/tmp/.claude:rw                     # real-LLM auth/session (daemon writes cache)
+      - ${ACCOUNT_ENV_HOST:?set by prod-run.sh}:/run/account.env:ro  # per-instance account, OUTSIDE /app
+      - workspace:/app/workspace                            # per-instance state (named volume)
+      - steering:/app/steering
+      - logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+      # console deps (for `prod-run.sh attach`): reuse the warm shared verify volumes (~2.8G, external)
+      - verify-node-modules:/app/operator-console/cli/node_modules
+      - mcp-node-modules:/app/operator-console/node_modules
+    environment:
+      AUTOSTOCK_ENV_FILE: /run/account.env                 # pydantic reads the per-instance account
+      AUTOSTOCK_AGGRESSIVENESS: ${AUTOSTOCK_AGGRESSIVENESS:-}     # F90 override (empty → settings.yaml)
+      AUTOSTOCK_BROKER_PROVIDER: ${AUTOSTOCK_BROKER_PROVIDER:-}   # empty → settings.yaml (broker.provider)
+      PYTHONPATH: /app
+      PYTHONDONTWRITEBYTECODE: "1"
+      HOME: /tmp
+      STEERING_DIR: /app/steering
+      AUTOSTOCK_ROOT: /app                                  # F18: MCP command path for the attached console
+      STEERING_OPERATOR_TOKEN: ${STEERING_OPERATOR_TOKEN:?set by prod-run.sh}  # shared daemon<->console secret
+      AUTOSTOCK_LOCKDOWN: "on"                              # F26: never expose write/exec to the agent
+      TZ: ${TZ:-Asia/Seoul}
+    # Override the image ENTRYPOINT (`bash scripts/verify.sh`, a verify-mode dispatcher) — run the
+    # real daemon directly, the way verify.sh's `attach` mode does (PYTHONPATH=/app set above).
+    entrypoint: ["python", "-u", "main.py"]
+    command: ["--mode", "agent", "--steering"]
+
+volumes:
+  # Per-instance state (relative names → COMPOSE_PROJECT_NAME-namespaced; isolated per instance).
+  workspace:
+  steering:
+  logs:
+  # Shared console deps — reuse the verify harness's warm external volumes (one ~2.8G copy).
+  verify-node-modules:
+    external: true
+    name: autostock-verify-cli-node-modules
+  mcp-node-modules:
+    external: true
+    name: autostock-verify-mcp-node-modules
