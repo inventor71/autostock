@@ -116,7 +116,7 @@
 | F88 | Agent self-authored long-horizon triggers — agent가 macro/news 조건을 Python predicate로 직접 작성, Docker 샌드박스(src 미마운트/net off) 평가, brokered 데이터 주입, daemon-호스팅 MCP authoring, fire→self-wake | active | feat/F88 (TBD) | .claude/worktrees/F88 (TBD) | — (monorepo) | f17a36f | 2026-06-16 |
 | F89 | 13F를 참조 데이터화(pull 전용) — 유니버스 자동 편입 OFF + push 브리프 제거, disclosed_holdings 툴로만 (F81/F87 후속) | merged | feat/F89 → main 7d772ff | — | — (monorepo) | f17a36f→7d772ff | 2026-06-16 |
 | F90 | Docker prod화 — verify 하네스(F10/F15 attach) 패턴으로 다중 인스턴스 동시 운영(계정·workspace·aggressiveness 분리) + 손쉬운 attach (F85/F16 위) | active | feat/F90 (TBD) | .claude/worktrees/F90 (TBD) | — (monorepo) | TBD | 2026-06-18 |
-| F91 | sentiment sweep 영속화 클럭 정합 핫픽스 — `_sweep`가 주입 클럭을 `append_sweep(ts=)`로 스레딩(ET-midnight torn-partition 차단). F88 Build & Test에서 분리된 무관 실패 3건 | active | feat/F91 | .claude/worktrees/F91 | — (monorepo) | 1b5eb40 | 2026-06-22 |
+| F91 | sentiment sweep 영속화 클럭 정합 핫픽스 — `_sweep`가 주입 클럭을 `append_sweep(ts=)`로 스레딩(ET-midnight torn-partition 차단). F88 Build & Test에서 분리된 무관 실패 3건 | merged | feat/F91 → main 5591eca | — (제거됨) | — (monorepo) | 1b5eb40→rebased 1805ae3→5591eca | 2026-06-22 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under

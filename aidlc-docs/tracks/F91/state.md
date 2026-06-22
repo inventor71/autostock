@@ -8,7 +8,7 @@
 - **Track ID**: F91
 - **Title**: sentiment sweep persistence clock fidelity (wallclock-drift hotfix)
 - **Type**: feature (bugfix)
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (Build & Test green) → merged (by /ai-dlc-merge) -->
+- **Status**: merged → main 5591eca (2026-06-22)  <!-- rebased 1b5eb40→1805ae3 → merged 5591eca -->
 - **Branch**: feat/F91
 - **Worktree**: .claude/worktrees/F91
 - **Submodule branch**: — (monorepo)
