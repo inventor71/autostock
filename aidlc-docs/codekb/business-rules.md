@@ -132,6 +132,12 @@
 - **Rule**: SignalCollector and agent tool functions return per-source error annotations rather than propagating exceptions. The research turn proceeds with partial signals if any source fails.
 - **Implemented In**: `src/signals/collector.py`, `src/agent/tools/market.py`
 
+#### 13F Brief Bias Mitigation — LONG Push, SHORT Pull-Only (F87)
+- **Rule**: The every-turn push brief (`to_prompt_text` via `render_push_line`) shows ONLY the LONG side of disclosed 13F holdings. The bearish/PUT (SHORT) side is omitted from the prompt that is prepended to every research turn; it is accessible on demand via the `disclosed_holdings` pull tool. The push brief explicitly tells the agent the short side was omitted and directs it to run the tool if needed.
+- **Rationale**: A single contrarian manager's bearish/put bet, pushed to every research turn for ~90 days (13F is quarterly), anchors the agent regardless of changing market conditions. When `shorting_enabled=false` (the default), the agent cannot act on the short side anyway. Restricting the push to LONGs eliminates the anchoring bias without removing access — the SHORT side remains available on-demand.
+- **Implemented In**: `src/signals/holdings/brief.py:render_push_line` (push, LONG-only) vs `render_line` (pull, full); `src/signals/brief.py:to_prompt_text`; `src/agent/tools/market.py:disclosed_holdings` (full pull); `src/agent/prompts.py` (tool guide entry)
+- **Invariants**: `render_push_line` returns `""` when the manager has no mapped longs — this suppresses the entire entry (so an all-short manager never hints via an empty line). The `render_line` / `disclosed_holdings` tool always shows both sides.
+
 #### Best-Effort Multi-Symbol Fetch (NFR-4)
 - **Rule**: `get_latest_prices()` returns a partial dict when some symbols fail; callers must tolerate missing keys. One bad symbol must not block the entire scan.
 - **Implemented In**: `src/data/base.py`, all provider implementations

@@ -42,4 +42,4 @@ Autostock is an automated equities trading platform targeting US markets (NYSE/N
 - **Total Source Files**: ~188 Python source files in `src/` + ~125 test files
 - **Primary Markets**: US equities (Alpaca paper/live); Korean equities (KIS paper; live pending)
 - **Storage**: File-based — JSONL logs, journal files, Parquet intraday feature store, file-drop IPC; no relational/NoSQL database
-- **Last Significant Change**: F82 — intraday feature auto-collection (universe gap-backfill on daemon start + EOD append to `data/intraday/<SYM>.parquet`); F80 — intraday store CSV→Parquet backend migration (lazy on first access, auto-migrates legacy `.csv` → `.csv.migrated`)
+- **Last Significant Change**: F87 — 13F brief bias mitigation: push brief shows LONG-only holdings; bearish/PUT side moved to pull-only `disclosed_holdings` tool (avoids anchoring agent on one contrarian manager for ~90 days); F81 — SEC 13F disclosed-holdings integration (institutional portfolio overlay + research brief + `src/signals/holdings/` module)
