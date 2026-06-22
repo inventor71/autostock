@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 from loguru import logger
+from pydantic import ValidationError
 
 from src.agent.intraday.records import FillEvent
 from src.agent.logs.trades import record_trades
@@ -25,13 +26,14 @@ try:
         ActivityType,
     )
     from alpaca.trading.models import TradeActivity
+    from alpaca.broker.models import TradeAccount
     from alpaca.common.enums import PaginationType
 except ImportError:
     BrokerClient = None
     MarketOrderRequest = LimitOrderRequest = StopOrderRequest = None
     StopLimitOrderRequest = GetAccountActivitiesRequest = None
     QueryOrderStatus = ActivityType = None
-    TradeActivity = PaginationType = None
+    TradeActivity = TradeAccount = PaginationType = None
 
 
 class AccountFarmBroker(AlpacaShapedBroker):
@@ -97,7 +99,7 @@ class AccountFarmBroker(AlpacaShapedBroker):
         self._open_orders_status = QueryOrderStatus.ALL
 
         # Validate the account exists and capture the number for secure logging.
-        acct = self._c.get_trade_account_by_id(self._account_id)
+        acct = self._fetch_trade_account()
         self._account_number = acct.account_number
         self._masked_id = self._mask(self._account_id)
         logger.info(
@@ -136,7 +138,24 @@ class AccountFarmBroker(AlpacaShapedBroker):
         return self._c.get_all_positions_for_account(self._account_id)
 
     def _do_get_account(self):
-        return self._c.get_trade_account_by_id(self._account_id)
+        return self._fetch_trade_account()
+
+    def _fetch_trade_account(self):
+        """Fetch this account's ``TradeAccount``, tolerating the Broker sandbox schema.
+
+        alpaca-py 0.43.x declares ``last_daytrading_buying_power`` / ``last_daytrade_count``
+        as ``Optional`` but WITHOUT a default, so they are *required keys*; the Broker API
+        sandbox omits them and strict parsing raises ``ValidationError`` — which would crash
+        every farm-account daemon at boot. Keep the happy path; on that specific failure,
+        re-build from the raw payload with the absent fields defaulted to ``None``.
+        """
+        try:
+            return self._c.get_trade_account_by_id(self._account_id)
+        except ValidationError:
+            raw = self._c.get(f"/trading/accounts/{self._account_id}/account")
+            for key in ("last_daytrading_buying_power", "last_daytrade_count"):
+                raw.setdefault(key, None)
+            return TradeAccount(**raw)
 
     def _do_get_orders(self, filter):
         return self._c.get_orders_for_account(self._account_id, filter=filter)

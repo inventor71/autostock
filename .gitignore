@@ -25,6 +25,9 @@ env/
 .env.local
 # F10 verification: TEST paper account creds (keep .env.test.example tracked)
 .env.test
+# F90 prod multi-instance: per-instance account secrets (keep config/.env.example tracked)
+config/.env.*
+!config/.env.example
 
 # Data and models
 data/*.csv
