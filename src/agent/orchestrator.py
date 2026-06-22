@@ -692,8 +692,15 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         long this holds the turn_lock — critic#2). Advisor-only, same journal/
         executor gate as every other turn."""
         reasons = [getattr(e, "reason", str(e)) for e in (events or [])]
+        # F88: long-horizon (agent_trigger) events carry a macro thesis in payload;
+        # surface it so the wake prompt renders a portfolio-level (not symbol-only) branch.
+        macro = prompts.macro_triggers_from_events(events)
         return self._run(
-            prompts.wake_prompt(brief, reasons, disposition=self._disposition()), "wake",
+            prompts.wake_prompt(
+                brief, reasons,
+                disposition=self._disposition(),
+                macro_triggers=macro or None,
+            ), "wake",
             timeout=timeout, event_reasons=reasons,
         )
 

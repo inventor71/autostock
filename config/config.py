@@ -155,6 +155,7 @@ class Settings(BaseSettings):
     signals: dict = {}  # F61 market-signal collection (parsed by SignalsConfig)
     universe: dict = {}
     benchmark: dict = {}  # F70 shadow benchmark (parsed by BenchmarkConfig)
+    triggers: dict = {}  # F88 agent self-authored long-horizon triggers (parsed by TriggersConfig)
 
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
