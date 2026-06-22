@@ -7,7 +7,7 @@
 - **Track ID**: F90
 - **Title**: Docker prod화 — verify 하네스(F10/F15 attach) 패턴으로 다중 인스턴스 동시 운영 + 손쉬운 attach
 - **Type**: feature (infrastructure)
-- **Status**: merge-awaiting
+- **Status**: merged → main c3b60d6 (2026-06-23)
 - **Branch**: feat/F90
 - **Worktree**: .claude/worktrees/F90
 - **Submodule branch**: — (monorepo)
