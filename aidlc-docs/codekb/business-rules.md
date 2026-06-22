@@ -2,182 +2,116 @@
 
 ## Rules by Domain
 
-### Risk & Execution
+### Order Safety
 
-#### Single Risk Gate
-- **Rule**: Every signal or decision — whether from an LLM, a strategy, or a human console command — must pass through `RiskManager.validate_order()` before any order reaches the broker.
-- **Rationale**: One enforcement point for sizing and risk limits; nothing bypasses it, not even human steering.
-- **Implemented In**: `src/risk/manager.py`, `src/agent/executor.py`, `src/agent/steering/bus.py`
-- **Invariants**: No `BaseBroker.submit_order()` call is made without a RiskManager-produced `Order`.
+#### Brain / Body Split (Hard)
+- **Rule**: The LLM agent writes decisions to decisions.jsonl but NEVER calls any broker method directly. The deterministic DecisionExecutor is the sole actuator.
+- **Rationale**: A model is a brilliant analyst and a terrible fiduciary — it proposes, it cannot act.
+- **Implemented In**: `src/agent/orchestrator.py`, `src/agent/executor.py`; AgentTradingLoop holds no broker reference
+- **Invariants**: No broker import in orchestrator.py; only executor holds the broker reference
 
-#### Position Size Limit
-- **Rule**: No single position may exceed `RiskConfig.max_position_pct` (default 5%) of total portfolio equity.
-- **Rationale**: Concentration risk — a single bad trade cannot destroy the account.
-- **Implemented In**: `src/risk/manager.py`, `src/risk/position_sizer.py`
-- **Invariants**: PositionSizer derives quantity from available capital × max_position_pct; oversized orders are rejected.
+#### Single Risk Gate (Hard)
+- **Rule**: Every order — from agent, strategy engine, or human steering — must pass through `RiskManager.validate_order()` before any broker call. No code path bypasses this.
+- **Rationale**: One gate for position sizing, circuit breaker, bracket leg validation, and short safety — inconsistencies impossible when there is only one path.
+- **Implemented In**: `src/risk/manager.py:RiskManager.validate_order()`; enforced at every call site in executor, commands.py, TradingEngine
+- **Invariants**: No `BaseBroker.place_order()` call exists outside a path that went through RiskManager
 
-#### Portfolio Circuit Breaker
-- **Rule**: If total portfolio drawdown exceeds `RiskConfig.circuit_breaker_pct` (default 2%), no new long entries are accepted until the session resets.
-- **Rationale**: Stops runaway losses from compounding during a bad market day.
-- **Implemented In**: `src/risk/manager.py`, `src/agent/executor.py`
-- **Invariants**: Closing or reducing existing positions is never blocked by the circuit breaker.
+#### Idempotent Execution (Hard)
+- **Rule**: The executor uses an append-only cursor on decisions.jsonl. A Decision is executed at most once regardless of crashes and restarts.
+- **Rationale**: The hand-off is an append-only file; crash-and-restart must never double-submit an order.
+- **Implemented In**: `src/agent/executor.py` (cursor tracking), `src/agent/journal.py` (append-only writes)
+- **Invariants**: turn_id dedup prevents re-execution of decisions from the same agent turn
 
-#### Bracket / OCO Protective Legs
-- **Rule**: In bracket mode (`use_bracket_orders=True`), entries place resting BRACKET/OCO orders with stop + take-profit legs derived from supplied levels (often LLM-suggested); protective legs are reconciled after fills.
-- **Rationale**: Defense-in-depth — protection rests at the exchange, not only in a polling loop.
-- **Implemented In**: `src/risk/manager.py`, `src/agent/executor.py`
+### Risk Management
 
-#### Agent Order Authority
-- **Rule**: In agent mode, only `DecisionExecutor` places orders — by reading `decisions.jsonl`. The LLM orchestrator never calls the broker directly.
-- **Rationale**: Brain (LLM) reasons and journals; body (deterministic executor) is the sole actuator.
-- **Implemented In**: `src/agent/executor.py`
-- **Invariants**: Decisions are consumed exactly once (cursor file + atomic `os.replace()` makes execution idempotent across restarts).
+#### Position Size is Risk-Budget Driven
+- **Rule**: Position size = (equity * max_portfolio_risk) / stop_distance_$. Risk is always capped at max_portfolio_risk per trade.
+- **Rationale**: Ensures per-trade dollar risk is constant regardless of stop width; prevents a wide stop from creating an oversized position.
+- **Implemented In**: `src/risk/position_sizer.py:PositionSizer`
+- **Invariants**: Position size is always <= max_position_pct * equity
 
-#### Execution Guards
-- **Rule**: Before routing a decision to risk/broker, the executor applies pool-capacity, expiry, and circuit-breaker checks.
-- **Implemented In**: `src/agent/executor.py`
+#### Resting Bracket Orders (Hard — agent path)
+- **Rule**: Agent BUY orders include exchange-resting stop-loss and take-profit as an OCO pair (BRACKET order). The exchange triggers them — no polling loop.
+- **Rationale**: Polling-based stops miss gap moves; exchange-held stops are gap-safe. OCO guarantees only one leg fills.
+- **Implemented In**: `src/risk/manager.py` (bracket construction), `src/core/models.py:Order._check_bracket_legs()` (validation)
+- **Invariants**: BRACKET/OCO orders always carry both take_profit_price and stop_loss_price; geometry validated (long: stop < entry < target; short: target < entry < stop)
 
-### Shorting Rules (F60 + F54)
+#### Circuit Breaker
+- **Rule**: When SPY daily change falls to <= market_halt_threshold_pct (-3% default), new buy entries are halted. New short entries are halted when SPY rises >= short_market_halt_threshold_pct (+3%).
+- **Rationale**: Prevent digging deeper in a market-wide move; let the human reassess.
+- **Implemented In**: `src/risk/manager.py:RiskManager._check_market_halt()`
+- **Invariants**: BUY_TO_COVER (covering an existing short) and SELL (exiting a long) are never halted; only new entries
 
-#### Shorting is OFF by Default
-- **Rule**: `RiskConfig.shorting_enabled` ships as `false`. Every new short entry (from agent, `/short` console command, or auto-flip) is rejected when disabled.
-- **Rationale**: Unlimited theoretical loss; must be an explicit opt-in per deployment.
+#### Max Open Positions Cap
+- **Rule**: New entries are rejected once len(positions) >= max_open_positions (default 20).
 - **Implemented In**: `src/risk/manager.py`
-- **Invariants**: Covering an existing short (BUY to close) is always allowed — the rule never traps an existing position.
+- **Invariants**: Exits are always allowed regardless of position count
 
-#### Short Market Halt
-- **Rule**: If SPY is up ≥ `short_market_halt_threshold_pct` (default 3%), reject all new short entries.
-- **Rationale**: Avoid shorting into a broad market rally (short squeeze risk).
+### Short Selling
+
+#### Shorting Off by Default (Hard)
+- **Rule**: `risk.shorting_enabled: false` by default. All short entries (SELL_SHORT from agent, /short console command) are rejected when disabled.
+- **Rationale**: Short selling carries unlimited downside; must be an explicit per-deployment opt-in.
+- **Implemented In**: `src/risk/manager.py:RiskManager.validate_order()` (short master guard)
+- **Invariants**: BUY_TO_COVER remains allowed even when shorting_enabled=false — exit of an existing short must always be possible
+
+#### Short Mandatory Stop (Hard)
+- **Rule**: A SELL_SHORT order without a stop-loss level is always rejected. Shorts must always carry a protective stop.
+- **Rationale**: Without a stop, a short's loss is unbounded.
+- **Implemented In**: `src/risk/manager.py` (short bracket guard); `src/agent/steering/commands.py:build_human_short()` (returns None when no stop can be resolved)
+- **Invariants**: No code path places an uncovered short without a stop
+
+#### Short Individual Stock Halt
+- **Rule**: A fresh short entry is rejected if the target name's intraday price change is >= individual_stock_halt_pct (+10% default).
+- **Rationale**: Shorting into a momentum surge risks a squeeze.
 - **Implemented In**: `src/risk/manager.py`
 
-#### Individual Stock Short Halt
-- **Rule**: If a symbol is already up ≥ `individual_stock_halt_pct` (default 10%) today, reject new short entries for that symbol.
-- **Rationale**: High short-squeeze risk on already-elevated stocks.
-- **Implemented In**: `src/risk/manager.py`
+#### Short ETB Gate
+- **Rule**: A short entry requires BaseBroker.is_shortable() to return True. Defaults False on unknown status (fail-closed).
+- **Rationale**: Borrow cost and forced-recall risk on hard-to-borrow names.
+- **Implemented In**: `src/execution/base.py:BaseBroker.is_shortable()`, `src/execution/brokers/alpaca_broker.py`
 
-#### Short Bracket Leg Validation
-- **Rule**: For SHORT bracket orders — stop loss must be ABOVE entry, take profit must be BELOW entry (inverse of long brackets).
-- **Rationale**: Directionally opposite legs for shorts vs. longs.
-- **Implemented In**: `src/risk/manager.py`, `src/agent/steering/gate.py`
-
-#### Short Entry Requires Mandatory Stop
-- **Rule**: A SELL_SHORT with no resolvable stop (no explicit level, no ATR available) is rejected even with `force=True`. Longs may fall through to a plain market buy without a stop; shorts never may.
-- **Rationale**: A short's loss is theoretically unbounded; a stop is a hard requirement, not optional.
-- **Implemented In**: `src/risk/manager.py:_handle_sell_short`, `src/risk/manager.py:_receive_human_sell_short`
-
-### Bracket / OCO Structural Rules (F9)
-
-#### Trail Order Exclusivity
-- **Rule**: Trailing stop orders must specify exactly one of `trail_price` or `trail_percent` — not both, not neither.
-- **Rationale**: Broker APIs reject ambiguous trail parameters.
-- **Implemented In**: `src/agent/steering/gate.py`
-
-#### Supported Order Classes (v1)
-- **Rule**: Agent mode supports SIMPLE, BRACKET, OCO order classes. OTO (one-triggers-other) is not supported in v1.
-- **Implemented In**: `src/agent/steering/gate.py`
-
-#### Extended Hours Exclusion for OCO
-- **Rule**: OCO orders do not set `extended_hours=True`.
-- **Rationale**: Alpaca's DAY+LIMIT restriction makes extended-hours OCO legs unreliable.
-- **Implemented In**: `src/execution/brokers/alpaca_broker.py`
-
-#### Fail-Closed TIF Enforcement (R7)
-- **Rule**: Brokers reject orders with unsupported `time_in_force` values rather than silently downgrading them. Supported TIF values are `day`, `gtc`, `ioc`, `fok`.
-- **Rationale**: Silent TIF downgrades caused short-cover orders to be submitted with incorrect semantics. Fail-closed forces the error to the surface.
-- **Implemented In**: `src/execution/brokers/account_farm_broker.py`, `src/risk/manager.py` (`_SUPPORTED_TIF`)
-
-### Universe & Scheduling
-
-#### Universe Constraint
-- **Rule**: The agent may only act on symbols in the injected trading universe; the orchestrator enforces this at turn assembly.
-- **Implemented In**: `src/agent/orchestrator.py`, `src/universe/`
-
-#### Trading-Day Turn Sequence
-- **Rule**: One resumable agent session per US/Eastern trading day; turns scheduled at pre-market (research), intraday (event-driven), and post-close (EOD review).
-- **Implemented In**: `src/trading/modes/agent.py`, `TradingScheduler`
-
-#### Intraday Wake Conditions (F3)
-- **Rule**: Intraday turns trigger only on: (a) abnormal price move ≥ ATR × 1.5, (b) volume spike, (c) news diff detected (15-min poll), or (d) human console command.
-- **Rationale**: Prevents costly LLM calls on every tick; only meaningful events warrant re-analysis.
-- **Implemented In**: `src/agent/intraday/wake.py`, `src/agent/intraday/abnormal.py`
-
-### Intraday Feature Collection (F82)
-
-#### Gap-Backfill on Start
-- **Rule**: On daemon start, `IntradayAutoCollector` checks each universe symbol's last stored date in the Parquet feature store and backfills any gap (from `last_stored + 1` to `today`; deep-fill if absent, up to `backfill_years` years). Backfill runs in a background daemon thread — never blocks the agent loop.
-- **Rationale**: Keeps the intraday pattern analysis data current without manual intervention; a daemon restart after a holiday or downtime auto-heals.
-- **Implemented In**: `src/data/intraday/auto.py`, `src/trading/modes/agent.py`
-
-#### EOD Append After Close
-- **Rule**: After each market close, `IntradayAutoCollector` appends the current day's session features for every universe symbol. The upsert is idempotent — re-running the same date overwrites, not duplicates.
-- **Implemented In**: `src/data/intraday/auto.py`
-
-#### Provider Fallback (F82)
-- **Rule**: `intraday_collection.provider = alpaca` (default) fetches full-history minute bars. If `yfinance` is configured, it degrades gracefully to ~60 days of history — the store simply starts from what's available, no crash.
-- **Implemented In**: `src/data/intraday/auto.py`, `src/data/intraday/collector.py`
-
-#### Parquet Migration (F80)
-- **Rule**: Legacy `<SYM>.csv` files in `data/intraday/` are automatically migrated to `<SYM>.parquet` on first `IntradayFeatureStore` access, then renamed to `<SYM>.csv.migrated`. Migration is lazy and idempotent — if the Parquet sibling already exists, the CSV is just renamed.
-- **Implemented In**: `src/data/intraday/store.py:_migrate_legacy`
-
-### Signal Collection Rules
-
-#### IPO Awareness is NOT Universe-Filtered (F78)
-- **Rule**: Imminent IPOs from Finnhub are surfaced in the research brief regardless of whether the symbol is in the trading universe. `in_universe` and `is_held` are informational tags only — never filters. Withdrawn IPOs are always dropped.
-- **Rationale**: An IPO is by definition a name not yet in the universe; filtering would defeat the awareness channel purpose.
-- **Implemented In**: `src/signals/ipo_cal.py:select_imminent_ipos`
-- **Invariants**: IPOs ranked by `est_value` desc (missing last); capped at `max_ipos` (default 8); only `ipo_provider=finnhub` supported in v1 (`none` disables).
-
-#### Fail-Honest Signal Collection
-- **Rule**: SignalCollector and agent tool functions return per-source error annotations rather than propagating exceptions. The research turn proceeds with partial signals if any source fails.
-- **Implemented In**: `src/signals/collector.py`, `src/agent/tools/market.py`
-
-#### 13F Brief Bias Mitigation — LONG Push, SHORT Pull-Only (F87)
-- **Rule**: The every-turn push brief (`to_prompt_text` via `render_push_line`) shows ONLY the LONG side of disclosed 13F holdings. The bearish/PUT (SHORT) side is omitted from the prompt that is prepended to every research turn; it is accessible on demand via the `disclosed_holdings` pull tool. The push brief explicitly tells the agent the short side was omitted and directs it to run the tool if needed.
-- **Rationale**: A single contrarian manager's bearish/put bet, pushed to every research turn for ~90 days (13F is quarterly), anchors the agent regardless of changing market conditions. When `shorting_enabled=false` (the default), the agent cannot act on the short side anyway. Restricting the push to LONGs eliminates the anchoring bias without removing access — the SHORT side remains available on-demand.
-- **Implemented In**: `src/signals/holdings/brief.py:render_push_line` (push, LONG-only) vs `render_line` (pull, full); `src/signals/brief.py:to_prompt_text`; `src/agent/tools/market.py:disclosed_holdings` (full pull); `src/agent/prompts.py` (tool guide entry)
-- **Invariants**: `render_push_line` returns `""` when the manager has no mapped longs — this suppresses the entire entry (so an all-short manager never hints via an empty line). The `render_line` / `disclosed_holdings` tool always shows both sides.
-
-#### Best-Effort Multi-Symbol Fetch (NFR-4)
-- **Rule**: `get_latest_prices()` returns a partial dict when some symbols fail; callers must tolerate missing keys. One bad symbol must not block the entire scan.
-- **Implemented In**: `src/data/base.py`, all provider implementations
-
-### Self-Learning (Charter-Bounded)
+### Agent Self-Improvement
 
 #### Constitution-Bounded Self-Rewrite
-- **Rule**: EOD self-review produces lessons; lessons are attributed to decisions (`lessons_cited` + `prompt_version`); guidance prompts may self-rewrite **only within an immutable CONSTITUTION**, with a compliance check and rollback. Constitution changes require user approval; prompt swaps stay automatic.
-- **Rationale**: Bounded autonomy — the agent improves its own prompts without escaping fixed guardrails.
-- **Implemented In**: `src/agent/learning/review.py`, `src/agent/learning/constitution.py`, efficacy/lessons/rewrite modules (F64/F65/F66/F67/F68)
-- **Invariants**: `AgentTradingLoop._rewrite_fn` is `None` by default; self-rewrite machinery shipped inert (F64).
+- **Rule**: The agent's guidance prompt is self-writable, but the AGENT_CONSTITUTION prepended block is immutable. A compliance check gates every rewrite. The constitution's SHA-256 is pinned in CI.
+- **Rationale**: Allow adaptive learning without allowing the agent to remove its own safety or quality guardrails.
+- **Implemented In**: `src/agent/learning/constitution.py:AGENT_CONSTITUTION`, `check_compliance()`; `tests/test_constitution_pin.py`
+- **Invariants**: Any edit to AGENT_CONSTITUTION fails CI until a human updates the pin test
 
-### Steering / Human Intervention
+#### Evidence-Only Lesson Attribution
+- **Rule**: Lessons are attributed only to decisions whose outcomes are measurable. A HOLD or a decision with no subsequent price data produces no lesson.
+- **Rationale**: Avoids spurious learning from unmeasurable outcomes.
+- **Implemented In**: `src/agent/learning/efficacy.py`, `src/agent/learning/review.py`
 
-#### Advisor-Only Console Invariant
-- **Rule**: The operator-console LLM is advisory only; the human operator must confirm commands. All confirmed commands travel via the `steering/` file-drop channel and the daemon routes them through the same `RiskManager → Broker` gate.
-- **Rationale**: No shortcut around the risk gate, even for human-initiated orders.
-- **Implemented In**: `src/agent/steering/runtime.py`, `operator-console/`
+### Universe Constraint
 
-#### Single Writer for Broker Operations (NFR-2)
-- **Rule**: All broker mutations run on exactly one CommandBus worker thread. No concurrent broker access from different command sources.
-- **Rationale**: Prevents race conditions between LLM executor and human steering commands.
-- **Implemented In**: `src/agent/steering/bus.py`
+#### Tradeable Pool Enforcement
+- **Rule**: Agent decisions for symbols outside the current universe are rejected by filter_in_universe() before execution. The executor also checks at execution time.
+- **Rationale**: Prevents trading illiquid names, OTC, or symbols for which no data provider is available.
+- **Implemented In**: `src/agent/orchestrator.py:filter_in_universe()`, `src/agent/executor.py`
+- **Invariants**: Universe is resolved once at startup from config/universe/{market}_base.json; --symbols CLI override replaces it
 
-#### Steering is Optional (NFR-8)
-- **Rule**: When `--steering` flag is absent, the daemon runs identically to pre-steering. No SteeringRuntime is constructed.
-- **Rationale**: Backward compatibility — existing deployments without console are unaffected.
-- **Implemented In**: `main.py`
+### Human Steering
 
-### Retail Sentiment Signal (F77)
+#### Human Commands Go Through the Same Gate
+- **Rule**: Operator console commands (buy/sell/short/cover/flatten) pass through RiskManager.validate_order() via the executor, never directly to the broker.
+- **Rationale**: The human is never locked out but is also never exempt from risk rules.
+- **Implemented In**: `src/agent/steering/commands.py:build_human_buy()`, `DecisionExecutor.execute_decision()`
 
-#### StockTwits Baseline Z-Score Gate
-- **Rule**: A StockTwits sentiment reading for a symbol is only surfaced in the research brief if ALL of: (a) the symbol has ≥ `min_baseline_points` (12) historical hourly readings; (b) the current snapshot has ≥ `min_tagged` (8) labelled messages; AND (c) the z-score of current bull-ratio vs the symbol's own rolling baseline exceeds `z_threshold` (2.0). At most `top_k` (5) outliers are included per brief.
-- **Rationale**: StockTwits crowd is ~75% bullish by default; raw ratios carry no signal. Only deviations relative to a symbol's own baseline are meaningful. Cold-start (insufficient history) and small-sample (few messages) cuts prevent noise.
-- **Implemented In**: `src/signals/sentiment.py`, `src/signals/sentiment_sweep.py`, `src/signals/sources/stocktwits.py`
-- **Invariants**: Readings older than `max_age_minutes` (180) are never surfaced; sweep runs only within the `window_et` window (04:00–20:00 ET); rate-limited to `hourly_budget` (150 requests/hour)
+#### HMAC Token Validation (Hard)
+- **Rule**: Every command in commands.jsonl must carry a valid HMAC token. Unconfirmed or tampered commands are rejected fail-closed.
+- **Rationale**: The daemon runs unattended; its file-drop channel must authenticate the operator.
+- **Implemented In**: `src/agent/steering/channel.py:SteeringChannel.read_new_commands()`, `src/agent/steering/security.py`
+- **Invariants**: HMAC comparison is constant-time (hmac.compare_digest); token never written to logs or events
 
-### Multi-Broker Routing
+### Data Freshness
 
-#### Market-Specific Broker Routing
-- **Rule**: US equities → Alpaca; Korean equities → KIS; backtests → SimulatedBroker. Broker selection is set at startup via config, not at order time.
-- **Implemented In**: `main.py` (`create_broker()`), `src/execution/brokers/`
-- **Note**: KIS paper (모의투자) does not support stop-limit (`ORD_DVSN=22`) — stop orders are live-only.
+#### Intraday Feature Auto-Collection (F82)
+- **Rule**: On daemon start, gap-backfill per-symbol intraday Parquet features for all universe symbols in a background thread. Append after each session close.
+- **Implemented In**: `src/data/intraday/auto.py`, `src/data/intraday/collector.py`
+- **Invariants**: Background collector never blocks the agent loop; failures are logged and swallowed
+
+#### Signal Cache TTL
+- **Rule**: Price scans cached for cache_ttl_seconds (300s default). Individual price lookups cached for price.cache_seconds (3s). Bounds API rate without staling data excessively.
+- **Implemented In**: `src/signals/collector.py`, `src/agent/intraday/bars.py`
