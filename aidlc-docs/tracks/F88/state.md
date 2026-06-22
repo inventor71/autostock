@@ -8,7 +8,7 @@
 - **Track ID**: F88
 - **Title**: Agent self-authored long-horizon triggers (macro/news 대기 후 self-wake)
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (Build & Test green) → merged (by /ai-dlc-merge) -->
+- **Status**: merged → main a942390 (2026-06-22)  <!-- rebased 57f7f82→1f594cc (prompts/orchestrator 충돌 해소: F85 disposition + F88 macro_triggers 양립) → merged a942390 -->
 - **Branch**: feat/F88
 - **Worktree**: .claude/worktrees/F88
 - **Submodule branch**: — (monorepo)
