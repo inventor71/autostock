@@ -69,6 +69,21 @@ test("readThesis returns null for missing file, content for existing", () => {
   expect(fd.readThesis("aapl")).toBe("# AAPL Thesis\n\nBuy thesis here."); // lowercased symbol ok
 });
 
+// F76: stat-stable read returns the complete, untorn thesis. A torn read can only
+// occur when a write straddles the read; that interleaving isn't reproducible in
+// single-threaded JS, so we assert the invariant the fix preserves — readThesis
+// returns the exact full bytes for a settled file (no truncation) and reflects the
+// latest write after a rewrite.
+test("readThesis returns full content and reflects rewrites (stat-stable)", () => {
+  const fd = new FileDrop(dir, "tok");
+  mkdirSync(fd.positionsDir, { recursive: true });
+  const big = "# AAPL Thesis\n" + "x".repeat(64 * 1024) + "\nend";
+  writeFileSync(join(fd.positionsDir, "AAPL.md"), big, "utf8");
+  expect(fd.readThesis("AAPL")).toBe(big); // complete, not truncated
+  writeFileSync(join(fd.positionsDir, "AAPL.md"), "# rewritten\nshorter", "utf8");
+  expect(fd.readThesis("AAPL")).toBe("# rewritten\nshorter"); // latest write
+});
+
 test("listTheses returns symbols or empty", () => {
   // Ensure clean state — afterEach cleans workspace/ but be defensive.
   try { rmSync(join(dir, "..", "workspace"), { recursive: true, force: true }); } catch {}

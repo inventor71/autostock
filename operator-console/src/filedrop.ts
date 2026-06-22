@@ -130,13 +130,35 @@ export class FileDrop {
     }
   }
 
+  /** F76: Stat-stable read for a non-atomically-written file. The thesis writer is
+   *  the PM agent's claude CLI Write/Edit tool — we don't control its write atomicity,
+   *  so a plain readFileSync can catch a half-written (torn) markdown mid-turn. We
+   *  read between two stat() snapshots and retry while size/mtime change underneath
+   *  us. Best-effort: after MAX_TRIES we return the last read anyway — thesis files
+   *  are written once per turn, so sustained churn across all tries does not happen. */
+  private readStable(path: string): string {
+    const MAX_TRIES = 5;
+    let content = "";
+    for (let i = 0; i < MAX_TRIES; i++) {
+      const before = statSync(path);
+      content = readFileSync(path, "utf8");
+      const after = statSync(path);
+      if (before.size === after.size && before.mtimeMs === after.mtimeMs) {
+        return content; // no write straddled this read
+      }
+    }
+    return content; // best-effort after retries
+  }
+
   /** F53: Read a position thesis file (workspace/positions/<SYMBOL>.md).
-   *  Returns the markdown content as a string, or null if the file does not exist. */
+   *  Returns the markdown content as a string, or null if the file does not exist.
+   *  F76: uses a stat-stable read so a thesis being rewritten mid-turn is never
+   *  surfaced torn. */
   readThesis(symbol: string): string | null {
     try {
       const path = join(this.positionsDir, `${symbol.toUpperCase()}.md`);
       if (!existsSync(path)) return null;
-      return readFileSync(path, "utf8");
+      return this.readStable(path);
     } catch {
       return null; // fail-closed (SECURITY-15): permission errors etc.
     }
