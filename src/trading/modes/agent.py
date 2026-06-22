@@ -232,6 +232,99 @@ class AgentTradingMode:
         return self.orchestrator.run_wake(brief, events, timeout=self.intraday_config.wake_timeout)
 
     # ------------------------------------------------------------------ #
+    # F88: agent self-authored long-horizon triggers
+    # ------------------------------------------------------------------ #
+    def _triggers_config(self):
+        from config.config import get_settings
+        from src.agent.triggers.settings import TriggersConfig
+        return TriggersConfig.from_settings(get_settings().triggers)
+
+    def _trigger_signal_resolver(self):
+        """Map a catalogue signal name → JSON-able data for the brokered ctx.
+
+        Reuses the agent tool functions (same data the agent sees interactively).
+        Fail-honest: a resolver exception is surfaced by the fetcher as
+        ``{"_error": ...}`` in ctx, never crashing the sweep. ``sentiment`` is a
+        documented follow-up (no direct tool fn) — returns an explicit marker."""
+        from src.agent.tools import market
+
+        def _collector():
+            from src.signals.collector import SignalCollector
+            return SignalCollector.from_settings(price_provider=self.executor.data_provider)
+
+        def resolve(name: str, params: dict):
+            if name == "macro":
+                return market.macro()
+            if name == "movers":
+                return market.movers(_collector())
+            if name == "earnings":
+                return market.earnings_calendar(_collector(), days=params.get("days"))
+            if name == "holdings":
+                return market.disclosed_holdings(_collector())
+            return {"_error": f"signal {name!r} not wired (follow-up)"}
+
+        return resolve
+
+    def _setup_triggers(self) -> None:
+        """Register the TriggerEvaluator scheduler job (F88). Inert unless enabled.
+
+        Best-effort wiring: any failure disables triggers but never the daemon
+        (NFR). Fails LOUD on an unreachable docker so triggers are never silently
+        dead (critic#5) — but still does not crash startup."""
+        try:
+            cfg = self._triggers_config()
+            if not cfg.enabled:
+                return
+            from pathlib import Path
+
+            from src.agent.triggers import (
+                BrokeredFetcher,
+                SandboxConfig,
+                SandboxRunner,
+                TriggerStore,
+                default_http_get,
+            )
+            from src.agent.triggers.evaluator import TriggerEvaluator
+
+            sandbox = SandboxRunner(SandboxConfig(
+                image=cfg.sandbox_image, timeout_s=cfg.sandbox_timeout_s,
+                memory=cfg.sandbox_memory, cpus=cfg.sandbox_cpus))
+            ok, msg = sandbox.preflight()
+            if not ok:
+                # Loud — do NOT silently fail-closed every evaluation (critic#5).
+                logger.error("F88 triggers ENABLED but docker unavailable: {} — "
+                             "triggers will NOT run. Fix docker access or disable triggers.", msg)
+                return
+            logger.info("F88 triggers: {}", msg)
+
+            store = TriggerStore(Path(self.executor.journal.root) / "triggers")
+            # Seed the agent-readable predicate/ctx contract (critic#7) — the agent
+            # can't read src/ (F39), so this doc is its authoritative reference.
+            from src.agent.triggers.schema_doc import write_ctx_schema
+            write_ctx_schema(store.root)
+            fetcher = BrokeredFetcher(
+                signal_resolver=self._trigger_signal_resolver(),
+                http_get=default_http_get(),
+                webfetch_allowlist=frozenset(cfg.webfetch_allowlist),
+            )
+            evaluator = TriggerEvaluator(
+                store=store, fetcher=fetcher, sandbox=sandbox,
+                run_state_fn=self.steering.state.run_state,
+                reconcile_worker=self.steering.reconcile_worker,
+                wake_runner=self._wake_runner,
+                wake_timeout=cfg.wake_timeout,
+                sandbox_timeout=cfg.sandbox_timeout_s,
+                max_consecutive_errors=cfg.max_consecutive_errors,
+                min_fire_gap_s=cfg.min_fire_gap_s,
+            )
+            self.scheduler.add_seconds_job(
+                evaluator.tick, cfg.tick_seconds, "trigger_eval", misfire_grace_time=cfg.tick_seconds)
+            logger.info("F88 triggers wired (tick={}s, allowlist={} domains)",
+                        cfg.tick_seconds, len(cfg.webfetch_allowlist))
+        except Exception as e:  # never kill the daemon (NFR)
+            logger.error("F88 trigger setup failed (continuing without triggers): {}", e)
+
+    # ------------------------------------------------------------------ #
     # Steering helpers (no-ops when steering is disabled)
     # ------------------------------------------------------------------ #
     def _paused(self) -> bool:
@@ -635,6 +728,9 @@ class AgentTradingMode:
         if hasattr(broker, "reconcile_oco"):
             self.scheduler.add_seconds_job(self._oco_reconcile_tick, 5, "kis_reconcile")
         if self.steering is not None:
+            # F88: agent self-authored long-horizon triggers (steering-gated — needs
+            # the reconcile worker + run_state). Inert unless triggers.enabled.
+            self._setup_triggers()
             self.scheduler.add_seconds_job(self.steering.poll_commands, 2, "steering_poll")
             self.scheduler.add_seconds_job(self.steering.publish_snapshot, 5, "steering_snapshot")
             self.scheduler.add_seconds_job(self.steering.poll_agent_questions, 5, "steering_questions")

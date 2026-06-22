@@ -118,6 +118,30 @@ def main(argv: list[str] | None = None) -> int:
     ic.add_argument("--days", type=int, default=None, help="IPO horizon override (default: config)")
     sub.add_parser("disclosed_holdings")  # no args: institutional 13F (incl. SHORT side)
 
+    # F88: agent self-authored long-horizon triggers. Writes to the SAME triggers
+    # store the daemon's TriggerEvaluator reads (workspace/triggers/), so the
+    # filesystem is the cross-process channel — no live daemon connection needed.
+    tg = sub.add_parser("trigger")
+    tgsub = tg.add_subparsers(dest="trigger_cmd", required=True)
+    tg_reg = tgsub.add_parser("register")
+    tg_reg.add_argument("--id", required=True)
+    tg_reg.add_argument("--thesis", required=True)
+    tg_reg.add_argument("--cadence", choices=["hourly", "daily"], default="hourly")
+    tg_reg.add_argument("--ttl-days", type=float, required=True, dest="ttl_days")
+    tg_reg.add_argument("--predicate-file", required=True, dest="predicate_file",
+                        help="path to a file containing should_fire(ctx) source")
+    tg_reg.add_argument("--sources-json", default="[]", dest="sources_json",
+                        help='JSON list of source refs, e.g. '
+                             '[{"kind":"signal","name":"macro"},{"kind":"webfetch","url":"https://..."}]')
+    tg_reg.add_argument("--primary-symbol", default=None, dest="primary_symbol")
+    tg_reg.add_argument("--no-entry-inducing", action="store_true", dest="no_entry_inducing",
+                        help="mark a non-entry-inducing trigger (fires even when entries halted)")
+    tg_insp = tgsub.add_parser("inspect")
+    tg_insp.add_argument("id")
+    tg_can = tgsub.add_parser("cancel")
+    tg_can.add_argument("id")
+    tgsub.add_parser("list")
+
     args = parser.parse_args(argv)
 
     # F74: eval fixture interception — a market command under
@@ -210,6 +234,44 @@ def main(argv: list[str] | None = None) -> int:
             out = {"cleared": args.id}
         else:  # list
             out = {"active": [t.model_dump(mode="json") for t in store.active()]}
+    elif args.cmd == "trigger":
+        import os
+        from datetime import datetime, timedelta, timezone
+        from pathlib import Path
+
+        from src.agent.journal import Journal
+        from src.agent.triggers import SourceRef, TriggerSpec, TriggerStore
+        from src.agent.triggers.store import TriggerError
+
+        # Same root the daemon's TriggerEvaluator reads (AGENT_JOURNAL_ROOT export),
+        # so a non-default workspace never splits writer/reader (cf. the watch tool).
+        root = os.environ.get("AGENT_JOURNAL_ROOT") or Journal().root
+        store = TriggerStore(Path(root) / "triggers")
+        if args.trigger_cmd == "register":
+            try:
+                predicate_src = Path(args.predicate_file).read_text()
+                sources = [SourceRef(**s) for s in json.loads(args.sources_json)]
+                spec = TriggerSpec(
+                    id=args.id, thesis=args.thesis, cadence=args.cadence,
+                    expires=datetime.now(timezone.utc) + timedelta(days=args.ttl_days),
+                    sources=sources, primary_symbol=args.primary_symbol,
+                    entry_inducing=not args.no_entry_inducing,
+                )
+                store.register(spec, predicate_src)
+                out = {"ok": True, "id": spec.id}
+            except TriggerError as e:
+                out = {"ok": False, "error": str(e), "violations": [str(v) for v in e.violations]}
+            except Exception as e:  # malformed spec/sources/file → structured error, not a traceback
+                out = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        elif args.trigger_cmd == "list":
+            out = {"triggers": [s.model_dump(mode="json") for s in store.list()]}
+        elif args.trigger_cmd == "inspect":
+            try:
+                out = store.inspect(args.id).model_dump(mode="json")
+            except TriggerError as e:
+                out = {"ok": False, "error": str(e)}
+        else:  # cancel
+            out = {"cancelled": store.cancel(args.id)}
     elif args.cmd == "movers":
         out = market.movers(_signal_collector())
     elif args.cmd == "readthrough":

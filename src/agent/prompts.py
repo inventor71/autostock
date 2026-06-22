@@ -166,15 +166,40 @@ def intraday_prompt(
     return "\n".join(lines)
 
 
+def macro_triggers_from_events(events) -> list[dict[str, str]]:
+    """Extract F88 long-horizon (``agent_trigger``) context from a WakeEvent list.
+
+    Pure/duck-typed so it is unit-testable without constructing the loop. Each entry
+    is ``{"thesis": ..., "why": ...}`` drawn from the event's ``payload``/``reason``.
+    """
+    out: list[dict[str, str]] = []
+    for e in events or []:
+        if getattr(e, "kind", "") != "agent_trigger":
+            continue
+        payload = getattr(e, "payload", {}) or {}
+        out.append({
+            "thesis": str(payload.get("thesis", "")).strip(),
+            "why": str(getattr(e, "reason", "")).strip(),
+        })
+    return out
+
+
 def wake_prompt(
     brief: str | None,
     reasons: list[str] | None = None,
     disposition: str = "",
+    macro_triggers: list[dict[str, str]] | None = None,
 ) -> str:
     """Event-driven wake turn (F3 FR-4): Python detected judgement-worthy events
     out-of-band (a fill, an abnormal move, a met watch condition, a protective
     fill) and woke the agent before the next scheduled tick. Scoped to the
-    events — not a full re-survey."""
+    events — not a full re-survey.
+
+    F88: when ``macro_triggers`` is present, an agent-authored *long-horizon*
+    trigger fired. Those are macro/portfolio-level theses, not single-symbol
+    micro-events, so the symbol-only time constraint is relaxed for them and the
+    agent is told to reassess what the fired thesis implies across the book.
+    """
     lines = ["Event-driven wake turn (continuing today's session) — Python "
              "detected judgement-worthy events out-of-band."]
     if disposition:
@@ -182,6 +207,12 @@ def wake_prompt(
     if reasons:
         lines.append("Trigger(s):")
         lines.extend(f"  - {r}" for r in reasons)
+    if macro_triggers:
+        lines.append("Long-horizon trigger(s) you authored have fired:")
+        for mt in macro_triggers:
+            thesis = mt.get("thesis") or "(no thesis recorded)"
+            why = mt.get("why") or "(condition met)"
+            lines.append(f"  - thesis: {thesis} — fired because: {why}")
     if brief:
         lines.append(brief)
     lines.append(
@@ -191,12 +222,21 @@ def wake_prompt(
         "protective fill. Append any decision (incl. ADJUST_STOP) to "
         "decisions.jsonl. If the events need no action, do nothing — do not churn."
     )
-    lines.append(
-        "TIME CONSTRAINT — this is a short, out-of-band wake turn. Check ONLY the "
-        "specific symbol(s) named in the trigger(s) above. Do NOT re-read every "
-        "thesis file or do a full portfolio review. If you need more depth, defer "
-        "it to the next scheduled intraday turn."
-    )
+    if macro_triggers:
+        lines.append(
+            "MACRO TRIGGER — the long-horizon trigger(s) above express a "
+            "macro/portfolio-level thesis, NOT a single-symbol micro-event. "
+            "Reassess what the fired thesis implies across your book and watchlist; "
+            "you MAY review multiple positions and theses as needed to act on it. "
+            "Stay proportionate — act only where the thesis actually changes your plan."
+        )
+    else:
+        lines.append(
+            "TIME CONSTRAINT — this is a short, out-of-band wake turn. Check ONLY the "
+            "specific symbol(s) named in the trigger(s) above. Do NOT re-read every "
+            "thesis file or do a full portfolio review. If you need more depth, defer "
+            "it to the next scheduled intraday turn."
+        )
     lines.append(_ADVISOR_REMINDER)
     return "\n".join(lines)
 

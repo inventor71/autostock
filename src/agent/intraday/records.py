@@ -21,8 +21,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 WatchCondition = Literal["price_above", "price_below", "close_above", "close_below"]
 CLOSE_CONDITIONS: frozenset[str] = frozenset({"close_above", "close_below"})
 
-# ---- wake-event taxonomy (FR-4) -------------------------------------------- #
-WakeKind = Literal["new_fill", "abnormal_move", "watch_trigger", "protective_reassess"]
+# ---- wake-event taxonomy (FR-4; F88 adds agent_trigger) -------------------- #
+# ``agent_trigger`` = a long-horizon trigger the agent authored fired (F88). Unlike
+# the other (micro, symbol-scoped) kinds it may be macro/portfolio-level, so its
+# WakeEvent carries the trigger thesis in ``payload`` and run_wake renders a
+# dedicated macro branch — it is NOT a symbol-only micro-event.
+WakeKind = Literal[
+    "new_fill", "abnormal_move", "watch_trigger", "protective_reassess", "agent_trigger"
+]
 
 
 def _new_id() -> str:
