@@ -313,3 +313,8 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-16 — **/ai-dlc-merge 승인** — 사용자 "둘다 머지". 큐: F85 → F86 (겹침 0, 자율 진행).
 - 2026-06-16 — **F85 merged** → main 207b8be (rebased f17a36f→57f7f82, clean). Aggressiveness 노브: 단일 `agent.aggressiveness` 다이얼 → 프롬프트 성향 + 리스크 overlay + 학습 horizon(per-day 정규화·maturity 게이트·grades.jsonl). balanced=현행 동일. pytest 1371 pass(사전존재 sentiment_sweep 3건 무관). 3R critic.
 - 2026-06-16 — **F86 merged** → main f3fef72 (rebased f17a36f→622bb80, clean; F85와 겹침 0). 모바일 대시보드 데이터 엔드포인트(opencode `/autostock` read 라우트 + PWA 실데이터). 재검증: opencode 15 + app 52 + webauthn 41 pass, typecheck clean.
+
+## /ai-dlc-merge — 큐 (F76 단독)
+- 2026-06-22 — **triage**: working-tree noise = `aidlc-state.md`(M, 공유 — F76·F90 registry 행 편집) + untracked `tracks/F88`(active=정상 노이즈, leave) + untracked `tracks/F83`(**abandoned** 비active, F76와 경로 겹침 0 → 사용자 판단 "그대로 둠"). foreign 변경 없음. 큐 = F76 단독(merge-awaiting, ahead 1, base 23212f5 post-F35). 다른 active(F88/F90/F73)는 merge-awaiting 아님.
+- 2026-06-22 — **/ai-dlc-merge 승인** — 사용자 "승인 — 머지 진행" / F83 "그대로 둠". F76 자율 머지 진행(rebase 23212f5→1b5eb40 → verify → --no-ff merge → registry merged → cleanup).
+- 2026-06-22 — **F76 merged** → main 366a6a8 (rebased 23212f5→5c47f46 onto 1b5eb40, clean rebase). thesis torn-read 완화: filedrop `readThesis`→비공개 `readStable()`(읽기 전후 size/mtime 비교+최대 5회 재시도, best-effort) + `Journal.write_position`→`atomic_write_text`(temp+os.replace), redundant mkdir 제거. orchestrator copytree는 스코프 제외(일회성 subagent 워크스페이스+writer 비원자). 재검증(post-rebase): filedrop bun 8 pass(신규 stat-stable), test_agent.py 55 pass(신규 원자성). post-merge-guide skip(내부 robustness). F83 untracked(abandoned)·F88 untracked(active) 노이즈는 그대로 보존.

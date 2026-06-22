@@ -8,10 +8,10 @@
 - **Track ID**: F76
 - **Title**: positions thesis torn-read 완화 (filedrop stat-stable read) + `Journal.write_position` 원자화
 - **Type**: bugfix (lean)
-- **Status**: merge-awaiting (구현+테스트 완료, 검증 green — 2026-06-18)
-- **Branch**: feat/F76
-- **Worktree**: .claude/worktrees/F76
-- **Base commit**: 23212f5 (worktree 생성 시점 최신 main)
+- **Status**: merged → main 366a6a8 (2026-06-22)
+- **Branch**: feat/F76 (rebased 23212f5→5c47f46 → merged 366a6a8)
+- **Worktree**: .claude/worktrees/F76 (제거됨)
+- **Base commit**: 23212f5 → rebased onto 1b5eb40
 - **Start Date**: 2026-06-12T12:39:47Z
 
 ## Scope (2건, 둘 다 소규모)
