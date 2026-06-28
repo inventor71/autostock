@@ -166,7 +166,7 @@ cmd_reconcile() {
   log "reconcile '$INSTANCE': archiving account-dependent journal/positions; daemon will rebuild"
   log "from this sub-account's broker truth. (market artifacts kept; nothing deleted — moved.)"
   if [ -n "$cid" ]; then log "stopping daemon (volumes preserved)…"; compose stop daemon >/dev/null; fi
-  docker run --rm -v "${COMPOSE_PROJECT_NAME}_workspace":/v "$IMAGE" sh -c '
+  docker run --rm -v "${COMPOSE_PROJECT_NAME}_workspace":/v --entrypoint sh "$IMAGE" -c '
     set -e
     ts=$(date -u +%Y%m%dT%H%M%SZ); dest="/v/_pre_f92_archive_$ts"; mkdir -p "$dest"
     for f in decisions.jsonl trades.jsonl equity.jsonl execution_outcomes.jsonl \
