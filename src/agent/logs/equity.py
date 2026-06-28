@@ -101,12 +101,11 @@ def default_path() -> Path:
 def main() -> None:
     """Record one snapshot of the live (paper) account now: python -m src.agent.logs.equity"""
     from config.config import get_settings
-    from src.execution.brokers.alpaca_broker import AlpacaBroker
+    from src.execution.brokers.factory import create_broker
 
-    s = get_settings()
-    broker = AlpacaBroker(
-        api_key=s.alpaca_api_key, secret_key=s.alpaca_api_secret, paper=s.broker.paper
-    )
+    # Provider-aware: equity must be the account the daemon actually trades. Hard-coding
+    # AlpacaBroker logged the wrong (shared Alpaca) account for account_farm instances (F92).
+    broker = create_broker(get_settings())
     record_equity(broker.get_portfolio_state(), default_path())
 
 

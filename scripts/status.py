@@ -29,6 +29,7 @@ from rich.table import Table  # noqa: E402
 from config.config import get_settings  # noqa: E402
 from src.core.types import OrderSide, OrderType  # noqa: E402
 from src.execution.brokers.alpaca_broker import AlpacaBroker  # noqa: E402
+from src.execution.brokers.factory import create_broker  # noqa: E402
 
 console = Console()
 
@@ -115,6 +116,9 @@ def _fills_table(client) -> Table:
     t.add_column("Qty", justify="right")
     t.add_column("Sym", style="bold cyan")
     t.add_column("Fill", justify="right")
+    if client is None:
+        t.add_row("—", "n/a", "", "(non-Alpaca provider)", "")
+        return t
     try:
         from alpaca.trading.requests import GetOrdersRequest
         from alpaca.trading.enums import QueryOrderStatus
@@ -177,8 +181,11 @@ def main() -> None:
     args = parser.parse_args()
 
     s = get_settings()
-    broker = AlpacaBroker(api_key=s.alpaca_api_key, secret_key=s.alpaca_api_secret, paper=s.broker.paper)
-    client = broker._client
+    # Provider-aware: show the account the daemon actually trades (F92). The fills table
+    # uses the Alpaca SDK client directly, so it's only wired for Alpaca; other providers
+    # degrade to an "n/a" fills row (positions/orders/equity remain correct).
+    broker = create_broker(s)
+    client = broker._client if isinstance(broker, AlpacaBroker) else None
     try:
         from alpaca.data.historical import StockHistoricalDataClient
         data_client = StockHistoricalDataClient(s.alpaca_api_key, s.alpaca_api_secret)

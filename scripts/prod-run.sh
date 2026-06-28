@@ -155,17 +155,49 @@ cmd_migrate() {
   log "migrated. Start it: scripts/prod-run.sh up $INSTANCE"
 }
 
+cmd_reconcile() {
+  # F92 one-time surgery: the agent used to read broker-truth from a hard-coded AlpacaBroker
+  # (shared account) instead of this instance's account_farm sub-account, so the workspace
+  # accumulated journal/positions for the WRONG account (e.g. phantom RTX/TMO). After the F92
+  # code fix, archive (NOT delete) those account-dependent files so the daemon rebuilds them
+  # from THIS sub-account's real broker truth. Market/account-agnostic artifacts are kept.
+  load_instance "${1:-}"
+  local cid; cid="$(compose ps -q daemon)"
+  log "reconcile '$INSTANCE': archiving account-dependent journal/positions; daemon will rebuild"
+  log "from this sub-account's broker truth. (market artifacts kept; nothing deleted — moved.)"
+  if [ -n "$cid" ]; then log "stopping daemon (volumes preserved)…"; compose stop daemon >/dev/null; fi
+  docker run --rm -v "${COMPOSE_PROJECT_NAME}_workspace":/v "$IMAGE" sh -c '
+    set -e
+    ts=$(date -u +%Y%m%dT%H%M%SZ); dest="/v/_pre_f92_archive_$ts"; mkdir -p "$dest"
+    for f in decisions.jsonl trades.jsonl equity.jsonl execution_outcomes.jsonl \
+             execution_log.jsonl turns.jsonl pending_approvals.json \
+             .fills.cursor .executor_state.json; do
+      [ -e "/v/$f" ] && mv "/v/$f" "$dest/" || true
+    done
+    for d in positions agent_reports daily; do
+      [ -e "/v/$d" ] && mv "/v/$d" "$dest/" || true
+    done
+    echo "archived account-dependent state → $dest"
+    echo "kept (market/account-agnostic): CLAUDE.md lessons.md regime.md watchlist.md screening/ sentiment/ surge/ holdings/ .sessions/ .news_seen.json"
+  '
+  log "restarting daemon (provider-aware truth)…"; compose up -d daemon >/dev/null
+  log "reconciled. Verify: scripts/prod-run.sh attach $INSTANCE → ask holdings (should show THIS sub-account, no phantom RTX/TMO)."
+}
+
 case "${1:-}" in
-  up)      cmd_up "${2:-}" ;;
-  attach)  cmd_attach "${2:-}" ;;
-  ls)      cmd_ls ;;
-  logs)    cmd_logs "${2:-}" ;;
-  down)    cmd_down "${2:-}" "${3:-}" ;;
-  migrate) cmd_migrate "${2:-}" "${3:-}" ;;
+  up)        cmd_up "${2:-}" ;;
+  attach)    cmd_attach "${2:-}" ;;
+  ls)        cmd_ls ;;
+  logs)      cmd_logs "${2:-}" ;;
+  down)      cmd_down "${2:-}" "${3:-}" ;;
+  reconcile) cmd_reconcile "${2:-}" ;;
+  migrate)   cmd_migrate "${2:-}" "${3:-}" ;;
   *) cat >&2 <<EOF
 prod-run.sh — F90 prod multi-instance control
-  up <name> | attach <name> | ls | logs <name> | down <name> [--wipe] | migrate <name> <src>
+  up <name> | attach <name> | ls | logs <name> | down <name> [--wipe] | reconcile <name> | migrate <name> <src>
 Each instance reads config/.env.<name> (copy config/.env.example).
+  reconcile — F92 one-time: archive account-dependent workspace state so the daemon rebuilds
+              from the correct sub-account (run once per instance after the F92 fix is on main).
 EOF
      exit 2 ;;
 esac

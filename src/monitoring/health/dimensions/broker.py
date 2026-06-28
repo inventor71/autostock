@@ -30,7 +30,7 @@ class BrokerChecker(BaseChecker):
         """Call broker.get_portfolio_state() — proves auth + account reachable."""
         t0 = time.monotonic()
         try:
-            from main import create_broker
+            from src.execution.brokers.factory import create_broker
             broker = create_broker(self._settings)
             pf = broker.get_portfolio_state()
             elapsed = (time.monotonic() - t0) * 1000
@@ -56,7 +56,7 @@ class BrokerChecker(BaseChecker):
         """Check market clock."""
         t0 = time.monotonic()
         try:
-            from main import create_broker
+            from src.execution.brokers.factory import create_broker
             broker = create_broker(self._settings)
             is_open = broker.is_market_open()
             elapsed = (time.monotonic() - t0) * 1000
@@ -83,7 +83,7 @@ class BrokerChecker(BaseChecker):
         """Count resting (open) orders."""
         t0 = time.monotonic()
         try:
-            from main import create_broker
+            from src.execution.brokers.factory import create_broker
             broker = create_broker(self._settings)
             orders = broker.get_open_orders()
             elapsed = (time.monotonic() - t0) * 1000

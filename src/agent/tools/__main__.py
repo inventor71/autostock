@@ -19,15 +19,13 @@ def _provider():
 
 
 def _broker():
+    # Provider-aware (alpaca | kis | account_farm) — the agent must read the SAME
+    # account the daemon trades. Hard-coding AlpacaBroker here made every account_farm
+    # instance read one shared Alpaca account instead of its own sub-account (F92).
     from config.config import get_settings
-    from src.execution.brokers.alpaca_broker import AlpacaBroker
+    from src.execution.brokers.factory import create_broker
 
-    settings = get_settings()
-    return AlpacaBroker(
-        api_key=settings.alpaca_api_key,
-        secret_key=settings.alpaca_api_secret,
-        paper=settings.broker.paper,
-    )
+    return create_broker(get_settings())
 
 
 def _universe() -> list[str]:
