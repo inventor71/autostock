@@ -18,7 +18,7 @@ class AccountChecker(BaseChecker):
 
         pf = None
         try:
-            from main import create_broker
+            from src.execution.brokers.factory import create_broker
             broker = create_broker(self._settings)
             pf = broker.get_portfolio_state()
         except Exception:

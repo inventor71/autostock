@@ -117,6 +117,7 @@
 | F89 | 13F를 참조 데이터화(pull 전용) — 유니버스 자동 편입 OFF + push 브리프 제거, disclosed_holdings 툴로만 (F81/F87 후속) | merged | feat/F89 → main 7d772ff | — | — (monorepo) | f17a36f→7d772ff | 2026-06-16 |
 | F90 | Docker prod화 — verify 하네스(F10/F15 attach) 패턴으로 다중 인스턴스 동시 운영(계정·workspace·aggressiveness 분리) + 손쉬운 attach (F85/F16 위) | merged | feat/F90 → main c3b60d6 | — (제거됨) | — (monorepo) | 23212f5→rebased b08e6e0→c3b60d6 | 2026-06-23 |
 | F91 | sentiment sweep 영속화 클럭 정합 핫픽스 — `_sweep`가 주입 클럭을 `append_sweep(ts=)`로 스레딩(ET-midnight torn-partition 차단). F88 Build & Test에서 분리된 무관 실패 3건 | merged | feat/F91 → main 5591eca | — (제거됨) | — (monorepo) | 1b5eb40→rebased 1805ae3→5591eca | 2026-06-22 |
+| F92 | 브로커 provider 정합성 버그 수정 + 멀티 인스턴스 격리 복구 — agent broker-truth CLI 2곳(tools/__main__.py:_broker, logs/equity.py:main)이 provider 무시하고 AlpacaBroker 하드코딩 → 공유 Alpaca 계좌 읽음. create_broker 공유 팩토리 추출 + 격리 전수점검 + 운영 컨테이너 surgery | active | feat/F92 | .claude/worktrees/F92 | — (monorepo) | 42d0398 | 2026-06-28 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under

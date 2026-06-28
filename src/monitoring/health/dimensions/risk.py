@@ -97,7 +97,7 @@ class RiskChecker(BaseChecker):
                 severity=Severity.WARNING,
             )
         try:
-            from main import create_broker
+            from src.execution.brokers.factory import create_broker
             broker = create_broker(self._settings)
             positions = broker.get_all_positions()
             short_positions = [p for p in positions if p.qty < 0] if positions else []
