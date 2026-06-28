@@ -42,11 +42,15 @@
 endpoint), F79(모바일 셸), F84(모바일 차트 — 본 fix 위에 의존). [[worktree-live-verification]]
 
 ## Merge Risk Notes
-> 트랙이 `merge-awaiting` 전환 시 작성.
-- **공유 파일 (주의)**: `operator-console/cli/packages/opencode/src/server/server.ts`(리스너 라우팅),
-  `operator-console/launcher/serve.ts`(serveEnv/QR). F84(모바일 차트)는 `packages/app` 위주라 충돌 낮음.
-- **API/시그니처 변경**: 라우트 마운트 위치 변경(내부). 외부 계약 변화 없음(오히려 살아남).
-- **알려진 동시 변경**: F84(모바일 스택, packages/app) — 디렉터리 다름.
+- **Base 추적**: 브랜치 base=42d0398. 작업 중 병렬 **F92(브로커 provider 정합성)가 main에 머지**됨
+  (main now 36afc5e). F92는 Python(main.py/src/agent·execution·monitoring/tests)+자체 docs+aidlc-state.md만
+  변경 → **F93 코드 파일과 겹침 0**(확인) → **클린 rebase 예상**.
+- **실제 변경 파일(4)**: `…/server/routes/instance/httpapi/server.ts`(autostockRoute 마운트),
+  `launcher/serve.ts`(env/QR origin), `test/launcher-f71.test.ts`(+11), `…/test/server/autostock-listener.test.ts`(신규).
+  (계획상 `server/server.ts`로 봤으나 실제 수정은 `routes/.../httpapi/server.ts` createRoutes였음.)
+- **API/시그니처 변경**: 없음(내부 라우트 마운트 위치). 외부 계약은 오히려 복구(죽어있던 /autostock/* 살아남).
+- **registry**: F93 행은 이미 main에 커밋됨(F92 close 커밋에 함께 스윕). 브랜치는 aidlc-state.md 미수정 → 충돌 없음.
+- **알려진 동시 변경**: F84(모바일 차트, `packages/app`) — 디렉터리 다름, 본 fix 위에 의존.
 
 ## Stage Progress
 - [x] Workspace Detection — brownfield, RE 스킵(CodeKB)
