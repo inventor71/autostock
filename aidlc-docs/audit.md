@@ -327,3 +327,7 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 
 - 2026-06-23 — **/ai-dlc-merge** 큐=[F90]. Triage: F83(abandoned) untracked 문서는 그대로 둠(머지 무관). 제외 F84(F79 스택)/F73(do-not-enqueue)/F33(paused). 사용자 사전승인 "커밋 후 바로 머지". F90 rebase 23212f5→fb2f050 시작.
 - 2026-06-23 — **F90 merged** → main c3b60d6 (Docker prod 다중 인스턴스 런타임). rebase 23212f5→fb2f050 clean(config.py F88 triggers와 비인접). verify 재실행 7/7 + compose/sh/compile OK. 라이브 account_farm 스모크 부팅 검증, 스모크-발견 실버그 3건(상대경로 volume / verify 이미지 entrypoint / account_farm TradeAccount tolerant) 수정 포함. worktree/브랜치 정리.
+
+- 2026-06-28 — **/ai-dlc-merge triage STOP** — main 작업트리에 foreign/비active 변경 존재(scripts/prod-run.sh 미커밋[本세션 bash-c fix], operator-console/cli/bun.lock[他세션], aidlc-docs/mobile-realdevice-test-guide.md[트랙 밖 문서], aidlc-docs/tracks/F83/[abandoned]). F92 머지 보류, 사용자 처리 요청.
+
+- 2026-06-28 — **F92 merged** (8181f5c) — 브로커 provider 정합성: agent broker-truth CLI 3곳을 create_broker 팩토리로 통일(공유 Alpaca→자기 account_farm sub-account), reconcile 헬퍼 + post-merge-guide. 라이브 surgery는 머지 후 reconcile 실행 대기.

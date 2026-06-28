@@ -8,7 +8,7 @@
 - **Track ID**: F92
 - **Title**: 브로커 provider 정합성 버그 수정 + 멀티 인스턴스 격리 복구
 - **Type**: feature (bugfix + refactor + ops surgery)
-- **Status**: merge-awaiting  <!-- Build & Test green (F92 변경분); 잔여 실패 17건은 사전-존재 환경이슈(F92 무관) -->
+- **Status**: merged → main 8181f5c (2026-06-28)
 - **Branch**: feat/F92
 - **Worktree**: .claude/worktrees/F92
 - **Submodule branch**: — (parent repo only; operator-console 미변경 예상)
