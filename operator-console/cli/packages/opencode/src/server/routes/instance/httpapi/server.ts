@@ -6,6 +6,7 @@ import {
   HttpMiddleware,
   HttpRouter,
   HttpServer,
+  HttpServerRequest,
   HttpServerResponse,
 } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
@@ -176,6 +177,36 @@ const uiRoute = HttpRouter.use((router) =>
   }),
 ).pipe(Layer.provide(authOnlyRouterLayer))
 
+// F93: autostock fork routes (webauthn register/assert + read-only dashboard) mounted on the REAL
+// listener path, ahead of the uiRoute `/*` catch-all. These previously lived ONLY on
+// Server.Default().app.fetch (server/server.ts) — but Server.listen() serves via createRoutes() and
+// never invokes that fetch chain, so over the wire /autostock/* fell through to uiRoute and returned
+// the SPA HTML (mobile dashboard data + passkey endpoints were dead remotely). The handler bridges
+// the native-fetch route()s (Request→Response) into Effect via toWeb/fromWeb, mirroring the fetch
+// chain's `webauthn ?? dashboard` ordering. More-specific paths win over `/*` (same as docRoute /doc),
+// and `/autostock` (the SPA shell) plus all other paths still fall through to uiRoute.
+const autostockRoute = HttpRouter.use((router) =>
+  Effect.gen(function* () {
+    const handle = (request: HttpServerRequest.HttpServerRequest) =>
+      Effect.gen(function* () {
+        const webReq = yield* HttpServerRequest.toWeb(request)
+        let res = yield* Effect.promise(() =>
+          import("@/server/autostock/webauthn").then((m) => m.route(webReq)),
+        )
+        if (!res)
+          res = yield* Effect.promise(() =>
+            import("@/server/autostock/dashboard-read").then((m) => m.route(webReq)),
+          )
+        // Registered paths always match one of the two route()s; the 404 is a defensive fallback.
+        return res ? HttpServerResponse.fromWeb(res) : HttpServerResponse.empty({ status: 404 })
+      })
+    // Register both paths for ALL methods so the native route()s own method-gating (e.g. a non-GET
+    // dashboard request returns 405 from dashboard-read, instead of falling through to the SPA).
+    yield* router.add("*", "/autostock/webauthn/*", handle)
+    yield* router.add("*", "/autostock/dashboard", handle)
+  }),
+).pipe(Layer.provide(authOnlyRouterLayer))
+
 type RouteRequirements =
   | HttpRouter.HttpRouter
   | HttpRouter.Request<"Error", unknown>
@@ -186,7 +217,15 @@ type RouteRequirements =
 export function createRoutes(
   corsOptions?: CorsOptions,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
-  return Layer.mergeAll(rootApiRoutes, eventApiRoutes, ptyConnectApiRoutes, instanceRoutes, docRoute, uiRoute).pipe(
+  return Layer.mergeAll(
+    rootApiRoutes,
+    eventApiRoutes,
+    ptyConnectApiRoutes,
+    instanceRoutes,
+    docRoute,
+    autostockRoute,
+    uiRoute,
+  ).pipe(
     Layer.provide([
       errorLayer,
       compressionLayer,
