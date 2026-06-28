@@ -103,11 +103,14 @@ cmd_attach() {
   [ -n "$cid" ] || die "instance '$INSTANCE' is not running — start it: scripts/prod-run.sh up $INSTANCE"
   log "attaching operator console to '$INSTANCE' (daemon keeps running after you quit the console)…"
   # The exec inherits the daemon container's env (AUTOSTOCK_ROOT, STEERING_DIR, STEERING_OPERATOR_TOKEN,
-  # AUTOSTOCK_LOCKDOWN). We add the normal-mode read permission + bun on PATH.
+  # AUTOSTOCK_LOCKDOWN). We add the normal-mode read permission + bun on PATH. NOTE: use `bash -c`,
+  # NOT `bash -lc` — a login shell sources /etc/profile, which resets PATH to the Debian default and
+  # drops /usr/local/bun/bin (the `-e PATH` below), making bun "not found" (verify.sh runs bun the
+  # same non-login way).
   docker exec -it \
     -e OPENCODE_PERMISSION="$CONSOLE_PERM" \
     -e PATH=/usr/local/bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    "$cid" bash -lc 'cd /app/operator-console/cli/packages/opencode && exec bun run dev'
+    "$cid" bash -c 'cd /app/operator-console/cli/packages/opencode && exec bun run dev'
 }
 
 cmd_ls() {
