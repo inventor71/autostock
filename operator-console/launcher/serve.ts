@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { readEnvKey, consoleEnv, type LauncherConfig } from "./config";
 
 export const PASSWORD_KEY = "OPENCODE_SERVER_PASSWORD";
+export const WEBAUTHN_ORIGIN_KEY = "AUTOSTOCK_WEBAUTHN_ORIGIN";
 export const SERVE_PORT = 4096;
 
 /** Resolve the server password: process env wins, then the root .env. Empty → fail-closed. */
@@ -21,6 +22,21 @@ export function resolveServePassword(
   const fromEnv = env[PASSWORD_KEY] ?? "";
   if (fromEnv) return fromEnv;
   return readEnvKey(join(cfg.autostockRoot, ".env"), PASSWORD_KEY);
+}
+
+/**
+ * Resolve the WebAuthn https origin (the *.ts.net origin the phone loads the PWA from): process env
+ * wins, then the root .env. Empty → unset (webauthn verification stays fail-closed server-side).
+ * F93: the shim only exports AUTOSTOCK_ROOT and `consoleEnv` is a pure process.env passthrough, so
+ * without this the origin set in `.env` never reached the serve process and passkeys fail-closed.
+ */
+export function resolveWebauthnOrigin(
+  cfg: Pick<LauncherConfig, "autostockRoot">,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const fromEnv = env[WEBAUTHN_ORIGIN_KEY] ?? "";
+  if (fromEnv) return fromEnv;
+  return readEnvKey(join(cfg.autostockRoot, ".env"), WEBAUTHN_ORIGIN_KEY);
 }
 
 export type ExecResult = { code: number; stdout: string };
@@ -58,6 +74,12 @@ export function serveEnv(
 ): Record<string, string> {
   const out = consoleEnv(cfg, base, false); // never supervisor on the network surface
   out[PASSWORD_KEY] = password;
+  // F93: forward the WebAuthn https origin from the root .env when it isn't already exported, so the
+  // server can verify passkey assertions (without it, expectedOrigin() is null → fail-closed).
+  if (!out[WEBAUTHN_ORIGIN_KEY]) {
+    const origin = resolveWebauthnOrigin(cfg, base);
+    if (origin) out[WEBAUTHN_ORIGIN_KEY] = origin;
+  }
   return out;
 }
 
@@ -73,7 +95,7 @@ export async function resolveServeContext(
   cfg: LauncherConfig,
   env: Record<string, string | undefined> = process.env,
   exec: Exec = defaultExec,
-): Promise<{ password: string; hostname: string; url: string }> {
+): Promise<{ password: string; hostname: string; url: string; webauthnOrigin: string }> {
   const password = resolveServePassword(cfg, env);
   if (!password) {
     throw new ServeConfigError(
@@ -88,7 +110,12 @@ export async function resolveServeContext(
         "`tailscale up` 후 다시 시도하세요. (공개 바인드 0.0.0.0 은 지원하지 않음)",
     );
   }
-  return { password, hostname, url: `http://${hostname}:${SERVE_PORT}` };
+  return {
+    password,
+    hostname,
+    url: `http://${hostname}:${SERVE_PORT}`,
+    webauthnOrigin: resolveWebauthnOrigin(cfg, env),
+  };
 }
 
 /** `autostock qr` — render the pairing QR to the terminal. On-demand only; never logged. */
@@ -99,7 +126,11 @@ export async function runQr(
   write: (s: string) => void = (s) => process.stdout.write(s),
 ): Promise<void> {
   const ctx = await resolveServeContext(cfg, env, exec);
-  const payload = buildPairingPayload(ctx.url, ctx.password);
+  // F93: pair against the https origin (tailscale serve *.ts.net) when set — passkeys require a
+  // secure context, and an https page cannot call an http API (mixed-content). Fall back to the raw
+  // http bind url with a warning when the origin isn't configured yet.
+  const pairingUrl = ctx.webauthnOrigin || ctx.url;
+  const payload = buildPairingPayload(pairingUrl, ctx.password);
   const qrcode = await import("qrcode-terminal");
   await new Promise<void>((resolve) => {
     (qrcode.default ?? qrcode).generate(payload, { small: true }, (q: string) => {
@@ -107,7 +138,14 @@ export async function runQr(
       resolve();
     });
   });
-  write(`서버: ${ctx.url}\n`);
+  write(`서버: ${pairingUrl}\n`);
+  if (!ctx.webauthnOrigin) {
+    write(
+      `⚠ ${WEBAUTHN_ORIGIN_KEY} 미설정 — http URL로 페어링됩니다. 패스키(승인/잠금)는 https 보안 ` +
+        `컨텍스트에서만 동작하므로, tailscale serve로 https origin을 띄우고 루트 .env에 ` +
+        `${WEBAUTHN_ORIGIN_KEY}=https://<host>.<tailnet>.ts.net 을 설정하세요.\n`,
+    );
+  }
   write("폰 PWA의 'QR로 서버 추가'로 스캔하세요. 비번이 포함되어 있으니 표시 후 화면을 지우세요.\n");
 }
 
