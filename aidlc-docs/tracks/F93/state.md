@@ -8,7 +8,7 @@
 - **Track ID**: F93
 - **Title**: 모바일 실행 경로 배선 fix — autostock API 라우트를 실제 리스너에 마운트(R1 블로커) + serve가 .env WEBAUTHN_ORIGIN 전달(R2) + QR https origin(R3) + 단일 origin 배포 runbook(R4)
 - **Type**: feature (bug-fix wiring)
-- **Status**: merge-awaiting  <!-- Build & Test green 2026-06-28; /ai-dlc-merge → merged -->
+- **Status**: merged → main 3ef2670 (2026-06-29)
 - **Verify ledger**: typecheck(opencode) 0err / 리스너 회귀 6 / 런처 24 / 기존 autostock 56 / 앱 애드온 52 / 실데이터 라이브 스모크 OK (dashboard JSON 실값 + webauthn challenge). httpapi-listen 로그 테스트 flaky = base에서도 실패(F93 무관).
 - **Branch**: feat/F93
 - **Worktree**: .claude/worktrees/F93

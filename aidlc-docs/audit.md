@@ -331,3 +331,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-28 — **/ai-dlc-merge triage STOP** — main 작업트리에 foreign/비active 변경 존재(scripts/prod-run.sh 미커밋[本세션 bash-c fix], operator-console/cli/bun.lock[他세션], aidlc-docs/mobile-realdevice-test-guide.md[트랙 밖 문서], aidlc-docs/tracks/F83/[abandoned]). F92 머지 보류, 사용자 처리 요청.
 
 - 2026-06-28 — **F92 merged** (8181f5c) — 브로커 provider 정합성: agent broker-truth CLI 3곳을 create_broker 팩토리로 통일(공유 Alpaca→자기 account_farm sub-account), reconcile 헬퍼 + post-merge-guide. 라이브 surgery는 머지 후 reconcile 실행 대기.
+- 2026-06-29 — **/ai-dlc-merge** 큐=[F93]. triage: tracks/F83(abandoned,기존노이즈)·mobile-realdevice-test-guide.md(foreign,세션산출물) STOP대상이나 F93머지와 무관·미스테이징으로 보존. F92(브로커)와 파일 0겹침.
+- 2026-06-29 — **F93 merged** (3ef2670) 모바일 실행 경로 배선 fix — autostock 라우트를 실제 리스너(createRoutes)에 마운트(R1 블로커: /autostock/* SPA HTML로 떨어지던 것 → JSON), serve가 .env WEBAUTHN_ORIGIN 전달(R2), QR https origin(R3), 두 origin runbook(R4). 리스너 통과 회귀 테스트 추가. clean rebase(F92와 0겹침).

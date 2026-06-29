@@ -118,7 +118,7 @@
 | F90 | Docker prod화 — verify 하네스(F10/F15 attach) 패턴으로 다중 인스턴스 동시 운영(계정·workspace·aggressiveness 분리) + 손쉬운 attach (F85/F16 위) | merged | feat/F90 → main c3b60d6 | — (제거됨) | — (monorepo) | 23212f5→rebased b08e6e0→c3b60d6 | 2026-06-23 |
 | F91 | sentiment sweep 영속화 클럭 정합 핫픽스 — `_sweep`가 주입 클럭을 `append_sweep(ts=)`로 스레딩(ET-midnight torn-partition 차단). F88 Build & Test에서 분리된 무관 실패 3건 | merged | feat/F91 → main 5591eca | — (제거됨) | — (monorepo) | 1b5eb40→rebased 1805ae3→5591eca | 2026-06-22 |
 | F92 | 브로커 provider 정합성 버그 수정 + 멀티 인스턴스 격리 복구 — agent broker-truth CLI 3곳(tools/__main__.py:_broker, logs/equity.py:main, scripts/status.py)이 provider 무시하고 AlpacaBroker 하드코딩 → 공유 Alpaca 계좌 읽음. create_broker 공유 팩토리 추출 + 격리 전수점검 + prod-run.sh reconcile 헬퍼 | merged | feat/F92 → main 8181f5c | — (monorepo) | 42d0398→rebased e933904→8181f5c | 2026-06-28 |
-| F93 | 모바일 실행 경로 배선 fix — autostock API 라우트(webauthn+dashboard)를 실제 리스너에 마운트(R1 블로커: 와이어 너머 /autostock/* → SPA HTML) + serve가 .env WEBAUTHN_ORIGIN 전달(R2) + QR https origin(R3) + 단일 origin runbook(R4) | active | feat/F93 | .claude/worktrees/F93 | — (monorepo) | 42d0398 | 2026-06-28 |
+| F93 | 모바일 실행 경로 배선 fix — autostock API 라우트(webauthn+dashboard)를 실제 리스너에 마운트(R1 블로커: 와이어 너머 /autostock/* → SPA HTML) + serve가 .env WEBAUTHN_ORIGIN 전달(R2) + QR https origin(R3) + 단일 origin runbook(R4) | merged | feat/F93 → main 3ef2670 | — (제거됨) | — (monorepo) | 42d0398→rebased 42770f4→3ef2670 | 2026-06-29 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
