@@ -333,3 +333,6 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-06-28 — **F92 merged** (8181f5c) — 브로커 provider 정합성: agent broker-truth CLI 3곳을 create_broker 팩토리로 통일(공유 Alpaca→자기 account_farm sub-account), reconcile 헬퍼 + post-merge-guide. 라이브 surgery는 머지 후 reconcile 실행 대기.
 - 2026-06-29 — **/ai-dlc-merge** 큐=[F93]. triage: tracks/F83(abandoned,기존노이즈)·mobile-realdevice-test-guide.md(foreign,세션산출물) STOP대상이나 F93머지와 무관·미스테이징으로 보존. F92(브로커)와 파일 0겹침.
 - 2026-06-29 — **F93 merged** (3ef2670) 모바일 실행 경로 배선 fix — autostock 라우트를 실제 리스너(createRoutes)에 마운트(R1 블로커: /autostock/* SPA HTML로 떨어지던 것 → JSON), serve가 .env WEBAUTHN_ORIGIN 전달(R2), QR https origin(R3), 두 origin runbook(R4). 리스너 통과 회귀 테스트 추가. clean rebase(F92와 0겹침).
+
+- 2026-07-05 — **/ai-dlc-merge (scope F94)** — 0a triage: 통과(정체불명 변경 없음; F83 abandoned 문서·mobile-realdevice-test-guide.md는 F94와 무관·경로한정 스테이징으로 미접촉). "레지스트리 행 누락"은 오판정 — F94 행이 feat/F94 브랜치(라인122)에 이미 존재, 머지 시 반영. 큐: [F94] 단일, base 940a99e(F35 이후), ↑1. rebase→verify→merge 진행.
+- 2026-07-05 — **F94 merged** → main ae853d6 (콘솔 계좌-truth 읽기 툴 provider 정합성, F92 TS판 후속). rebase onto e314a6f: aidlc-state.md 충돌 1건(F93 active→merged)만 기계적 해결, 코드 자동병합. verify 재실행 account-truth+alpaca-data 29 pass/0 fail. 레지스트리 행은 feat/F94에 이미 존재(오판정 "누락")—머지로 반영.

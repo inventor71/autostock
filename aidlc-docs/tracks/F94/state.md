@@ -7,7 +7,7 @@
 - **Track ID**: F94
 - **Title**: 콘솔 계좌-truth 읽기 툴 provider 정합성 (account_farm일 때 데몬 snapshot 경유)
 - **Type**: bugfix (F92 후속 — TS 콘솔 경로)
-- **Status**: merge-awaiting  <!-- Build & Test green (operator-console/test 187 pass); 실데이터 검증 통과 -->
+- **Status**: merged → main ae853d6 (2026-07-05)  <!-- rebase onto main(e314a6f): aidlc-state.md 충돌만(F93 active→merged) 해결; verify 재실행 account-truth+alpaca-data 29 pass/0 fail; 전체 174 pass, 유일 실패 launcher-f71=fast-check 미설치(F94 무관) -->
 - **Branch**: feat/F94
 - **Worktree**: .claude/worktrees/F94
 - **Submodule branch**: — (monorepo; operator-console 포함)
