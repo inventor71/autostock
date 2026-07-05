@@ -22,14 +22,25 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { AlpacaDataClient } from "./alpaca-data";
+import { createAccountReader } from "./account-truth";
 import { FileDrop } from "./filedrop";
 import { handleSteer, handleSteerRead, handleStructured } from "./steer-handler";
 
-const fd = new FileDrop(process.env.STEERING_DIR ?? "./steering");
+const STEERING_DIR = process.env.STEERING_DIR ?? "./steering";
+const fd = new FileDrop(STEERING_DIR);
 // F39: codebase introspection is supervisor-only. The launcher forwards AUTOSTOCK_SUPERVISOR
 // into this MCP process's env (opencode.jsonc mcp.environment); unset/"" → normal (fail-closed).
 const supervisor = process.env.AUTOSTOCK_SUPERVISOR === "on";
 const client = new AlpacaDataClient(); // fail-fast: missing keys → process.exit(1) (Q1=B)
+// F94: account-truth READ tools must follow the broker provider. For account_farm the daemon
+// trades a sub-account the Alpaca API can't see, so read its published snapshot.json instead
+// (the Alpaca-direct path would return the shared Alpaca account — phantom holdings). Market-data
+// tools below stay Alpaca-direct (account-agnostic). alpaca/empty → unchanged Alpaca-direct.
+const account = createAccountReader({
+  provider: process.env.AUTOSTOCK_BROKER_PROVIDER,
+  steeringDir: STEERING_DIR,
+  alpaca: client,
+});
 const server = new McpServer({ name: "autostock", version: "0.0.0" });
 const txt = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
 
@@ -257,32 +268,35 @@ server.registerTool(
   {
     description:
       "Get account summary: equity, cash, buying_power, PDT status, etc. (READ-ONLY). " +
-      "Live Alpaca API — fresher than daemon snapshot.",
+      "Provider-aware (F94): alpaca → live Alpaca API; account_farm → this instance's daemon " +
+      "snapshot (its real sub-account).",
     inputSchema: {},
   },
-  async () => txt(await client.getAccountInfo()),
+  async () => txt(await account.getAccountInfo()),
 );
 
 server.registerTool(
   "get_all_positions",
   {
     description:
-      "Get all open positions. Live Alpaca API — fresher than daemon snapshot. (READ-ONLY).",
+      "Get all open positions. (READ-ONLY). Provider-aware (F94): alpaca → live Alpaca API; " +
+      "account_farm → this instance's daemon snapshot (its real sub-account).",
     inputSchema: {},
   },
-  async () => txt(await client.getAllPositions()),
+  async () => txt(await account.getAllPositions()),
 );
 
 server.registerTool(
   "get_open_position",
   {
     description:
-      "Get a single position by symbol or asset id. Live Alpaca API. (READ-ONLY).",
+      "Get a single position by symbol or asset id. (READ-ONLY). Provider-aware (F94): alpaca → " +
+      "live Alpaca API; account_farm → this instance's daemon snapshot.",
     inputSchema: {
       symbol_or_asset_id: z.string().min(1).max(20).describe("symbol or asset id, e.g. AAPL"),
     },
   },
-  async ({ symbol_or_asset_id }) => txt(await client.getOpenPosition(symbol_or_asset_id)),
+  async ({ symbol_or_asset_id }) => txt(await account.getOpenPosition(symbol_or_asset_id)),
 );
 
 server.registerTool(
@@ -296,7 +310,7 @@ server.registerTool(
       intraday_reporting: z.enum(["market_hours", "extended_hours", "continuous"]).optional(),
     },
   },
-  async (args) => txt(await client.getPortfolioHistory(args)),
+  async (args) => txt(await account.getPortfolioHistory(args)),
 );
 
 server.registerTool(
@@ -352,7 +366,9 @@ server.registerTool(
   "get_orders",
   {
     description:
-      "Get order history with status/symbol/date/direction filters. Live Alpaca API — fresher than daemon snapshot. (READ-ONLY).",
+      "Get orders with status/symbol/date/direction filters. (READ-ONLY). Provider-aware (F94): " +
+      "alpaca → live Alpaca API (full history); account_farm → daemon snapshot OPEN orders only " +
+      "(closed/history not available there).",
     inputSchema: {
       status: z.enum(["open", "closed", "all"]).optional().default("open"),
       limit: z.number().int().min(1).max(500).optional(),
@@ -362,7 +378,7 @@ server.registerTool(
       symbols: z.string().optional().describe("comma-separated symbols, e.g. AAPL,MSFT"),
     },
   },
-  async (args) => txt(await client.getOrders(args)),
+  async (args) => txt(await account.getOrders(args)),
 );
 
 // -- Stock Market Data --

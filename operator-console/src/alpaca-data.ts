@@ -332,7 +332,9 @@ function formatBarsResponse(
   return sections.join("\n\n");
 }
 
-function formatResponse(data: unknown, method: string): string {
+// Exported for the F94 provider-aware account reader (account-truth.ts) so the
+// daemon-snapshot path renders identically to the Alpaca path.
+export function formatResponse(data: unknown, method: string): string {
   if (data === null || data === undefined) {
     return "(no data)";
   }
