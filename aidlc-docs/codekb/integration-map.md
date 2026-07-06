@@ -4,57 +4,45 @@
 
 | API | Purpose | Connection | Auth | Criticality |
 |---|---|---|---|---|
-| Alpaca Trading API | US equities order execution, portfolio state, account info (paper + live) | REST (`alpaca-py>=0.21`) | `ALPACA_API_KEY` + `ALPACA_SECRET_KEY` (env) | High |
-| Alpaca Broker API | Sandbox account farm creation and funding | REST (`alpaca-py`) | `BROKER_API_KEY` + `BROKER_SECRET_KEY` (env) | Medium |
-| Alpaca Data API | US equities historical bars, latest quotes, news; also primary provider for F82 intraday 5-min backfill | REST + WebSocket (`alpaca-py`) | Same keys as Trading API | High |
-| KIS OpenAPI (`python-kis` 2.1.6, import `pykis`) | Korean equities paper broker + market data | REST | `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT_NO` (env) | High (KR mode) |
-| local `claude` CLI (`claude -p`) | Agent brain — agentic portfolio manager (AgentSession) | Subprocess | OAuth subscription (`.claude/` dir on host) | High (agent mode) |
-| Anthropic SDK (`anthropic>=0.18`) | LLM strategy signal generation (`src/strategy/llm/`) | REST | `ANTHROPIC_API_KEY` (env) | Medium |
-| OpenAI API (`openai>=1.12`) | Alternate LLM strategy | REST | `OPENAI_API_KEY` (env) | Low (optional) |
-| Finnhub — earnings calendar | Earnings calendar for signal collection (F61) | REST (`requests`) | `FINNHUB_API_KEY` (env) | Medium |
-| Finnhub — IPO calendar | Imminent US IPO/catalyst awareness channel (F78); NOT universe-filtered | REST (`requests`, `/calendar/ipo`) | `FINNHUB_API_KEY` (env) | Low (best-effort) |
-| Yahoo Finance (`yfinance>=0.2.30`) | Fallback / secondary market data + news; F82 backfill fallback (degrades to ~60d, no crash) | HTTP scrape | None (public) | Low (fallback) |
-| StockTwits API | Retail sentiment — author self-labels (Bullish/Bearish) per symbol; hourly sweep with z-score baseline deviation detection (F77) | REST (`src/signals/sources/stocktwits.py`, unauthenticated ~200 req/hr) | None (unauthenticated) | Low (best-effort) |
+| Alpaca Trading API | US equities paper/live trading (orders, positions, fills, news) | REST + WebSocket | `ALPACA_API_KEY`, `ALPACA_API_SECRET` | high |
+| Alpaca Broker API | Multi-account farm (sandbox accounts for benchmark baselines) | REST | `BROKER_API_KEY`, `BROKER_API_SECRET`, `BROKER_ACCOUNT_ID` | medium |
+| KIS (Korea Investment & Securities) | Korean equities paper trading and market data | REST (python-kis SDK) | `KIS_PAPER_API_KEY`, `KIS_PAPER_API_SECRET`, `KIS_PAPER_ACCOUNT` | medium |
+| Anthropic Claude API | LLM portfolio manager brain (research + decision turns) | HTTP (anthropic SDK) or claude CLI headless | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | high (agent mode) |
+| OpenAI API | Alternative LLM backend | HTTP (openai SDK) | `OPENAI_API_KEY` | low (optional) |
+| yfinance | Free market data fallback (OHLCV bars, fundamentals) | REST (yfinance library) | None | medium |
+| Finnhub | Earnings calendar and IPO calendar | REST | `FINNHUB_API_KEY` (env) | medium |
+| StockTwits | Retail sentiment (hourly author self-labels sweep) | REST | None (unauthenticated, rate-limited ~200/hr) | low |
+| SEC EDGAR | Institutional 13F disclosed holdings | HTTPS (fair-access UA required) | None (identifying User-Agent required) | low |
+| Alpaca News | Market news headlines for research prompts | REST (alpaca-py) | Same Alpaca keys | medium |
+| Slack | Operational alerts | Webhook POST | `SLACK_WEBHOOK` (env) | low |
+| Telegram | Operational alerts | Bot API | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` (env) | low |
 
 ## Databases & Data Stores
 
 | Store | Type | Purpose | Access Pattern |
 |---|---|---|---|
-| `decisions.jsonl` | JSONL file (append-only) | Agent brain → body hand-off; LLM decisions consumed by executor | Append (orchestrator) + cursor-based read (executor) |
-| `execution_log.jsonl` | JSONL file | Decision → fill audit ledger; quality metrics source | Append write |
-| `turn_log.jsonl` | JSONL file | Per-turn metadata: cost, duration, decisions | Append write |
-| `trades_log.jsonl` | JSONL file | Closed round-trip P&L tracking | Append write |
-| `equity_log.jsonl` | JSONL file | Portfolio equity curve vs benchmark | Append write |
-| `lessons.jsonl` | JSONL file | EOD self-review → learned lessons (self-learning) | Append write; recall read |
-| `steering/*.jsonl` | JSONL files | Human console commands (file-drop IPC); responses | Single-writer drop (console) + daemon poll |
-| `monitor.json` | JSON file | Live daemon state snapshot (positions, turn status, run state) | Overwrite on each state change |
-| `surge/` store | JSONL files | EOD extreme-mover events for agent EOD analysis | Append write |
-| `early_session/` | JSONL + index files | Pre-market rapid-move events (first 60 min of session) | Append write + index read |
-| `data/intraday/<SYM>.parquet` | Parquet files (pyarrow) | Per-symbol intraday session feature vectors (F80/F82); keyed on `(date, symbol)`; one file per symbol; replaces legacy `.csv`; F82 auto-collects on daemon start + EOD | Upsert write (collector) + columnar read (analysis/tools) |
-| `data/cache/` | File cache (TTL-bounded) | Intraday bar cache; prevents redundant provider calls | Read-write with TTL expiry |
-| `quality/` | JSONL files | Per-decision quality metric snapshots (F24) | Append write |
-| `config/universe/*.json` | JSON files | Cached trading universe snapshots (US S&P100 / KR market-cap) | Read at startup; occasional rebuild |
-| (no database) | — | All persistence is file-based; no relational/NoSQL DB | — |
+| `workspace/decisions.jsonl` | JSONL file (append-only) | Machine-executable decisions written by agent, read by executor | append-write (agent), sequential-read with cursor (executor) |
+| `workspace/lessons.jsonl` | JSONL file (append-only) | Outcome-attributed lessons from EOD review | append-write (review), sequential-read (recall) |
+| `workspace/equity_curve.jsonl` | JSONL file (append-only) | Daily equity snapshots for performance tracking | append-write (executor), read (EOD review, quality) |
+| `workspace/theses.md` | Markdown file | Narrative investment theses per symbol | write (agent), read (agent research prompts) |
+| `workspace/journal.md` | Markdown file | Daily trading journal narrative | write (agent) |
+| `workspace/guidance.md` | Markdown file | Agent's self-rewritten guidance prompt (constitution-bounded) | write (self_rewrite), read (orchestrator) |
+| `workspace/trades.jsonl` | JSONL file (append-only) | FIFO-matched closed round-trips | append-write (executor), read (quality metrics) |
+| `workspace/interventions.jsonl` | JSONL file (append-only) | Audit log of every human steering action and its outcome | append-write (steering commands), read (audit) |
+| `workspace/holdings/` | JSON files (per-source) | Cached institutional 13F holdings snapshots | write (background refresher), read (universe overlay, signal brief) |
+| `data/benchmark/` | JSON files | Benchmark baseline equity curves and trade ledgers | write (BenchmarkRunner), read (quality aggregate) |
+| `data/intraday/<SYM>.parquet` | Parquet files | Per-symbol intraday session features (auto-collected) | append-write (F82 collector), read (intraday analysis) |
+| `steering/commands.jsonl` | JSONL file (file-drop) | Operator to daemon steering commands | append-write (operator console), sequential-read (SteeringChannel) |
+| `steering/events.jsonl` | JSONL file (file-drop) | Daemon to operator outcomes/fills/events | append-write (daemon), tail-read (operator console) |
+| `steering/snapshot.json` | JSON file (atomic write) | Live daemon read view (positions, orders, fills) | atomic-write (daemon), read (operator console) |
+| `config/prompts/trading_prompt_v1.txt` | Text file | Base LLM trading prompt | read (PromptManager) |
+| `config/prompts/prompt_history.json` | JSON file | Versioned prompt performance history | read-write (PromptManager, auto-improver) |
 
 ## Message Queues & Events
 
 | Queue/Topic | Type | Producer | Consumer | Purpose |
 |---|---|---|---|---|
-| `decisions.jsonl` | Append-only file (cursor-based) | AgentTradingLoop (brain) | DecisionExecutor (body) | Durable hand-off of trade decisions; idempotent via cursor file |
-| `steering/` file-drop channel | Directory of JSONL files | Operator console (TypeScript) | SteeringRuntime daemon | Human commands: lock symbol, approve/reject order, place order, adjust stop |
-| Alpaca WebSocket stream | WebSocket (`alpaca-py`) | Alpaca servers | RealtimeTradingMode | Real-time bar and trade events (realtime mode only) |
-| APScheduler job queue | In-process (`apscheduler>=3.10`) | TradingScheduler | Trading modes (batch/agent) | Interval ticks + US-market-cron turns (pre-market/intraday/EOD) |
-| In-process CommandBus queue | Python `queue.Queue` | SteeringRuntime, snapshot workers | Single CommandBus worker | Serialised broker operations (NFR-2) |
-
-## Notes
-
-- **KIS specifics**: `python-kis` 2.1.6 (`pykis`) has no `stop` param; 모의투자 (paper) does not support stop-limit (`ORD_DVSN=22`) — live-only. KIS live trading is pending.
-- **BrokerApiBroker (R7)**: `BrokerApiBroker` shares all request-building / fill-polling / position-mapping logic with `AlpacaBroker` via `AlpacaShapedBroker`. R7 fixed the short-cover order side mapping (was incorrectly sending `sell` instead of `buy_to_cover`) and tightened TIF handling to fail-closed (unsupported TIF raises, not silently downgrades).
-- **Auth model**: All external credentials loaded from environment variables / `.env`; no secrets in repo; `AUTOSTOCK_ENV_FILE` allows test harness to load a separate `.env.test`.
-- **Signal sources**: movers/news via Alpaca Data API (primary) + yfinance (fallback); earnings via Finnhub; IPO calendar via Finnhub (F78 — awareness-only, not universe-filtered); retail sentiment via StockTwits (unauthenticated, hourly sweep, baseline z-score, F77); toggleable per `settings.yaml` `signals.sources`, `signals.sentiment`, and `signals.ipo_provider` sections.
-- **F78 IPO awareness (important distinction)**: IPOs are NOT filtered to the trading universe — the whole point is to surface upcoming names NOT yet in the universe. Rows are ranked by estimated value (largest first, None last), then capped at `max_ipos` (default 8). Withdrawn IPOs are always dropped. `in_universe` and `is_held` are tags, not filters.
-- **F87 13F push-vs-pull bias mitigation**: The every-turn push brief (via `render_push_line`) shows ONLY the LONG holdings from 13F filings. The bearish/PUT (short) side is deliberately omitted to prevent anchoring the agent on a single contrarian manager's directional bets for ~90 days; when shorting is off the bot can't act on it anyway. The full picture (both LONG + SHORT, plus NEW/EXIT diff) is available on demand via the `disclosed_holdings` agent pull tool (`python -m src.agent.tools disclosed_holdings` — registered in `src/agent/tools/__main__.py`, implemented in `src/agent/tools/market.py:disclosed_holdings`). The brief text explicitly tells the agent to run this tool if it wants the short side.
-- **F82 intraday backfill provider fallback**: `intraday_collection.provider = alpaca` is the default. If yfinance is selected it degrades gracefully (limited to ~60 days of history) without crashing; the store simply starts from what yfinance provides. The gap-backfill logic in `auto.py` is tolerant of partial or empty results.
-- **F80 Parquet migration**: Legacy `<SYM>.csv` files are migrated to `<SYM>.parquet` on first access (lazy); renamed to `<SYM>.csv.migrated` afterward. Subsequent daemon restarts skip them. The public upsert/read interface (`IntradayFeatureStore`) is unchanged from callers' perspective.
-- **Extended hours / OCO**: OCO orders do not set `extended_hours=True` — Alpaca DAY+LIMIT restriction makes extended-hours OCOs unreliable.
-- **Claude CLI auth**: Agent mode requires the `claude` CLI installed and authenticated on the host (OAuth subscription token at `~/.claude/`). CI uses `CLAUDE_CODE_OAUTH_TOKEN` secret.
+| `steering/commands.jsonl` | File-drop JSONL | Operator console | SteeringChannel (daemon) | Human steering commands with HMAC auth |
+| `steering/events.jsonl` | File-drop JSONL | SteeringChannel (daemon) | Operator console | Outcome events, fills, pending orders, agent status |
+| `workspace/decisions.jsonl` | File-based | AgentTradingLoop | DecisionExecutor | Machine-executable decisions from agent to executor |
+| Alpaca WebSocket | WebSocket | Alpaca (exchange) | RealtimeTradingMode | Real-time trade bar stream for realtime mode |

@@ -2,124 +2,87 @@
 
 ## Deployment Model
 
-- **Platform**: Single-node process (developer machine / server); no cloud-native deployment owned by this project; all cloud dependencies are external SaaS APIs (Alpaca, KIS, Anthropic, Finnhub)
-- **Runtime**: Python 3.11+ CLI/daemon (`autostockd` entry point from `main.py`); TypeScript/Bun for operator console
-- **Orchestration**: In-process APScheduler (`TradingScheduler`) — interval ticks + US-market cron for pre-market/intraday/EOD turns; no external orchestrator (no Kubernetes/ECS/Lambda)
-- **Agent brain**: local `claude` CLI invoked as a subprocess; requires CLI installed and authenticated on the host
+- **Platform**: Local workstation or any Linux server; no cloud-specific infrastructure (no CDK, Terraform, or CloudFormation)
+- **Orchestration**: Manual — systemd --user unit via operator-console launcher, or bare `python main.py`
+- **Runtime**: Python 3.11+ process (`autostockd` entry point or `python main.py`); TypeScript operator console (`autostock` launcher, Bun runtime)
 
 ## Stacks & Resources
 
-### Python Daemon (`autostockd`)
-- **Purpose**: Main trading daemon — backtest / paper / live / agent modes
-- **Key Resources**: Python 3.11+ process, `workspace/` file system for state (JSONL logs + journal), `data/intraday/*.parquet` feature store, `.env` for credentials
-- **Defined In**: `main.py`, `pyproject.toml` (entry point: `autostockd = "main:main"`)
-- **Startup**: `autostockd --mode agent --steering` or `python main.py --mode <mode>`
-
-### Intraday Feature Store (`data/intraday/`)
-- **Purpose**: Persistent Parquet store for per-symbol intraday session feature vectors (F80/F82)
-- **Key Resources**: One `.parquet` file per universe symbol (via pyarrow); gap-backfill on daemon start (daemon thread); EOD append after close; migrates legacy `.csv` files to Parquet on first access
-- **Defined In**: `src/data/intraday/store.py`, `src/data/intraday/auto.py`
-- **Config**: `intraday_collection.enabled`, `backfill_years`, `provider`, `timeframe` in `settings.yaml`
+### Python Daemon (`autostockd` / `main.py`)
+- **Purpose**: Core trading daemon — agent orchestration, execution, data, risk, signals, monitoring
+- **Key Resources**: Local filesystem (workspace/, data/, logs/, steering/), external broker APIs, LLM API
+- **Defined In**: `main.py`, `src/`, `config/`
 
 ### Operator Console (`operator-console/`)
-- **Purpose**: Human-steering TUI for the agent daemon — system-tray app (macOS/Linux)
-- **Key Resources**: Node/Bun process, `~/.local/bin/autostock` CLI symlink, file-drop IPC channel (`steering/` dir in workspace)
-- **Defined In**: `operator-console/launcher/cli.ts`, built with Bun
-- **Startup**: `autostock` CLI (installed by launcher); communicates with daemon via file-drop
+- **Purpose**: TypeScript TUI for human-in-the-loop supervision and steering
+- **Key Resources**: `steering/` directory (shared file-drop with daemon), stdin/stdout TUI
+- **Defined In**: `operator-console/src/`, `operator-console/launcher/`
+- **Install**: `bun operator-console/launcher/install.ts` — creates `~/.local/bin/autostock` + optional systemd --user unit
 
-### Verification Harness (Docker)
-- **Purpose**: CI integration test environment — isolated Python + Node + Claude Code CLI
-- **Key Resources**: Docker image (`Dockerfile.verify`), Docker Compose (`docker-compose.verify.yml`), bind-mounted repo, test `.env.test`
-- **Services**:
-  - `main`: verification runner (host UID, HOME=/tmp, `AUTOSTOCK_ENV_FILE=/app/.env.test`)
-  - `init-perms`: one-shot `chown` of `/tmp/.claude` to host UID (F27 non-root runtime)
-- **Volumes**: repo bind-mount (`.:/app`), `.claude` auth bind-mount (read-only), shared `node_modules_shared`
+### File-Drop Steering Channel (`steering/`)
+- **Purpose**: IPC boundary between operator console and daemon; file-based for crash safety
+- **Key Resources**: `steering/commands.jsonl`, `steering/events.jsonl`, `steering/snapshot.json`, `steering/codebase.json`
+- **Defined In**: `src/agent/steering/channel.py`
 
-### CodeKB CI Refresh (GitHub Actions)
-- **Purpose**: Automated reverse-engineering and CodeKB refresh on every push to `main`
-- **Key Resources**: GitHub Actions runner, `claude -p` CLI (headless subscription token), bot committer (`codekb-ci`)
-- **Defined In**: `.github/workflows/codekb-refresh.yml`
-- **Trigger**: Push to `main` (excludes `aidlc-docs/codekb/**` to prevent refresh loops); `workflow_dispatch`
-- **Cooldown Logic**:
-  - Default: skip if last CodeKB refresh < 4 hours ago (`COOLDOWN_SECONDS=14400`)
-  - Major-change override: if src code changed > 3% of lines, bypass cooldown regardless
-- **Auth**: `CLAUDE_CODE_OAUTH_TOKEN` secret (subscription token); `GITHUB_TOKEN` with content-write permission
-- **Output**: Commits fresh `aidlc-docs/codekb/` artifacts to `main` with message `docs: codekb refresh (<short-sha>)`
+### Runtime State (`workspace/`)
+- **Purpose**: Agent's durable memory — journal, decisions, lessons, equity curve, trades, guidance
+- **Key Resources**: `workspace/decisions.jsonl`, `workspace/lessons.jsonl`, `workspace/journal.md`, `workspace/guidance.md`, `workspace/equity_curve.jsonl`, `workspace/trades.jsonl`, `workspace/holdings/`, `workspace/interventions.jsonl`
+- **Note**: gitignored — never committed to the repo
+
+### Market Data Cache (`data/`)
+- **Purpose**: Persistent market data and feature store
+- **Key Resources**: `data/intraday/<SYM>.parquet` (per-symbol intraday features), `data/benchmark/` (baseline equity curves)
+- **Note**: gitignored
 
 ## Environment Topology
 
 | Environment | Account/Region | Purpose |
 |---|---|---|
-| Development | Local machine, Alpaca paper account | Feature development, manual testing |
-| Test / CI | Docker container, separate Alpaca paper account (`.env.test`) | Automated integration tests; F10 isolates from dev paper account |
-| Paper trading | Alpaca paper API / KIS 모의투자 | Strategy validation before live; no real fills |
-| Live trading | Alpaca live API / KIS 실전 (pending) | Real-money execution (opt-in via config + live keys) |
-| Broker API sandbox | Alpaca Broker API sandbox | Account farm development and multi-account testing |
-| Backtest | Local SimulatedBroker | Offline bar replay; no external API calls |
+| Dev (local) | Alpaca paper account + claude CLI subscription | Development and paper trading |
+| Paper (deployed) | Alpaca paper account, KIS paper account | Paper trading live session |
+| Live (deployed, opt-in) | Alpaca live account, KIS live account | Real-money trading (`broker.paper: false`) |
+| Benchmark sandbox | Alpaca Broker API sandbox accounts (one per baseline) | F70 shadow baseline comparison |
 
 ## CI/CD
 
-- **Pipeline**: GitHub Actions (`inventor71/autostock`)
+- **Pipeline**: GitHub Actions
 - **Config Location**: `.github/workflows/codekb-refresh.yml`
-- **Verify Harness**: `scripts/verify.sh` — Docker Compose integration tests against TEST account
-- **Test Runner**: pytest; `asyncio_mode=auto`; `@pytest.mark.manual` deselected by default (skips real LLM calls)
-- **Worktree Gate**: `.claude/hooks/guard-main-edits.py` (PreToolUse) blocks app-code edits on `main` while any AI-DLC track is active; allowlist: `aidlc-docs/`, `.aidlc-rule-details/`, `*.md`; override: `AUTOSTOCK_ALLOW_MAIN_EDIT=1`
-- **No Auto-Deploy**: Live trading requires manual operator initiation — no automated deployment pipeline
+- **Tests**: pytest suite run via `Dockerfile.verify` + `scripts/verify.sh` / `docker-compose.verify.yml`
+- **Pre-commit**: `.pre-commit-config.yaml` — gitleaks secret scan hook
 
-## File System State Layout
+### GitHub Actions Workflows
+
+#### `codekb-refresh.yml`
+- **Trigger**: Push to `main` (excluding `aidlc-docs/codekb/**` paths) + `workflow_dispatch`
+- **Purpose**: Re-runs full Reverse Engineering and overwrites `aidlc-docs/codekb/`; single writer of CodeKB
+- **Cooldown**: 4h minimum between refreshes; bypassed if >=3% of src lines changed or manual dispatch
+- **Auth**: `CLAUDE_CODE_OAUTH_TOKEN` secret (Claude subscription token)
+- **Bot identity**: `codekb-ci[bot]` — identified by git author + commit message for cooldown detection
+
+## Configuration Precedence
 
 ```
-<workspace>/
-├── decisions.jsonl            # Agent brain → body hand-off (append-only, cursor-indexed)
-├── execution_log.jsonl        # Decision → fill audit ledger
-├── turn_log.jsonl             # Per-turn metadata (cost, duration)
-├── trades_log.jsonl           # Closed round-trip P&L
-├── equity_log.jsonl           # Portfolio equity curve vs benchmark
-├── lessons.jsonl              # EOD self-review lessons (self-learning)
-├── monitor.json               # Live daemon state snapshot
-├── steering/                  # File-drop IPC channel (daemon ↔ console)
-├── surge/                     # EOD surge event store
-├── early_session/             # Pre-market rapid-move events
-├── data/
-│   ├── intraday/              # Per-symbol Parquet feature store (F80/F82)
-│   │   ├── AAPL.parquet       #   one file per symbol (5-min session features)
-│   │   ├── NVDA.parquet
-│   │   └── ...
-│   └── cache/                 # Intraday bar cache (TTL-bounded)
-├── quality/                   # Quality metrics JSONL (F24)
-├── config/
-│   ├── config.py              # Pydantic Settings root
-│   ├── settings.yaml          # Runtime configuration
-│   ├── strategies.yaml        # Strategy registry and parameters
-│   └── universe/              # Cached symbol universe snapshots
-└── .env                       # API keys (gitignored)
+CLI args > environment variables > .env > config/settings.yaml > code defaults
 ```
 
-## Key Configuration Knobs
+- Nested keys via `__` separator in env vars (e.g. `RISK__STOP_LOSS_PCT=0.03`)
+- API keys: environment / `.env` only — never in `settings.yaml`
+- Universe: `config/universe/{us,kr}_base.json` (snapshot fallback) + dynamic theme overlays
+- Prompts: `config/prompts/trading_prompt_v1.txt` + version history in `config/prompts/prompt_history.json`
+- `config/settings.yaml` — main app/broker/data/trading/risk/agent/signals/benchmark configuration
+- `config/strategies.yaml` — active strategies list + per-strategy params
 
-| Setting | Default | Purpose |
-|---|---|---|
-| `app.mode` | `paper` | Trading mode: backtest / paper / live / agent |
-| `broker.name` | `alpaca` | Broker: alpaca / kis |
-| `broker.paper` | `true` | Use paper trading account |
-| `data.provider` | `alpaca` | Data source: alpaca / yfinance / kis |
-| `risk.max_position_pct` | `0.05` | Max 5% of equity per position |
-| `risk.circuit_breaker_pct` | `0.02` | Halt new longs at 2% portfolio loss |
-| `risk.shorting_enabled` | `false` | Master short switch (ships OFF — opt-in) |
-| `risk.short_market_halt_threshold_pct` | `0.03` | Halt shorts if SPY up ≥ 3% |
-| `risk.individual_stock_halt_pct` | `0.10` | Halt shorts on symbols up ≥ 10% |
-| `trading.batch_interval_minutes` | `15` | Strategy evaluation cadence (batch mode) |
-| `agent.turn_timeout` | `600` | LLM turn timeout in seconds |
-| `agent.research_model` | `opus` | Model for research turns |
-| `multi_agent.n_agents` | `3` | Number of sub-agents in research turn |
-| `multi_agent.mode` | `sequential` | Sub-agent parallelism: sequential / parallel |
-| `intraday.atr_k` | `1.5` | ATR multiplier for abnormal-move wake trigger |
-| `intraday_collection.enabled` | `true` | F82 master switch: backfill on start + EOD append |
-| `intraday_collection.backfill_years` | `3` | F82 deep-history depth (Alpaca minute bars) |
-| `intraday_collection.provider` | `alpaca` | F82 backfill source (yfinance degrades to ~60d) |
-| `intraday_collection.timeframe` | `5m` | F82 bar interval for session features |
-| `surge.threshold_pct` | `7.0` | EOD surge detection threshold (7%) |
-| `early_session.threshold_pct` | `5.0` | Early-session rapid-move threshold (5%) |
-| `signals.ipo_horizon_days` | `5` | F78: surface IPOs within this many days |
-| `signals.max_ipos` | `8` | F78: maximum IPOs in research brief |
-| `signals.sources.ipo_provider` | `finnhub` | F78: IPO data source (`finnhub` or `none`) |
+## Key External Dependencies
+
+From `pyproject.toml`:
+- `alpaca-py>=0.21.0` — Alpaca Trading + Broker + Data API SDK
+- `python-kis==2.1.6` — KIS OpenAPI SDK (pinned; import: pykis)
+- `anthropic>=0.18.0` — Claude API SDK
+- `openai>=1.12.0` — OpenAI API SDK
+- `pydantic>=2.5.0` + `pydantic-settings>=2.1.0` — models and settings
+- `apscheduler>=3.10.0` — task scheduling (agent daily turns)
+- `pyarrow>=14.0.0` — Parquet backend for intraday feature store
+- `ta>=0.11.0` — technical analysis indicators
+- `loguru>=0.7.0` — structured logging
+- `hypothesis>=6.0` — property-based testing (dev)
+- `pre-commit>=3.6` — secret scan hook (dev)

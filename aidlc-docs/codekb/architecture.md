@@ -1,193 +1,185 @@
 # System Architecture
 
-## System Overview
-
-Autostock has **two distinct orchestration paths** sharing the same domain core (`src/core/`), risk gate (`src/risk/`), and broker abstraction (`src/execution/`):
-
-1. **Strategy path** (original): `TradingEngine` runs pluggable strategies (technical / ML / LLM / ensemble) per symbol. Used by backtest, paper, and realtime modes.
-2. **Agent path** (newer, most actively developed): an agentic LLM portfolio manager reasons over the whole book each trading day via the local `claude` CLI, writes machine-readable `Decision` lines to a file journal, and a deterministic `DecisionExecutor` places resting bracket orders. Used by `--mode agent`.
-
 ## Architecture Diagram
 
-```text
-                         main.py  (CLI mode dispatch)
-                             |
-       +---------------------+--------------------------+
-       |                     |                          |
-       v                     v                          v
-  backtest mode        paper / realtime modes       agent mode
-       |                     |                          |
-       v                     v                          v
- BacktestEngine        TradingEngine             AgentTradingMode
- (SimulatedBroker)     (per-symbol cycle)        +----------------------------+
-       |                     |                   | AgentTradingLoop           | brain
-       |                     |                   |  -> SignalCollector (F61)  |
-       |                     |                   |  -> AgentSession           | (claude CLI)
-       |                     |                   |  -> Journal (files)        |
-       |                     |                   +---------+------------------+
-       |                     |                             | decisions.jsonl
-       |                     |                             v
-       |                     |                   DecisionExecutor              body
-       |                     |                   (cursor-idempotent)
-       |                     |
-       |                     |   [SteeringRuntime + CommandBus — optional]
-       |                     |
-       +---------+-----------+--------------+--------------+
-                 v                          v
-           RiskManager  <----------->  BaseBroker
-         (signal -> Order)     (Simulated / Alpaca / KIS / BrokerAPI)
-                 ^
-                 |
-           src/core/  (models, enums, exceptions — depended on by all)
+```mermaid
+graph TD
+    CLI["main.py (CLI)"] -->|backtest| BT["BacktestEngine"]
+    CLI -->|paper/live| TE["TradingEngine"]
+    CLI -->|agent| ATM["AgentTradingMode"]
 
-Background (F82):
-  AgentTradingMode ─> IntradayAutoCollector (thread)
-                          ├── gap-backfill on start (per-symbol)
-                          └── EOD append after close
-                               └── IntradayFeatureStore (data/intraday/*.parquet)
+    ATM --> LOOP["AgentTradingLoop\n(orchestrator)"]
+    ATM --> EXEC["DecisionExecutor"]
+
+    LOOP -->|writes| JOURNAL["decisions.jsonl\n(append-only)"]
+    EXEC -->|reads cursor| JOURNAL
+
+    LOOP --> SESSION["AgentSession\n(claude CLI)"]
+    LOOP --> SIGNALS["SignalCollector"]
+    LOOP --> LEARNING["Self-Learning\n(recall/review/rewrite)"]
+
+    EXEC --> RISK["RiskManager\n(single gate)"]
+    TE --> RISK
+    BT --> RISK
+
+    RISK --> BROKER["BaseBroker"]
+    BROKER --> ALPACA["AlpacaBroker"]
+    BROKER --> KIS["KisPaperBroker"]
+    BROKER --> FARM["AccountFarmBroker"]
+    BROKER --> SIM["SimulatedBroker"]
+
+    SIGNALS --> DATA["BaseDataProvider"]
+    DATA --> APD["AlpacaDataProvider"]
+    DATA --> YFP["YFinanceProvider"]
+    DATA --> KISD["KisDataProvider"]
+    DATA --> NEWS["NewsProvider"]
+
+    STEERING["SteeringRuntime\n(operator console)"] -->|file-drop| EXEC
+
+    BENCH["BenchmarkRunner\n(F70 shadow)"] --> RISK
+    BENCH --> DATA
+
+    MONITOR["HealthChecker"] -.->|reads| BROKER
+    MONITOR -.->|reads| JOURNAL
 ```
 
 ## Component Descriptions
 
-### AgentTradingLoop (`src/agent/orchestrator.py`)
-- **Purpose**: Daily PM cycle — research turn → 0-N intraday turns (event-driven) → EOD review
-- **Responsibilities**: Sequences LLM calls, assembles prompts, drives executor, manages journal, handles self-learning recall and constitution/self-rewrite
-- **Dependencies**: AgentSession, DecisionExecutor, SignalCollector, SteeringRuntime (optional), Journal
+### `src/core/`
+- **Purpose**: Domain model layer — Pydantic models, enums, pure helpers
+- **Responsibilities**: Bar, TradeSignal, Order, Position, PortfolioState, FilledOrder, OpenOrder, BacktestResult; Signal/OrderSide/OrderType/OrderClass/TimeFrame enums; FIFO trade matching (trades.py)
+- **Dependencies**: Nothing (no upward imports)
+- **Type**: Shared
+
+### `src/agent/orchestrator.py` — AgentTradingLoop
+- **Purpose**: Sequences the PM agent's daily session turns (morning research, intraday wakes, EOD review)
+- **Responsibilities**: Dispatches multi-agent sub-tasks via ThreadPoolExecutor; universe-pool enforcement; injects signal brief, reflection lessons, and aggressiveness disposition into prompts; caches efficacy outcomes per session day
+- **Dependencies**: AgentSession, Journal, SignalCollector, self-learning modules
 - **Type**: Application
 
-### AgentSession (`src/agent/session.py`)
-- **Purpose**: Wraps `claude -p` CLI in headless mode with a curated tool manifest
-- **Responsibilities**: Spawns subprocess, streams JSON output, enforces turn timeout, exposes market tools (quote, indicators, scoreboard, fundamentals, earnings, ipo_calendar) to LLM
-- **Dependencies**: Claude Code CLI (subscription auth at `~/.claude/`), `src/agent/tools/__main__.py`
+### `src/agent/executor.py` — DecisionExecutor
+- **Purpose**: Deterministic, idempotent translation of journal decisions into broker orders
+- **Responsibilities**: Reads decisions.jsonl with an append-only cursor; deduplicates by turn_id; routes BUY to bracket order, SELL to exit, ADJUST_STOP to replace; all orders pass through RiskManager
+- **Dependencies**: RiskManager, BaseBroker, BaseDataProvider, Journal
 - **Type**: Application
 
-### DecisionExecutor (`src/agent/executor.py`)
-- **Purpose**: Converts LLM journal decisions into real broker orders — the only actuator in agent mode
-- **Responsibilities**: Idempotent cursor-based replay, pool/expiry/circuit-breaker checks, gates through RiskManager (bracket mode), records execution log, atomic cursor writes
-- **Dependencies**: RiskManager, BaseBroker, Journal
+### `src/agent/journal.py` — Journal
+- **Purpose**: Durable file-based memory for the agent across daily sessions
+- **Responsibilities**: Writes/reads decisions.jsonl (machine), theses.md (narrative), lessons.jsonl, equity_curve.jsonl; manages session resumption (same-day vs fresh)
+- **Dependencies**: src/core/models
 - **Type**: Application
 
-### SteeringRuntime (`src/agent/steering/runtime.py`)
-- **Purpose**: Human-in-the-loop daemon engine — optional (`--steering` flag)
-- **Responsibilities**: Polls file-drop channel, dispatches through CommandBus, publishes monitor.json snapshot, coordinates turn sequencing via TurnCoordinator
-- **Dependencies**: CommandBus, SteeringChannel, TurnCoordinator, ReconcileWorker
+### `src/agent/steering/` — SteeringRuntime + SteeringChannel
+- **Purpose**: Human-in-the-loop steering channel between operator console and daemon
+- **Responsibilities**: commands.jsonl (operator to daemon) file-drop with HMAC token validation, dedup, command verb dispatch; events.jsonl (daemon to operator) append-only event feed; snapshot.json atomic live read view; off-hours order queue
+- **Dependencies**: DecisionExecutor, RiskManager, Journal
 - **Type**: Application
 
-### CommandBus (`src/agent/steering/bus.py`)
-- **Purpose**: Single-writer queue for all broker operations (NFR-2)
-- **Responsibilities**: Serialises concurrent command/snapshot requests onto one worker thread; prevents order/fill races between LLM executor and human commands
-- **Dependencies**: BaseBroker, RiskManager
-- **Type**: Shared
-
-### SignalCollector (`src/signals/collector.py`)
-- **Purpose**: Pre-research signal assembly (F61/F77/F78) — movers, peer read-through, earnings, IPO calendar, retail sentiment
-- **Responsibilities**: Scans price movers (price % or volume multiple), propagates to sector peers via static PeerMap (R6/R7), fetches Finnhub earnings calendar (R3) and IPO calendar (F78), aggregates StockTwits retail sentiment z-outliers (F77), builds markdown/structured brief injected into research prompt; TTL-cached to share between push (prompt) and pull (agent tools) paths
-- **Dependencies**: AlpacaProvider, FinnhubEarnings, FinnhubIpo, StockTwitsSource, PeerMap
-- **Type**: Shared
-
-### IntradayFeatureStore (`src/data/intraday/store.py`)
-- **Purpose**: Parquet-backed persistent store for per-symbol intraday session feature vectors (F80/F82)
-- **Responsibilities**: Upsert/read feature rows keyed on `(date, symbol)`; idempotent (same date overwrites); one `.parquet` file per symbol under `data/intraday/`; lazy one-time migration from legacy `.csv` files (renames to `.csv.migrated` after conversion); provides columnar numeric feature set for pattern analysis
-- **Dependencies**: pandas, pyarrow
-- **Type**: Shared
-
-### IntradayAutoCollector (`src/data/intraday/auto.py`)
-- **Purpose**: Automated gap-aware backfill + EOD append for the IntradayFeatureStore (F82)
-- **Responsibilities**: On daemon start — per-symbol gap detection (compares last stored date to today); triggers deep-history backfill (default 3 years) via Alpaca 5-min bars for missing symbols or incremental top-up for stale ones; after each market close — appends current day's intraday session features; runs in a background daemon thread so the agent loop is never blocked
-- **Dependencies**: IntradayFeatureStore, AlpacaDataProvider, collector.collect()
-- **Type**: Shared
-
-### TradingEngine (`src/trading/engine.py`)
-- **Purpose**: Strategy evaluation loop for non-agent modes
-- **Responsibilities**: Iterates universe symbols, calls `strategy.generate_signal()`, gates through RiskManager, submits to broker, polls stop/take-profit exits
-- **Dependencies**: BaseStrategy, RiskManager, BaseBroker, BaseDataProvider
+### `src/agent/learning/`
+- **Purpose**: Bounded self-improvement loop
+- **Responsibilities**: constitution.py — immutable governance rules pinned by CI checksum; self_rewrite.py — guided prompt rewriting within constitution bounds; efficacy.py — decision-level outcome grading; recall.py — situational lesson recall; review.py — EOD self-review
+- **Dependencies**: Journal, AgentSession
 - **Type**: Application
 
-### RiskManager (`src/risk/manager.py`)
-- **Purpose**: Single gate from signal/decision to Order — no LLM involvement
-- **Responsibilities**: Position-size limits, portfolio circuit breaker, short master switch (F60), short-specific halt rules (F54), bracket leg validation (long vs short direction), market-halt halts
-- **Dependencies**: BaseBroker (for portfolio state), RiskConfig
-- **Note**: Dual-mode — `use_bracket_orders` selects legacy market-order+polled-exits vs resting BRACKET/OCO (structural debt S-2)
+### `src/risk/manager.py` — RiskManager
+- **Purpose**: The single, non-bypassable order gate
+- **Responsibilities**: Position sizing (risk-budget driven); bracket order construction (stop + take-profit as OCO legs at exchange); circuit breaker (halt new entries when portfolio drawdown exceeds threshold); short-safety gate (ETB check, mandatory stop, inverted bracket geometry); validate_order() is the single entry point
+- **Dependencies**: PositionSizer, src/core
 - **Type**: Shared
 
-### BaseBroker (`src/execution/base.py`)
-- **Purpose**: Abstract broker interface; implementations swap without changing callers
-- **Implementations**: AlpacaBroker (paper/live), BrokerApiBroker (sandbox farm), KisPaperBroker (Korean equities), SimulatedBroker (backtest)
+### `src/execution/`
+- **Purpose**: Broker abstraction layer
+- **Responsibilities**: BaseBroker ABC; AlpacaBroker (Alpaca Trading API, US live/paper); AccountFarmBroker (Alpaca Broker API, multi-account sandbox); KisPaperBroker (Korea Investment & Securities, paper); SimulatedBroker (in-process simulation); session_timeout.py (KIS token refresh)
+- **Dependencies**: src/core, alpaca-py, python-kis
 - **Type**: Shared
 
-### BacktestEngine (`src/backtest/engine.py`)
-- **Purpose**: Vectorised bar-by-bar simulation against SimulatedBroker
-- **Responsibilities**: Iterates historical bars, applies strategy + risk + SimulatedBroker; collects BacktestResult metrics; optionally drives prompt auto-improvement loop
+### `src/data/`
+- **Purpose**: Market data abstraction layer
+- **Responsibilities**: BaseDataProvider ABC; OHLCV bars, latest prices, news; AlpacaDataProvider, YFinanceProvider, KisDataProvider, NewsProvider; intraday/ — per-symbol Parquet feature store (IntradayFeatureStore) auto-collected on daemon start (F82)
+- **Dependencies**: src/core, alpaca-py, yfinance, pyarrow/pandas
+- **Type**: Shared
+
+### `src/signals/`
+- **Purpose**: Research-turn market intelligence assembly
+- **Responsibilities**: SignalCollector — price movers, peer read-through, earnings calendar, IPO calendar, retail sentiment, disclosed institutional holdings; brief.py — formats signal bundle as prompt text; holdings/ — SEC 13F ingestion, CUSIP-ticker mapping
+- **Dependencies**: src/data, src/core, Finnhub/StockTwits/SEC HTTP
+- **Type**: Shared
+
+### `src/strategy/`
+- **Purpose**: Deterministic signal generation for non-agent path
+- **Responsibilities**: BaseStrategy ABC; technical (MA crossover, RSI, MACD, Bollinger); ensemble (voting, weighted); LLM strategy (wraps Claude/GPT session); ML feature engineering; strategy registry
+- **Dependencies**: src/core, src/data
+- **Type**: Shared
+
+### `src/backtest/`
+- **Purpose**: Offline strategy evaluation
+- **Responsibilities**: Vectorised backtest engine (look-ahead-safe); performance metrics (Sharpe, max drawdown, win rate, profit factor); parameter optimizer
+- **Dependencies**: src/core, src/risk, src/strategy
 - **Type**: Application
 
-### BrokerApiBroker (`src/execution/brokers/account_farm_broker.py`)
-- **Purpose**: Broker implementation using the Alpaca Broker API (sandbox farm)
-- **Responsibilities**: Shares all request-building / fill-polling / position-mapping logic with `AlpacaBroker` via `AlpacaShapedBroker`; supplies only the Broker-API client hooks and account-ID routing
-- **R7 fix**: Short-cover side mapping corrected (`sell` → `buy_to_cover`); TIF handling is now fail-closed (unsupported TIF raises, not silently downgrades)
+### `src/benchmark/` — BenchmarkRunner (F70)
+- **Purpose**: Shadow deterministic baselines alongside the live agent
+- **Responsibilities**: Runs buy-and-hold / MA / RSI / MACD / Bollinger on dedicated sandbox accounts; records equity alongside LLM account for comparison
+- **Dependencies**: src/risk, src/data, src/strategy, AccountFarmBroker
+- **Type**: Application
+
+### `src/monitoring/`
+- **Purpose**: Operational health and alerting
+- **Responsibilities**: HealthChecker — parallel dimension checkers (account, broker, LLM, config/env, data pipeline, logs, process, resources, risk); alerts.py — Slack/Telegram webhook publisher
+- **Dependencies**: src/core, src/risk, src/execution
 - **Type**: Shared
 
-## Data Flow (Agent Turn — Simplified)
+### `operator-console/`
+- **Purpose**: Human-steering TUI for the running agent
+- **Responsibilities**: Attaches to daemon via file-drop steering channel; displays live session timeline, multi-agent research synthesis, supervisor sidebar (positions, orders, fills, events); sends steering commands (buy/sell/halt/pause/directive)
+- **Dependencies**: TypeScript (Bun), opencode fork, MCP SDK
+- **Type**: Frontend
+
+## Data Flow
 
 ```mermaid
 sequenceDiagram
-    participant ORC as AgentTradingLoop
-    participant SIG as SignalCollector
-    participant SESS as AgentSession
-    participant CLAUDE as Claude CLI
-    participant JNL as Journal
+    participant ATM as AgentTradingMode
+    participant LOOP as AgentTradingLoop
+    participant SESSION as AgentSession (claude)
     participant EXEC as DecisionExecutor
-    participant RM as RiskManager
-    participant BRK as Broker
+    participant RISK as RiskManager
+    participant BROKER as Broker
 
-    ORC->>SIG: collect_signals()
-    SIG-->>ORC: SignalBrief (movers/earnings/IPOs/peers/sentiment)
-    ORC->>SESS: run_research_turn(brief + portfolio + universe)
-    SESS->>CLAUDE: claude -p (headless, tools enabled)
-    CLAUDE-->>SESS: decisions JSON
-    SESS-->>ORC: turn output
-    ORC->>JNL: write_decisions()
-    ORC->>EXEC: execute_journal(date)
-    EXEC->>RM: validate_order(order)
-    RM-->>EXEC: approved / rejected
-    EXEC->>BRK: submit_order(order)
-    BRK-->>EXEC: FilledOrder
-    EXEC->>JNL: record_execution_log() + advance_cursor()
+    ATM->>LOOP: morning_research_turn()
+    LOOP->>SESSION: run(research prompt + signals)
+    SESSION-->>LOOP: AgentTurnResult (decisions[])
+    LOOP->>LOOP: filter_in_universe()
+    LOOP->>JOURNAL: append decisions.jsonl
+    LOOP-->>ATM: last_new_decisions
+
+    ATM->>EXEC: execute_pending()
+    EXEC->>JOURNAL: read cursor
+    EXEC->>RISK: validate_order(order)
+    RISK-->>EXEC: approved + bracket levels
+    EXEC->>BROKER: place_order(bracket order)
+    BROKER-->>EXEC: FilledOrder
+    EXEC->>JOURNAL: mark executed
 ```
 
 ## Design Patterns
 
-### Strategy Registry
-- **Location**: `src/strategy/registry.py`
-- **Purpose**: `@register_strategy` decorator auto-registers strategy classes; `create_strategy()` factory resolves by name from `strategies.yaml`
+### Brain / Body Split
+- **Location**: `src/agent/orchestrator.py` (brain) + `src/agent/executor.py` (body)
+- **Purpose**: LLM can propose decisions but can never directly call the broker; deterministic Python is the sole actuator
 
-### Port/Adapter (Broker + Data)
-- **Location**: `src/execution/base.py`, `src/data/base.py`
-- **Purpose**: Swap broker (Alpaca/KIS/Simulated) or data provider (Alpaca/yfinance/KIS) without changing callers
+### Single Order Gate
+- **Location**: `src/risk/manager.py:RiskManager.validate_order()`
+- **Purpose**: All orders from every path (LLM, strategy engine, human steering) funnel through one validate method; nothing bypasses it
 
-### Brain/Body Split (Agent)
-- **Location**: `src/agent/orchestrator.py` (brain), `src/agent/executor.py` (body)
-- **Purpose**: LLM reasons and journals; deterministic executor is the sole actuator; crash safety via cursor file
+### Append-Only Journal + Idempotent Cursor
+- **Location**: `src/agent/journal.py`, `src/agent/executor.py`
+- **Purpose**: decisions.jsonl grows only forward; executor tracks a byte cursor so crash + restart never double-submits
 
-### Idempotent Cursor Replay
-- **Location**: `src/agent/executor.py`
-- **Purpose**: Atomic `os.replace()` cursor write; restart replays only decisions after cursor index; torn-file impossible with single-writer CommandBus
+### File-Drop Steering Channel
+- **Location**: `src/agent/steering/channel.py`
+- **Purpose**: Operator console and daemon share no in-process state; commands arrive via commands.jsonl, outcomes via events.jsonl, live view via snapshot.json (atomic write)
 
-### Single-Writer CommandBus
-- **Location**: `src/agent/steering/bus.py`
-- **Purpose**: All broker mutations serialised on one worker thread (NFR-2); prevents concurrent order/fill corruption
-
-### Gap-Aware Background Collection (F82)
-- **Location**: `src/data/intraday/auto.py`
-- **Purpose**: Daemon-thread gap-backfill + EOD append keeps the intraday feature store current without blocking the main agent loop; provider = Alpaca by default (yfinance degrades to ~60d, no crash)
-
-## Layer Dependency Rule
-
-```
-trading / backtest / agent  →  strategy / risk / execution / data / signals  →  core
-core depends on nothing
-```
-
-## Known Structural Debt
-
-- **S-2**: `RiskManager` is dual-mode toggled by `use_bracket_orders` — legacy market-order + polled exits vs resting BRACKET/OCO; the two modes diverge in behavior.
-- **S-3**: Some `src/` modules reach into the config singleton directly (layer violation vs injection through `main.py`).
+### Resting Bracket Orders (Exchange-held protective legs)
+- **Location**: `src/risk/manager.py`, `src/core/models.py:Order`
+- **Purpose**: Stop-loss + take-profit submitted as an OCO pair directly to the exchange; no polling loop needed; gap-safe
