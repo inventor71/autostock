@@ -4,63 +4,54 @@
 
 | Pattern | Implementation | Location |
 |---|---|---|
-| Idempotent execution cursor | decisions.jsonl byte cursor; re-read from top on restart; dedup by turn_id | `src/agent/executor.py` |
-| Exchange-held bracket orders | Stop+take-profit submitted as OCO pair at exchange; not a polling loop | `src/risk/manager.py`, `src/core/models.py:Order` |
-| Fail-honest signal wiring | Signal wiring wrapped in try/except; any failure returns None (agent runs without signals) | `main.py:_make_signal_brief_provider()` |
-| Fail-honest benchmark runner | Benchmark wrapped in try/except; agent loop never blocked by benchmark failure | `main.py:_maybe_start_benchmark()` |
-| Atomic snapshot write | snapshot.json written via temp file + atomic rename; console never reads a torn snapshot | `src/agent/steering/jsonl.py:atomic_write_text()` |
-| Session-day cache atomic swap | _efficacy_cached: tuple[date, list] single-attr assignment; cross-thread read is never torn | `src/agent/orchestrator.py` |
-| Constitution compliance rollback | Self-rewrite compliance check; non-compliant guidance discarded, old version preserved | `src/agent/learning/constitution.py`, `src/agent/learning/self_rewrite.py` |
-| Turn-level timeout | Per-turn turn_timeout (600s) and research_timeout (1800s) prevent hung agent turns | `config/settings.yaml`, `src/agent/session.py` |
-| Off-hours order queue | Human commands during market-closed periods queued and drained at open | `src/agent/steering/state.py`, `src/agent/steering/commands.py` |
-| Daily command file archive | Steering channel archives commands.jsonl at ET-midnight; prevents unbounded growth | `src/agent/steering/channel.py:daily_reset()` |
-| KIS session token refresh | KIS broker auto-refreshes OAuth token before expiry | `src/execution/brokers/session_timeout.py` |
+| Torn-read-safe append | `read_complete_lines` consumes only newline-terminated lines and persists a byte cursor (`ByteCursor`); a truncated/rotated file resets the cursor rather than erroring | `src/core/jsonl.py` |
+| Atomic in-place rewrite | Write to a unique temp file (pid+uuid) in the same directory, then `os.replace` — readers never observe a torn write | `src/core/jsonl.py` (`atomic_write_text`), used for `.executor_state.json`, position theses (post-F76), `steering/snapshot.json`, trigger specs |
+| Stat-stable read (non-atomic writer) | Console reads a file between two `stat()` snapshots and retries (max 5) if size/mtime changed mid-read, to tolerate the agent's non-atomic `claude` CLI Write tool | `operator-console/src/filedrop.ts` (`readThesis`, F76) |
+| Idempotent decision execution | Byte cursor + terminal-index set in `.executor_state.json`; terminal indices are never reprocessed even across a crash/restart | `src/agent/executor.py` |
+| Idempotent fills | Wake detection keys on the broker's fill/activity id — one wake per `fill_id` | `src/agent/intraday/records.py` (`FillEvent`) |
+| Idempotent steering commands | Day-scoped persisted processed-id set dedupes replayed/duplicated commands | `src/agent/steering/channel.py` |
+| Event coalescing with bounded loss | Intraday wake events are buffered and fired as one turn; if the turn times out, buffered events are dropped (safety over data loss) rather than retried indefinitely | `src/agent/intraday/wake.py` |
+| Off-hours command queuing | Human trade commands issued while the market is closed are parked in `pending_human_trades.jsonl` and drained at the next open | `src/agent/trading/modes/agent.py` / steering runtime |
+| HTTP timeout bounds (F14) | Explicit connect/read timeouts installed on both Alpaca clients (TradingClient, StockHistoricalDataClient) and the KIS REST client, so a stalled socket can never wedge the daemon's scheduler thread | `src/execution/brokers/alpaca_broker.py`, `src/execution/brokers/kis/rest.py` |
+| Rate limiting / throttling | KIS REST client serializes requests to a configurable per-second cap; StockTwits sweep enforces an hourly request budget and aborts the tick on a `RateLimited` exception | `src/execution/brokers/kis/rest.py`, `src/signals/sources/stocktwits.py` |
+| Bounded-concurrency price fetch | Latest-price fetch across a universe uses a fixed 8-worker thread pool; one symbol's failure yields `{symbol: None}` without affecting the rest | `src/data/prices.py` |
+| Cache-only scheduler reads | The 5s `WakeDetector` tick reads only cached bars/prices, never a synchronous broker fetch, so a slow broker call can never delay the daemon's core loop | `src/agent/intraday/wake.py`, `bars.py` |
+| Health-check isolation | Each dimension checker (broker/risk/account/...) runs independently in a thread pool via `CheckerDispatcher`; one checker's exception degrades only its own dimension, never the whole report | `src/monitoring/health/checker.py` |
+| Benchmark baseline isolation | Each shadow-baseline strategy runs its own `TradingEngine`; one baseline's exception is caught per-tick and never breaks the others or the live agent loop | `src/benchmark/runner.py` |
+| Daemon health/wedge detection | The console launcher watches `snapshot.json`'s `published_at` for staleness (45s window); if wedged, it waits with patience for slow LLM turns, then auto-restarts the daemon once | `operator-console/launcher/daemon.ts` |
 
 ## Scalability
 
 | Pattern | Implementation | Location |
 |---|---|---|
-| Multi-agent parallel research | ThreadPoolExecutor spawns N sub-agent tasks concurrently (Mode C) or sequentially (Mode B) | `src/agent/orchestrator.py` |
-| Intraday feature Parquet store | Per-symbol session features stored as Parquet (columnar, efficient append/range-scan) | `src/data/intraday/store.py`, `data/intraday/<SYM>.parquet` |
-| Signal scan timeout cap | Aggregate price scan capped at scan_timeout_seconds (30s) so signals never delay a turn | `src/signals/settings.py`, `src/signals/collector.py` |
-| Signal price cache | cache_ttl_seconds=300 on signal scans; price.cache_seconds=3 on intraday price lookups | `src/signals/collector.py`, `src/agent/intraday/bars.py` |
-| Background benchmark runner | BenchmarkRunner runs in its own thread; never in the agent critical path | `src/benchmark/runner.py` |
-| Background 13F holdings refresher | Holdings refreshed in daemon background thread every refresh_hours; research/universe path reads cache | `src/signals/holdings/refresher.py` |
-| Intraday backfill in background thread | Gap-backfill of Parquet features runs on daemon start without blocking the loop | `src/data/intraday/auto.py` |
+| Backtest fast-path precompute | Strategies that support `supports_precompute()` and don't need dynamic per-bar selection get O(1) indicator lookups instead of an O(n²) per-bar recompute/copy | `src/backtest/engine.py` |
+| Parallel parameter search | Grid-search parameter optimization runs each parameter combination in a separate process via `ProcessPoolExecutor`, isolating strategy state per worker | `src/backtest/optimizer.py` |
+| Multi-instance production isolation | `COMPOSE_PROJECT_NAME=autostock-<name>` namespaces containers/volumes/networks so N daemon instances run concurrently on distinct accounts/workspaces without collision; shared verify image and `node_modules` volumes avoid per-instance rebuild/reinstall cost | `docker-compose.prod.yml`, `scripts/prod-run.sh` |
+| Signal brief caching | Research-turn brief is TTL-cached by `(today, horizon_days, ipo_horizon_days, held_set)`; sentiment outliers additionally cached 300s; news cached 15 min per symbol | `src/signals/collector.py`, `src/signals/sentiment.py`, `src/data/providers/news_provider.py` |
+| Universe snapshot caching | The tradeable-symbol universe is cached with a 1-day TTL and an atomic on-disk snapshot, avoiding a Wikipedia/KIS re-fetch on every process restart | `src/universe/base.py` |
+| Health-check parallelism | `CheckerDispatcher` runs all dimension checks concurrently (default 6 workers) rather than sequentially | `src/monitoring/health/checker.py` |
 
 ## Security
 
 | Pattern | Implementation | Location |
 |---|---|---|
-| HMAC token auth for steering channel | Every command carries a constant-time HMAC MAC (hmac.compare_digest). Token never written to logs/events. | `src/agent/steering/channel.py`, `src/agent/steering/security.py` |
-| API keys env-only | All secrets loaded from environment / .env; not in settings.yaml or config/ | `config/config.py`, `config/settings.yaml` |
-| Pre-commit gitleaks secret scan | .pre-commit-config.yaml runs gitleaks hook before every commit | `.pre-commit-config.yaml` |
-| Shorting master switch off by default | risk.shorting_enabled: false; short entries fail-closed without explicit opt-in | `src/risk/manager.py`, `config/settings.yaml` |
-| Universe constraint + ETB gate | Agent decisions outside approved universe filtered before execution; ETB checked on shorts | `src/agent/orchestrator.py:filter_in_universe()`, `src/execution/base.py:is_shortable()` |
-| Constitution SHA pin in CI | tests/test_constitution_pin.py pins AGENT_CONSTITUTION SHA-256; any edit fails CI | `tests/test_constitution_pin.py`, `src/agent/learning/constitution.py` |
-| SEC fair-access User-Agent | EDGAR requests identify the application with a real contact email per SEC fair-access policy | `config/settings.yaml:signals.disclosed_holdings.user_agent` |
+| Layered defense-in-depth (console) | (1) side-effect tools compile-time-removed under lockdown, (2) default-deny permission profile, (3) opencode's core MCP auto-gating (`ask` before every mutating tool), (4) HMAC token validation on every steering command, (5) WebAuthn passkey gate for remote mutating commands | `operator-console/cli/packages/opencode/src/tool/registry.ts`, `cli/opencode.json`, `session/tools.ts`, `src/agent/steering/`, `server/autostock/webauthn.ts` |
+| Constant-time token validation | The shared steering operator token is compared in constant time to avoid timing side-channels | `src/agent/steering/channel.py` |
+| Secrets never logged | Steering token, KIS appkey/appsecret, and account ids are excluded from all logs/events; `SteeringCommand.redacted()` strips the token before serialization; benchmark equity snapshots mask account ids (`account_masked`) | `src/agent/steering/records.py`, `src/benchmark/models.py` |
+| Remote-vs-local trust boundary | The console classifies a request as in-process / host-local-loopback / remote; only remote mutating requests require a WebAuthn passkey assertion — host access is the trust boundary | `operator-console/cli/packages/opencode/src/server/autostock/webauthn.ts` |
+| Symbol/input validation | StockTwits symbol input validated against a strict regex before URL construction; structured order args validated with zod (console) then Pydantic `extra="forbid"` (daemon) | `src/signals/sources/stocktwits.py`, `operator-console/src/mcp-server.ts` |
+| Secret scanning in CI/pre-commit | gitleaks runs as a pre-commit hook with an explicit allowlist for `.env.example` templates and test fixtures | `.pre-commit-config.yaml`, `.gitleaks.toml` |
+| Fail-closed provider routing | An unrecognized `broker.provider`/`data.provider` raises loudly rather than silently falling back to a default (the class of bug F92/F94 fixed) | `src/execution/brokers/factory.py` |
+| Non-root container runtime (F27) | Production/verify containers run as the host's `${DOCKER_UID}:${DOCKER_GID}`, so bind-mount writes are host-owned from the start (no root-owned artifacts, no `sudo` needed for worktree cleanup) | `docker-compose.prod.yml`, `docker-compose.verify.yml`, `scripts/verify-run.sh` |
+| Prod-safety preflight (F10) | The verify harness refuses to run unless `AUTOSTOCK_ENV_FILE` is set and exists, and refuses if a real `/app/.env` differs from `.env.test` — preventing an accidental prod-account test run | `scripts/verify.sh` |
+| Agent lockdown (F26) | `AUTOSTOCK_LOCKDOWN=on` removes all write/exec-capable tools from the agent's toolset entirely (not just permission-gated) in production and verify-attach; an optional `AUTOSTOCK_SUPERVISOR=on` widens read-only access to the whole repo (excluding secrets/logs/.git) for human debugging sessions | `docker-compose.prod.yml`, `operator-console/launcher/config.ts` |
 
 ## Observability
 
 | Pattern | Implementation | Location |
 |---|---|---|
-| Structured loguru logging | loguru with file rotation (logs/autostock.log); INFO default, DEBUG available | `src/monitoring/logger.py:setup_logging()` |
-| Health dimension report | Parallel checks across 9 dimensions (account, broker, LLM, config/env, data pipeline, logs, process, resources, risk) | `src/monitoring/health/checker.py`, `src/monitoring/health/dimensions/` |
-| Operational alerts | Slack webhook + Telegram bot alert publisher; disabled by default | `src/monitoring/alerts.py` |
-| Turn log (JSONL per turn) | Each agent turn emitted as a structured JSONL record with turn_id, turn_type, decisions list | `src/agent/logs/turn.py` |
-| Quality metrics snapshot | Decision-level grading, aggregate P&L, win rate, Sharpe; exposed via /quality tool | `src/agent/quality/` |
-| Benchmark equity tracking | Parallel LLM + deterministic baseline equity curves for head-to-head comparison | `src/benchmark/store.py`, `data/benchmark/` |
-| Steering event feed | All daemon outcomes (fills, rejections, agent status) emitted to steering/events.jsonl | `src/agent/steering/channel.py` |
-| Intervention record | Every human steering command and its outcome logged to workspace/interventions.jsonl | `src/agent/steering/records.py:InterventionRecord` |
-| Agent trace script | scripts/agent_trace.py replays the turn log for post-session forensics | `scripts/agent_trace.py` |
-
-## Testability
-
-| Pattern | Implementation | Location |
-|---|---|---|
-| SimulatedBroker | Full in-process broker filling all orders at market price, tracking positions/fills | `src/execution/brokers/simulated_broker.py` |
-| Hypothesis property-based testing | Signals module uses hypothesis for generative scenario testing | `tests/signals/test_properties.py`, `tests/signals/test_scenarios.py` |
-| Eval harness | promptfoo-based + custom grading for LLM decision quality evaluation | `src/evals/`, `evals/` |
-| Manual test marker | @pytest.mark.manual deselected by default — only opt-in tests call the real LLM | `pyproject.toml:pytest.ini_options.addopts` |
-| Refactor baseline JSON | Speed regression baseline captured in tests/refactor/golden/baseline.json | `tests/refactor/test_speed_baseline.py` |
-| Docker verification | Dockerfile.verify + docker-compose.verify.yml run the full test suite in a clean container | `Dockerfile.verify`, `docker-compose.verify.yml`, `scripts/verify.sh` |
+| Structured health reporting | `HealthReport` aggregates per-dimension `CheckResult`s with severity ordering (OK < SKIPPED < WARNING < ERROR < CRITICAL) and maps to a shell exit code for CI/cron use | `src/monitoring/health/report.py` |
+| Live account/portfolio snapshot | The daemon publishes an atomic `steering/snapshot.json` on every cycle (account, positions, orders, pending approvals, health, agent activity) consumed by the console sidebar and the mobile dashboard | `src/agent/steering/` publisher, `operator-console/cli/.../autostock/dashboard-read.ts` |
+| Turn/decision audit trail | Every agent turn is logged under `workspace/turns/<TURN_ID>/` (research prompt, intraday brief, etc.) alongside `turns.jsonl` metadata, enabling `/agent-trace` and `/why` console introspection | `src/agent/logs/turn.py`, console `steer_read` tools |
+| Shadow-benchmark comparison | Continuous LLM-vs-deterministic-baseline equity comparison (F70) gives a standing signal on whether the LLM PM is adding value over simple strategies | `src/benchmark/` |
+| Degraded-source visibility | Signal collection surfaces exactly which research sources failed (`degraded_sources`) directly in the LLM's prompt context, rather than silently omitting sections | `src/signals/collector.py`, `brief.py` |
