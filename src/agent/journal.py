@@ -78,6 +78,12 @@ class Decision(BaseModel):
     limit: float | None = None  # suggested entry (None = market)
     stop: float | None = None  # suggested stop-loss level
     target: float | None = None  # suggested take-profit level
+    # F96: the price at the moment this decision was made, stamped post-hoc by the
+    # orchestrator (the LLM can't reliably self-report it). Only stamped for market
+    # entries (BUY/SELL_SHORT with limit=None) — the ONE case with no other anchor —
+    # and consumed only by the executor's drift guard (RiskManager). None on legacy
+    # lines and whenever the price fetch fails (guard then simply does not apply).
+    ref_price: float | None = None
     thesis_ref: str | None = None  # e.g. "positions/AAPL.md"
     valid_until: datetime | None = None
     reason: str = ""

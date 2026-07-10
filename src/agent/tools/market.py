@@ -222,25 +222,64 @@ def short_data(symbol: str, ticker_factory: Callable[[str], Any] | None = None) 
     }
 
 
-def news(symbol: str, news_provider=None, limit: int = 8) -> dict:
-    """Recent news headlines for a symbol, with links."""
+# F96: a catalyst older than this many hours is likely already priced in — the
+# agent must weigh that before chasing an entry on it (see prompts.py guidance).
+_PRICED_IN_HOURS = 24.0
+
+
+def _now_like(dt: datetime) -> datetime:
+    """Now in the same naive/aware-ness as ``dt`` (so subtraction never raises)."""
+    return datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+
+
+def _news_age_hours(published_at: datetime | None, now: datetime | None) -> float | None:
+    """Hours since ``published_at``, tz-safe. None when the date is missing or the
+    two timestamps can't be compared. ``now`` is injectable for deterministic tests
+    (default: current time matched to ``published_at``'s awareness)."""
+    if published_at is None:
+        return None
+    ref = now if now is not None else _now_like(published_at)
+    pa = published_at
+    # Align awareness — a naive/aware mismatch would raise on subtraction.
+    if (pa.tzinfo is None) != (ref.tzinfo is None):
+        pa, ref = pa.replace(tzinfo=None), ref.replace(tzinfo=None)
+    return round((ref - pa).total_seconds() / 3600.0, 2)
+
+
+def _priced_in_risk(age_hours: float | None) -> str | None:
+    """Coarse freshness flag: 'elevated' once a catalyst is older than the
+    threshold, else 'fresh'. None when the age is unknown (fail-honest)."""
+    if age_hours is None:
+        return None
+    return "elevated" if age_hours > _PRICED_IN_HOURS else "fresh"
+
+
+def news(symbol: str, news_provider=None, limit: int = 8, _now: datetime | None = None) -> dict:
+    """Recent news headlines for a symbol, with links.
+
+    F96: each item also carries ``age_hours`` (how old the headline is) and a
+    coarse ``priced_in_risk`` flag ('fresh' / 'elevated' / None) so the agent can't
+    mistake a day-old catalyst for a fresh one and chase an already-priced-in move.
+    ``_now`` is injectable for deterministic tests.
+    """
     if news_provider is None:
         from src.data.providers.news_provider import YFinanceNewsProvider
         news_provider = YFinanceNewsProvider()
     items = news_provider.get_news(symbol, limit=limit)
-    return {
-        "symbol": symbol.upper(),
-        "news": [
-            {
-                "title": it.title,
-                "publisher": it.publisher,
-                "published_at": it.published_at.isoformat() if it.published_at else None,
-                "link": it.link,
-                "sentiment": it.sentiment_score,
-            }
-            for it in items
-        ],
-    }
+
+    def _item(it) -> dict:
+        age_hours = _news_age_hours(it.published_at, _now)
+        return {
+            "title": it.title,
+            "publisher": it.publisher,
+            "published_at": it.published_at.isoformat() if it.published_at else None,
+            "age_hours": age_hours,
+            "priced_in_risk": _priced_in_risk(age_hours),
+            "link": it.link,
+            "sentiment": it.sentiment_score,
+        }
+
+    return {"symbol": symbol.upper(), "news": [_item(it) for it in items]}
 
 
 def _side_str(value: Any) -> str:

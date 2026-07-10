@@ -65,6 +65,12 @@ class RiskManager:
         atr_stop_multiple: float = 3.0,
         market_halt_threshold_pct: float = -0.03,
         default_risk_reward: float = 2.5,
+        # F96: entry drift guard. A momentum entry (LLM entry >= current price) is a
+        # MARKET order; if the price has run ADVERSELY past the entry anchor by more
+        # than this many ATR by the time execution happens (research→execution lag),
+        # rest a LIMIT capped at anchor±(this*ATR) instead — so the worst-case fill is
+        # bounded and a name that ran away simply does not fill. 0 disables the guard.
+        entry_drift_guard_atr: float = 0.5,
         use_bracket_orders: bool = False,
         # F60: master short on/off. The constructor default is True so the short
         # *capability* is exercised directly (tests/scripts); the DEPLOYED default
@@ -88,6 +94,7 @@ class RiskManager:
         self.atr_stop_multiple = atr_stop_multiple
         self.market_halt_threshold_pct = market_halt_threshold_pct
         self.default_risk_reward = default_risk_reward
+        self.entry_drift_guard_atr = entry_drift_guard_atr  # F96 execution drift guard
         self.use_bracket_orders = use_bracket_orders
         self.shorting_enabled = shorting_enabled  # F60 master short on/off
         # F54 short config (override-or-fallback resolved via the properties below).
@@ -275,26 +282,55 @@ class RiskManager:
         else:
             resolved_target = entry_ref + self.default_risk_reward * (entry_ref - resolved_stop)
 
-        # A target entry below the current price rests as a LIMIT (buy the dip);
-        # otherwise enter at market now.
-        use_limit = entry is not None and entry < price
+        # Entry order type:
+        #  - entry below current price  -> LIMIT at entry (buy the dip; unchanged).
+        #  - F96 drift guard: the price has run ADVERSELY above the decision anchor
+        #    (the LLM's entry, or — for a market entry with no entry level — the
+        #    price stamped when the decision was made, ``ref_price``) by > one guard
+        #    band -> LIMIT capped at anchor+band, bounding the fill. A name that ran
+        #    away won't fill until it pulls back into the band. This is what covers
+        #    the momentum market-buy that fills far above where the agent decided.
+        #  - otherwise -> MARKET (unchanged).
+        ref_price = _pos_float(signal.metadata.get("ref_price"))
+        anchor = entry if entry is not None else ref_price
+        slip = self._drift_guard_band(atr)
+        guarded = False
+        if entry is not None and entry < price:
+            use_limit, limit_px = True, entry
+        elif slip is not None and anchor is not None and price > anchor + slip:
+            use_limit, limit_px, guarded = True, anchor + slip, True
+        else:
+            use_limit, limit_px = False, None
 
         logger.info(
             f"Risk approved: BRACKET BUY {shares} {signal.symbol} "
             f"entry~{entry_ref:.2f} stop={resolved_stop:.2f} target={resolved_target:.2f} "
             f"(confidence={signal.confidence:.2f})"
+            + (f" guard=drift-capped(limit={limit_px:.2f})" if guarded else "")
         )
         return Order(
             symbol=signal.symbol,
             side=OrderSide.BUY,
             qty=float(shares),
             order_type=OrderType.LIMIT if use_limit else OrderType.MARKET,
-            limit_price=round(entry_ref, 2) if use_limit else None,
+            limit_price=round(limit_px, 2) if use_limit else None,
             order_class=OrderClass.BRACKET,
             take_profit_price=round(resolved_target, 2),
             stop_loss_price=round(resolved_stop, 2),
             time_in_force="gtc",
         )
+
+    def _drift_guard_band(self, atr: float | None) -> float | None:
+        """F96: the entry-drift guard band in $/share, or None when the guard is
+        inapplicable (no ATR, or disabled via ``entry_drift_guard_atr <= 0``).
+
+        The band doubles as the trigger AND the fill cap: an entry only downgrades
+        to a capped LIMIT once the current price is more than one band ADVERSE of
+        the anchor, and the LIMIT then sits exactly one band away — so the worst
+        acceptable fill is ``anchor ± band``."""
+        if atr is None or self.entry_drift_guard_atr <= 0:
+            return None
+        return self.entry_drift_guard_atr * atr
 
     def _resolve_stop(
         self, entry: float, stop: float | None, atr: float | None
@@ -502,21 +538,35 @@ class RiskManager:
         if resolved_target <= 0:
             resolved_target = round(entry_ref * 0.01, 2) or 0.01
 
-        # A target entry ABOVE the current price rests as a LIMIT (sell the rip);
-        # otherwise enter at market now.
-        use_limit = entry is not None and entry > price
+        # Entry order type (inverted geometry vs a long):
+        #  - entry above current price -> LIMIT at entry (sell the rip; unchanged).
+        #  - F96 drift guard: the price has run ADVERSELY below the decision anchor
+        #    (the LLM's entry, or ``ref_price`` for a market short) by > one guard
+        #    band -> LIMIT capped at anchor-band, bounding the fill.
+        #  - otherwise -> MARKET (unchanged).
+        ref_price = _pos_float(signal.metadata.get("ref_price"))
+        anchor = entry if entry is not None else ref_price
+        slip = self._drift_guard_band(atr)
+        guarded = False
+        if entry is not None and entry > price:
+            use_limit, limit_px = True, entry
+        elif slip is not None and anchor is not None and price < anchor - slip:
+            use_limit, limit_px, guarded = True, anchor - slip, True
+        else:
+            use_limit, limit_px = False, None
 
         logger.info(
             f"Risk approved: BRACKET SELL_SHORT {shares} {signal.symbol} "
             f"entry~{entry_ref:.2f} stop={resolved_stop:.2f} target={resolved_target:.2f} "
             f"(confidence={signal.confidence:.2f})"
+            + (f" guard=drift-capped(limit={limit_px:.2f})" if guarded else "")
         )
         return Order(
             symbol=signal.symbol,
             side=OrderSide.SELL_SHORT,
             qty=float(shares),
             order_type=OrderType.LIMIT if use_limit else OrderType.MARKET,
-            limit_price=round(entry_ref, 2) if use_limit else None,
+            limit_price=round(limit_px, 2) if use_limit else None,
             order_class=OrderClass.BRACKET,
             take_profit_price=round(resolved_target, 2),
             stop_loss_price=round(resolved_stop, 2),

@@ -58,6 +58,10 @@ class RiskConfig(BaseModel):
     atr_stop_multiple: float = 3.0  # default stop = N x ATR when no explicit level
     market_halt_threshold_pct: float = -0.03  # halt new buys if SPY day-change <= this
     default_risk_reward: float = 2.5  # derived take-profit R:R when none given
+    # F96: entry drift guard. A momentum entry (LLM entry >= price) that has run
+    # adversely past the anchor by more than this many ATR at execution time is
+    # downgraded from MARKET to a LIMIT capped at anchor±(N*ATR). 0 disables it.
+    entry_drift_guard_atr: float = 0.5
     # F60: master short on/off. Shipped OFF (opt-in) — the system trades long-only
     # until an operator explicitly enables shorts. When false, ALL short entries
     # (agent + human + auto-flip) are rejected; covering/stopping an existing
