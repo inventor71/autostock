@@ -757,6 +757,11 @@ class AgentTradingMode:
                 self.steering.refresh_order_prices, 12, "steering_order_prices")
             self.scheduler.add_seconds_job(
                 self.steering.refresh_recent_fills, 45, "steering_recent_fills")
+            # F95: warm-cache of latest quotes for click-candidate symbols (held ∪
+            # resting-order ∪ recently decided/intervened) so the console's
+            # SymbolOverlay shows a live price the instant a symbol is clicked.
+            self.scheduler.add_seconds_job(
+                self.steering.refresh_quotes, 2, "steering_quotes")
             # F3: event-driven wake detector (reads cached snapshot/bars only) + the
             # daily watch fired-set sweep + the background news poller.
             # F14: warm the bar/price cache off the detect thread so detect_wakes
