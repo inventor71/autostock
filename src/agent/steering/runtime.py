@@ -332,6 +332,7 @@ class SteeringRuntime:
                 ],
                 "market_open": market_open,
                 "account": self._account_block(ps),  # F6 FR-2 (reuses equity_log.snapshot)
+                "perf_vs_benchmark": self._perf_block(),  # F97: agent vs SPY buy-and-hold (read-time)
                 "round_trip": self._round_trip,       # F6 FR-3 (cached, slow-cadence refresh)
                 "recent_fills": self._recent_fills,   # F8 FR-3 (cached, slow-cadence refresh)
                 "code_version": self._code_version,   # F43: launcher version-skew self-heal
@@ -407,6 +408,15 @@ class SteeringRuntime:
         from src.agent.logs.equity import snapshot as equity_snapshot
         full = equity_snapshot(ps)
         return {k: full[k] for k in ("equity", "cash", "invested", "open_pnl", "position_count")}
+
+    def _perf_block(self) -> dict | None:
+        """F97: agent-vs-SPY-buy-and-hold headline, derived read-time from the equity
+        log (never blocks the snapshot — missing/short data yields None)."""
+        try:
+            from src.agent.logs.performance import load_performance
+            return load_performance(self.executor.journal.root / "equity.jsonl")
+        except Exception:
+            return None
 
     def refresh_round_trip(self, *, since: str | None = None) -> None:
         """F6 FR-3: refresh today's round-trip summary from the broker's live fills

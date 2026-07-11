@@ -120,6 +120,7 @@
 | F92 | 브로커 provider 정합성 버그 수정 + 멀티 인스턴스 격리 복구 — agent broker-truth CLI 3곳(tools/__main__.py:_broker, logs/equity.py:main, scripts/status.py)이 provider 무시하고 AlpacaBroker 하드코딩 → 공유 Alpaca 계좌 읽음. create_broker 공유 팩토리 추출 + 격리 전수점검 + prod-run.sh reconcile 헬퍼 | merged | feat/F92 → main 8181f5c | — (monorepo) | 42d0398→rebased e933904→8181f5c | 2026-06-28 |
 | F93 | 모바일 실행 경로 배선 fix — autostock API 라우트(webauthn+dashboard)를 실제 리스너에 마운트(R1 블로커: 와이어 너머 /autostock/* → SPA HTML) + serve가 .env WEBAUTHN_ORIGIN 전달(R2) + QR https origin(R3) + 단일 origin runbook(R4) | merged | feat/F93 → main 3ef2670 | — (제거됨) | — (monorepo) | 42d0398→rebased 42770f4→3ef2670 | 2026-06-29 |
 | F94 | 콘솔 계좌-truth 읽기 툴 provider 정합성 (F92 TS판 후속) — operator-console mcp-server.ts의 getAccountInfo/getAllPositions/getOpenPosition/getPortfolioHistory/getOrders가 alpaca-data.ts로 Alpaca 직결 → account_farm 인스턴스가 공유 Alpaca 계좌(RTX/TMO) 읽음. account_farm일 때 데몬 snapshot 경유로 수정 | merged | feat/F94 → main ae853d6 | — (제거됨) | — (monorepo) | 940a99e→rebased b43a188→ae853d6 | 2026-07-05 |
+| F97 | Daily 성과 평가 — 에이전트 누적수익 vs S&P500(SPY) buy-and-hold, alpha 표시 (`workspace/equity.jsonl`의 기존 일별 equity+SPY 마크를 조인) | active | feat/F97 | .claude/worktrees/F97 | — (monorepo) | 4f3fcbf | 2026-07-10 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under

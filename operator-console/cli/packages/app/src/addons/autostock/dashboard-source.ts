@@ -5,7 +5,7 @@
 
 import type { ServerConnection } from "@/context/server"
 import type { SnapshotSources } from "./snapshot"
-import type { PositionRow } from "./dashboard-view"
+import type { PositionRow, PerfHeadline } from "./dashboard-view"
 import { serverFetcher } from "./webauthn-fetch"
 
 /** Poll cadence — matches the daemon's ~5s snapshot publish (NFR-5). Tuning knob. */
@@ -23,6 +23,15 @@ export type DashboardPayload = {
     open_pnl: number | null
     position_count: number
   }
+  perf: {
+    since_date: string | null
+    agent_return_pct: number | null
+    spy_return_pct: number | null
+    alpha_pct: number | null
+    agent_day_pct: number | null
+    spy_day_pct: number | null
+    day_alpha_pct: number | null
+  } | null
   positions: Array<{
     symbol: string
     market_value: number | null
@@ -62,6 +71,18 @@ export function toPositionRows(positions: DashboardPayload["positions"]): Positi
     dayPct: r.return_pct,
     weightPct: total > 0 && r.market_value !== null ? (Math.abs(r.market_value) / total) * 100 : null,
   }))
+}
+
+/** Map the server perf block (snake_case) to the DashboardView headline (camelCase). Pure. */
+export function toPerf(p: DashboardPayload["perf"]): PerfHeadline | undefined {
+  if (!p) return undefined
+  return {
+    agentReturnPct: p.agent_return_pct,
+    spyReturnPct: p.spy_return_pct,
+    alphaPct: p.alpha_pct,
+    dayAlphaPct: p.day_alpha_pct,
+    sinceDate: p.since_date,
+  }
 }
 
 /** Map the server market block to the DashboardView phase. */
