@@ -48,6 +48,29 @@ def _order_role(o) -> str:
     return "take-profit"
 
 
+def _pct_markup(value: float) -> str:
+    color = "green" if value >= 0 else "red"
+    return f"[{color}]{value:+.2f}%[/]"
+
+
+def _bench_line() -> str:
+    """F97 — 'vs S&P500' line from the equity log (blank when no benchmark data yet)."""
+    from src.agent.logs.performance import load_performance
+
+    perf = load_performance()
+    if not perf:
+        return ""
+    line = (
+        f"\n[bold]vs S&P500[/] (since {perf['since_date']})    "
+        f"me {_pct_markup(perf['agent_return_pct'])}    "
+        f"SPY {_pct_markup(perf['spy_return_pct'])}    "
+        f"α {_pct_markup(perf['alpha_pct'])}"
+    )
+    if perf["day_alpha_pct"] is not None:
+        line += f"    [dim]today {_pct_markup(perf['day_alpha_pct'])}p[/]"
+    return line
+
+
 def _summary(pf) -> Panel:
     total = sum(p.unrealized_pnl for p in pf.positions.values())
     invested = sum(p.market_value for p in pf.positions.values())
@@ -57,6 +80,7 @@ def _summary(pf) -> Panel:
         f"[bold]invested[/] ${invested:,.0f}    "
         f"[bold]open P&L[/] {_pnl_markup(total)}    "
         f"[bold]positions[/] {pf.position_count}"
+        f"{_bench_line()}"
     )
     return Panel(text, title=f"autostock paper — {datetime.now():%Y-%m-%d %H:%M:%S}", box=box.ROUNDED)
 

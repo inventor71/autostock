@@ -31,6 +31,7 @@ import {
   toSnapshotSources,
   toPositionRows,
   toMarket,
+  toPerf,
   type DashboardPayload,
 } from "./dashboard-source"
 
@@ -183,6 +184,7 @@ export default function MobileShell() {
     return p ? toPositionRows(p.positions) : []
   })
   const market = createMemo(() => toMarket(payload()?.market ?? null))
+  const perf = createMemo(() => toPerf(payload()?.perf ?? null))
   const agent = createMemo(() => payload()?.agent)
   const stale = createMemo(() => isStale(model(), nowMs(), STALE_THRESHOLD_MS))
 
@@ -210,6 +212,7 @@ export default function MobileShell() {
         positions={rows()}
         cash={payload()?.account.cash ?? null}
         buyingPower={payload()?.account.buying_power ?? null}
+        perf={perf()}
         market={market()}
         agent={agent()}
         stale={stale()}

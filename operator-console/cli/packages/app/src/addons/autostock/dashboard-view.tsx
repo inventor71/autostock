@@ -15,6 +15,14 @@ export type PositionRow = {
 }
 export type MarketPhase = "pre" | "regular" | "after" | "closed"
 export type AgentDecision = { ts?: string; action: string; symbol?: string; summary?: string }
+// F97 — agent vs S&P500 (SPY buy-and-hold) headline for the hero card.
+export type PerfHeadline = {
+  agentReturnPct: number | null
+  spyReturnPct: number | null
+  alphaPct: number | null
+  dayAlphaPct: number | null
+  sinceDate: string | null
+}
 
 export type DashboardViewProps = {
   model: DashboardModel
@@ -22,6 +30,8 @@ export type DashboardViewProps = {
   positions?: PositionRow[]
   cash?: number | null
   buyingPower?: number | null
+  /** F97 — agent-vs-S&P500 scorecard; when present, shown under the day P&L. */
+  perf?: PerfHeadline
   market?: { phase: MarketPhase; label?: string; nextLabel?: string }
   agent?: { current?: string | null; recent?: AgentDecision[] }
   /** NFR-7: snapshot older than the freshness threshold. */
@@ -44,6 +54,11 @@ function fmtMoney(v: number | null | undefined, opts?: { compact?: boolean }): s
 function fmtPct(v: number | null | undefined): string {
   if (v === null || v === undefined) return "—"
   return `${v >= 0 ? "▲" : "▼"} ${Math.abs(v).toFixed(2)}%`
+}
+// F97 — signed percent without the arrow glyph, for the compact benchmark line.
+function fmtSignedPct(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "—"
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`
 }
 const pnlClass = (v: number | null | undefined) =>
   ({ "text-icon-success-base": (v ?? 0) >= 0, "text-icon-critical-base": (v ?? 0) < 0 })
@@ -115,6 +130,21 @@ export function DashboardView(props: DashboardViewProps) {
           {fmtPct(m().dayPnlPct)}
           <span class="ml-1 text-text-faint">오늘</span>
         </p>
+        {/* F97 — vs S&P500 (SPY buy-and-hold): agent · SPY · alpha (+ today's excess). */}
+        <Show when={props.perf}>
+          {(pf) => (
+            <p class="mt-2 text-xs tabular-nums text-text-weak">
+              <span class="text-text-faint">vs S&amp;P500</span> 나 {fmtSignedPct(pf().agentReturnPct)} · SPY{" "}
+              {fmtSignedPct(pf().spyReturnPct)} ·{" "}
+              <span class="font-semibold" classList={pnlClass(pf().alphaPct)}>
+                α {fmtSignedPct(pf().alphaPct)}
+              </span>
+              <Show when={pf().dayAlphaPct !== null && pf().dayAlphaPct !== undefined}>
+                <span class="text-text-faint"> · 오늘 {fmtSignedPct(pf().dayAlphaPct)}p</span>
+              </Show>
+            </p>
+          )}
+        </Show>
         <Show when={props.cash !== undefined || props.buyingPower !== undefined}>
           <div class="mt-4 grid grid-cols-2 gap-3 border-t border-border-weak-base pt-3">
             <div class="flex flex-col gap-0.5">
