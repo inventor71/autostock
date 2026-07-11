@@ -8,7 +8,7 @@
 - **Track ID**: F95
 - **Title**: Symbol 클릭 → 주요 정보 floating panel
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
+- **Status**: merged → main d93593b (2026-07-11)  <!-- /ai-dlc-merge: rebase no-op (base=main HEAD 4f3fcbf, ↑1), verify 재실행 green — unit 8/8 · regression 146/146 · TS typecheck 19/19, --no-ff merged -->
 - **Branch**: feat/F95
 - **Worktree**: .claude/worktrees/F95
 - **Submodule branch**: — (monorepo; operator-console/cli 변경 예상)

@@ -336,3 +336,7 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 
 - 2026-07-05 — **/ai-dlc-merge (scope F94)** — 0a triage: 통과(정체불명 변경 없음; F83 abandoned 문서·mobile-realdevice-test-guide.md는 F94와 무관·경로한정 스테이징으로 미접촉). "레지스트리 행 누락"은 오판정 — F94 행이 feat/F94 브랜치(라인122)에 이미 존재, 머지 시 반영. 큐: [F94] 단일, base 940a99e(F35 이후), ↑1. rebase→verify→merge 진행.
 - 2026-07-05 — **F94 merged** → main ae853d6 (콘솔 계좌-truth 읽기 툴 provider 정합성, F92 TS판 후속). rebase onto e314a6f: aidlc-state.md 충돌 1건(F93 active→merged)만 기계적 해결, 코드 자동병합. verify 재실행 account-truth+alpaca-data 29 pass/0 fail. 레지스트리 행은 feat/F94에 이미 존재(오판정 "누락")—머지로 반영.
+
+- 2026-07-11 — **/ai-dlc-merge** 0a triage: 통과. 미커밋=tracks/F83(abandoned 문서)·mobile-realdevice-test-guide.md(foreign)—둘 다 F93/F94 머지 때와 동일한 기존 세션 노이즈, 머지 대상(F95)과 무관·경로한정 스테이징으로 미접촉(삼키지 않음). 큐: [F95] 단일 merge-awaiting, base=4f3fcbf(=현 main HEAD, rebase no-op), ↑1, 다른 후보와 0겹침. 제외: F96/F97(active·↑0 머지할 것 없음), F73(do-not-enqueue 장기브랜치).
+- 2026-07-11 — **/ai-dlc-merge 승인** (UAQ) "승인 — 진행": F95 단독 rebase→verify→merge→cleanup 자율 진행.
+- 2026-07-11 — **F95 merged** → main d93593b (Symbol 클릭 → 주요 정보 floating panel). 데몬 per-instance REST warm-cache 프로듀서(quotes.py+publish_quotes+refresh_quotes @2s) ↔ TUI 리더(use-quote.ts+SymbolOverlay+intervention 클릭). 순수 추가(비파괴). rebase no-op(base=현 main HEAD), verify green: pytest unit 8/8 + regression 146/146 + TS typecheck 19/19. clean --no-ff.
