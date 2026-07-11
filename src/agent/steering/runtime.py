@@ -25,6 +25,8 @@ from src.agent.steering.bus import CommandBus
 from src.agent.steering.jsonl import atomic_write_text
 from src.agent.steering.channel import SteeringChannel
 from src.agent.steering.commands import CommandHandler
+from src.agent.steering.quotes import QuoteBook, quote_candidates
+from src.data.prices import fetch_latest_prices
 # F69: lightweight system-health publish (steering/health.json) for the TUI. The
 # periodic daemon publish runs ONLY the cheap, no-external-call dimensions; the
 # full 9-dimension deep check (broker/llm/account/risk live) stays in
@@ -177,6 +179,12 @@ class SteeringRuntime:
         # symbols we don't hold (held symbols reuse position.current_price).
         self._price_book: dict[str, tuple[float, datetime]] = {}
         self._recent_fills: list[dict] = []
+        # F95: warm-cache of latest quotes for click-candidate symbols (held ∪
+        # resting-order ∪ recently decided/intervened). Refreshed on a short
+        # cadence via the data provider (account-independent) and published to
+        # steering/quotes.json so the TUI SymbolOverlay shows a live price the
+        # instant a symbol is clicked. Single writer = refresh_quotes.
+        self._quote_book = QuoteBook()
         # F25: market-session rule published in monitor.json so the TUI renders a
         # market-aware 12h timeline. Wall-clock ET times (DST handled by the TUI's
         # IANA tz conversion). Overridable via set_market_rule() from settings.
@@ -476,6 +484,67 @@ class SteeringRuntime:
                 ]
             except Exception as e:
                 logger.warning("recent-fills refresh failed (skipping): {}", e)
+        self.bus.submit(_build)
+
+    # ---- F95: click-candidate quote warm cache ---------------------------- #
+    def _recent_quote_symbols(self) -> list[str]:
+        """Distinct symbols from recent decisions + human interventions — the
+        names most likely to be clicked in a turn/intervention overlay. File-only,
+        best-effort (never sinks the quote refresh)."""
+        try:
+            root = self.executor.journal.root
+            decs = _decisions_tail(root / "decisions.jsonl", root / "turns.jsonl")
+            ivs = _interventions_tail(root / "human_directives.jsonl", self._session_et_date())
+            syms: list[str] = []
+            for d in decs:
+                s = d.get("symbol")
+                if s:
+                    syms.append(s)
+            for iv in ivs:
+                s = iv.get("symbol")
+                if s:
+                    syms.append(s)
+            return syms
+        except Exception as e:
+            logger.warning("recent quote-symbols read failed (skipping): {}", e)
+            return []
+
+    def refresh_quotes(self) -> None:
+        """F95: refresh the click-candidate quote warm cache and publish
+        ``steering/quotes.json``. Worker job (broker read for held/orders +
+        data-provider price fetch run on the bus, NFR-1). Best-effort per NFR-4:
+        a provider failure marks that symbol's quote as unavailable (the panel
+        shows "시세 없음") and never crashes the daemon."""
+        def _build():
+            try:
+                broker = self.executor.broker
+                ps = broker.get_portfolio_state()
+                held = list(ps.positions)
+                order_syms = [o.symbol for o in broker.get_open_orders()]
+            except Exception as e:
+                logger.warning("quote candidate broker read failed (skipping): {}", e)
+                return
+            candidates = quote_candidates(held, order_syms, self._recent_quote_symbols())
+            if candidates:
+                now = datetime.now(timezone.utc)
+                try:
+                    prices = fetch_latest_prices(self.executor.data_provider, candidates)
+                except Exception as e:
+                    logger.warning("quote fetch failed (skipping): {}", e)
+                    prices = {}
+                for sym in candidates:
+                    px = prices.get(sym)
+                    if px is None:
+                        self._quote_book.put_error(sym, "no_data", now)
+                    else:
+                        self._quote_book.put(sym, float(px), now)
+            payload = self._quote_book.as_payload()
+            payload["provider"] = type(self.executor.data_provider).__name__
+            payload["updated"] = datetime.now(timezone.utc).isoformat()
+            try:
+                self.channel.publish_quotes(payload)
+            except Exception as e:
+                logger.warning("quotes publish failed (skipping): {}", e)
         self.bus.submit(_build)
 
     def set_current_turn(self, turn_id: str, turn_type: str) -> None:

@@ -3,7 +3,8 @@ import type { MonitorData, MonitorDecision, PositionInfo } from "../types"
 import { OverlayPanel } from "./overlay-panel"
 import { readThesis } from "../hooks/use-thesis"
 import { readPositions } from "../hooks/use-snapshot-data"
-import { actionColor, fmtPnl } from "../utils/format"
+import { useQuote } from "../hooks/use-quote"
+import { actionColor, fmtPnl, fmtLocalHhmm } from "../utils/format"
 
 export interface SymbolOverlayProps {
   symbol: string
@@ -18,6 +19,10 @@ export interface SymbolOverlayProps {
 }
 
 export function SymbolOverlay(props: SymbolOverlayProps) {
+  // F95: live quote from the daemon warm cache (steering/quotes.json). Always
+  // shown — for any clicked symbol, held or not — polling so it stays current
+  // while the panel is open.
+  const quote = useQuote(props.steeringDir, () => props.symbol)
   const thesis = () => readThesis(props.workspaceDir, props.symbol)
   const position = (): PositionInfo | null => {
     const positions = readPositions(props.steeringDir)
@@ -47,6 +52,23 @@ export function SymbolOverlay(props: SymbolOverlayProps) {
       <box flexDirection="column">
         {/* Header */}
         <text fg="white"><b>{props.symbol}</b></text>
+        {/* F95: live quote — always shown (loading / price+as-of / unavailable). */}
+        <Show
+          when={quote()}
+          fallback={<text fg="gray">시세 조회 중…</text>}
+        >
+          {(q) => (
+            <Show
+              when={q().price != null}
+              fallback={<text fg="gray">시세 없음</text>}
+            >
+              <text fg="yellow">
+                ${q().price!.toFixed(2)}{" "}
+                <text fg="gray">· as of {fmtLocalHhmm(q().ts)}</text>
+              </text>
+            </Show>
+          )}
+        </Show>
         <Show when={position()}>
           {(pos) => {
             const pnl = fmtPnl(pos().unrealized_pnl)

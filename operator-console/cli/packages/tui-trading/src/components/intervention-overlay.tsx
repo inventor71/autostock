@@ -10,6 +10,8 @@ export interface InterventionOverlayProps {
   termWidth: number
   termHeight: number
   onClose: () => void
+  // F95: click the symbol to open its info panel (quote + position/thesis).
+  onSymbolClick?: (symbol: string, x: number, y: number) => void
 }
 
 // F25 FR-3: detail popup for a human trade intervention.
@@ -26,12 +28,24 @@ export function InterventionOverlay(props: InterventionOverlayProps) {
       onClose={props.onClose}
     >
       <box flexDirection="column">
-        <text fg="white">
-          <b>{"✚ Human"}</b>{" "}
-          <span style={{ fg: interventionColor(iv().verb) }}>{iv().verb}</span>
-          {iv().symbol ? <span style={{ fg: "white" }}>{` ${iv().symbol}`}</span> : ""}
-          <span style={{ fg: "gray" }}>{` · ${fmtLocalHhmm(iv().ts)}`}</span>
-        </text>
+        {/* Header row — inline text pieces; the symbol is its own clickable
+            <text> (F95), mirroring the turn overlay's onMouseUp pattern. */}
+        <box>
+          <text fg="white"><b>{"✚ Human"}</b></text>
+          <text fg={interventionColor(iv().verb)}>{` ${iv().verb}`}</text>
+          <Show when={iv().symbol}>
+            <text
+              fg="white"
+              onMouseUp={(evt: any) => {
+                props.onSymbolClick?.(iv().symbol!, evt.x ?? props.anchorX, evt.y ?? props.anchorY)
+                evt.stopPropagation?.()
+              }}
+            >
+              {` ${iv().symbol}`}
+            </text>
+          </Show>
+          <text fg="gray">{` · ${fmtLocalHhmm(iv().ts)}`}</text>
+        </box>
         <Show when={iv().outcome}>
           <text fg="gray">{`outcome: ${iv().outcome}`}</text>
         </Show>

@@ -35,6 +35,7 @@ class SteeringChannel:
         self.events_file = self.dir / "events.jsonl"
         self.snapshot_file = self.dir / "snapshot.json"
         self.codebase_file = self.dir / "codebase.json"  # F29
+        self.quotes_file = self.dir / "quotes.json"      # F95
         self._processed_file = self.dir / ".processed.json"
         self._token = token
         self._processed: set[str] = set()
@@ -187,3 +188,12 @@ class SteeringChannel:
         agent can discover the repo structure via ``steer_read{command:/codebase}``."""
         payload = {"tree": tree_text, "published_at": datetime.now().isoformat()}
         atomic_write_text(self.codebase_file, json.dumps(payload))
+
+    # F95: warm-cache of latest quotes for click-candidate symbols ------------- #
+    def publish_quotes(self, payload: dict) -> None:
+        """Atomically publish ``quotes.json`` (single writer = refresh_quotes).
+
+        Kept separate from snapshot.json so quote freshness (a short cadence) is
+        not bound to the 5s snapshot publish, and each file keeps one writer."""
+        body = {**payload, "published_at": datetime.now().isoformat()}
+        atomic_write_text(self.quotes_file, json.dumps(body))

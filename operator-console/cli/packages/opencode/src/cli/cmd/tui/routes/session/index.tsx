@@ -1369,6 +1369,7 @@ export function Session() {
             termWidth={dimensions().width}
             termHeight={dimensions().height}
             onClose={() => overlay.close()}
+            onSymbolClick={(sym, x, y) => overlay.openSymbol(sym, x, y)}
           />
         </Show>
         {/* F69: system-health detail overlay */}
