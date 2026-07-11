@@ -8,6 +8,7 @@ import fc from "fast-check"
 import {
   fetchDashboard,
   toMarket,
+  toPerf,
   toPositionRows,
   toSnapshotSources,
   type DashboardPayload,
@@ -17,6 +18,15 @@ import { buildDashboard, isStale } from "./snapshot"
 function payload(over: Partial<DashboardPayload> = {}): DashboardPayload {
   return {
     account: { equity: 100, cash: 20, day_pnl_pct: null, buying_power: null, open_pnl: 5, position_count: 2 },
+    perf: {
+      since_date: "2026-05-28",
+      agent_return_pct: 3.42,
+      spy_return_pct: 1.1,
+      alpha_pct: 2.32,
+      agent_day_pct: 0.51,
+      spy_day_pct: 0.2,
+      day_alpha_pct: 0.31,
+    },
     positions: [
       { symbol: "AAPL", market_value: 600, unrealized_pnl: 60, return_pct: 11.1, side: "long", current_price: 110 },
       { symbol: "TSLA", market_value: 400, unrealized_pnl: -20, return_pct: -5, side: "long", current_price: 180 },
@@ -61,6 +71,17 @@ describe("toSnapshotSources / toPositionRows / toMarket — examples", () => {
     expect(toMarket({ open: false })).toEqual({ phase: "closed", label: undefined })
     expect(toMarket({ open: null })).toBeUndefined()
     expect(toMarket(null)).toBeUndefined()
+  })
+
+  test("toPerf maps snake_case payload to camelCase headline; null → undefined", () => {
+    expect(toPerf(payload().perf)).toEqual({
+      agentReturnPct: 3.42,
+      spyReturnPct: 1.1,
+      alphaPct: 2.32,
+      dayAlphaPct: 0.31,
+      sinceDate: "2026-05-28",
+    })
+    expect(toPerf(null)).toBeUndefined()
   })
 })
 
@@ -128,6 +149,7 @@ describe("properties", () => {
     })
     const payloadArb = fc.record({
       account: accountArb,
+      perf: fc.constant(null),
       positions: fc.array(positionArb, { maxLength: 10 }),
       health: fc.option(fc.record({ status: fc.string() }), { nil: null }),
       pending_approvals: fc.nat({ max: 20 }),
