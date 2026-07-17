@@ -132,6 +132,38 @@ describe("assembleDashboardPayload — examples (PBT-10)", () => {
     const p = assembleDashboardPayload({ snapshot: { pending: [{}, {}, {}] } })
     expect(p.pending_approvals).toBe(3)
   })
+
+  test("F97: perf_vs_benchmark mapped through; absent/malformed → null", () => {
+    const withPerf = assembleDashboardPayload({
+      snapshot: {
+        perf_vs_benchmark: {
+          since_date: "2026-05-28",
+          agent_return_pct: 0.09,
+          spy_return_pct: 0.61,
+          alpha_pct: -0.52,
+          agent_day_pct: 0.02,
+          spy_day_pct: 0.44,
+          day_alpha_pct: -0.42,
+        },
+      },
+    })
+    expect(withPerf.perf).toEqual({
+      since_date: "2026-05-28",
+      agent_return_pct: 0.09,
+      spy_return_pct: 0.61,
+      alpha_pct: -0.52,
+      agent_day_pct: 0.02,
+      spy_day_pct: 0.44,
+      day_alpha_pct: -0.42,
+    })
+    // absent → null; malformed fields → null per field (never throws)
+    expect(assembleDashboardPayload({ snapshot: { account: { equity: 1 } } }).perf).toBeNull()
+    expect(assembleDashboardPayload({ snapshot: { perf_vs_benchmark: "nope" } }).perf).toBeNull()
+    const partial = assembleDashboardPayload({
+      snapshot: { perf_vs_benchmark: { agent_return_pct: 1.5, spy_return_pct: "x" } },
+    })
+    expect(partial.perf).toMatchObject({ agent_return_pct: 1.5, spy_return_pct: null, since_date: null })
+  })
 })
 
 // arbitrary JSON-ish value, incl. adversarial nesting/types

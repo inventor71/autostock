@@ -68,6 +68,15 @@ interface RoundTrip {
   realized_pnl?: number
 }
 
+// F97 — agent vs S&P500 (SPY buy-and-hold) scorecard, derived read-time from the equity log.
+interface PerfVsBenchmark {
+  since_date?: string
+  agent_return_pct?: number | null
+  spy_return_pct?: number | null
+  alpha_pct?: number | null
+  day_alpha_pct?: number | null
+}
+
 interface Snap {
   run_state?: { paused?: boolean; entries_halted?: boolean }
   market_open?: boolean
@@ -77,6 +86,7 @@ interface Snap {
   queued_trades?: QueuedTrade[]
   locked_symbols?: Record<string, string | null>
   account?: Account // F6 FR-2
+  perf_vs_benchmark?: PerfVsBenchmark | null // F97
   round_trip?: RoundTrip // F6 FR-3
   recent_fills?: RecentFill[] // F8 FR-3
 }
@@ -189,6 +199,12 @@ function fmtPnl(n?: number): string {
   return (n >= 0 ? "+$" : "-$") + Math.abs(Math.round(n)).toLocaleString("en-US")
 }
 
+// F97 — signed percent for the vs-S&P500 line ("+0.09%" / "-0.52%" / "—").
+function fmtSignedPct(n?: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "—"
+  return (n >= 0 ? "+" : "") + n.toFixed(2) + "%"
+}
+
 function View(props: { api: TuiPluginApi }) {
   const [snap, setSnap] = createSignal<Snap | null>(readSnap())
   const [events, setEvents] = createSignal<Event[]>(readEvents())
@@ -224,6 +240,7 @@ function View(props: { api: TuiPluginApi }) {
   const queued = () => snap()?.queued_trades ?? []
   const pendingN = () => (snap()?.pending ?? []).length
   const account = () => snap()?.account
+  const perf = () => snap()?.perf_vs_benchmark
   const rt = () => snap()?.round_trip
   const pnlColor = (n?: number) => ((n ?? 0) >= 0 ? theme().success : theme().error)
 
@@ -275,6 +292,19 @@ function View(props: { api: TuiPluginApi }) {
               </Show>
               <text fg={theme().textMuted}>pnl</text>
               <text fg={pnlColor(a().open_pnl)}>{fmtPnl(a().open_pnl)}</text>
+            </box>
+          )}
+        </Show>
+        {/* F97 — vs S&P500 (SPY buy-and-hold): agent · SPY · alpha, whole row colored by
+            alpha sign. Hidden until the daemon publishes it (needs a benchmark-bearing
+            equity record). */}
+        <Show when={perf()}>
+          {(p) => (
+            <box flexDirection="row" gap={1}>
+              <text fg={theme().textMuted}>vs SPY</text>
+              <text fg={theme().text}>me {fmtSignedPct(p().agent_return_pct)}</text>
+              <text fg={theme().text}>spy {fmtSignedPct(p().spy_return_pct)}</text>
+              <text fg={pnlColor(p().alpha_pct ?? 0)}>α {fmtSignedPct(p().alpha_pct)}</text>
             </box>
           )}
         </Show>

@@ -42,6 +42,17 @@ export type DashboardPayload = {
     open_pnl: number | null
     position_count: number
   }
+  // F97 — agent vs S&P500 (SPY buy-and-hold) scorecard, derived by the daemon from the
+  // equity log. null until there's a benchmark-bearing equity record.
+  perf: {
+    since_date: string | null
+    agent_return_pct: number | null
+    spy_return_pct: number | null
+    alpha_pct: number | null
+    agent_day_pct: number | null
+    spy_day_pct: number | null
+    day_alpha_pct: number | null
+  } | null
   positions: PositionRow[]
   health: { status?: string; ok?: boolean; summary?: string } | null
   pending_approvals: number
@@ -57,6 +68,7 @@ export type DashboardPayload = {
 
 export const EMPTY_PAYLOAD: DashboardPayload = {
   account: { equity: null, cash: null, day_pnl_pct: null, buying_power: null, open_pnl: null, position_count: 0 },
+  perf: null,
   positions: [],
   health: null,
   pending_approvals: 0,
@@ -107,6 +119,21 @@ export type RawSteering = {
   monitor?: unknown
   pending?: unknown
   snapshotMtimeIso?: string | null
+}
+
+// F97 — the daemon publishes snapshot.perf_vs_benchmark (see src/agent/logs/performance.py).
+// Defensive: any missing/malformed piece degrades to null, never throws.
+function toPerf(v: unknown): DashboardPayload["perf"] {
+  if (!isObj(v)) return null
+  return {
+    since_date: str(v.since_date) ?? null,
+    agent_return_pct: num(v.agent_return_pct),
+    spy_return_pct: num(v.spy_return_pct),
+    alpha_pct: num(v.alpha_pct),
+    agent_day_pct: num(v.agent_day_pct),
+    spy_day_pct: num(v.spy_day_pct),
+    day_alpha_pct: num(v.day_alpha_pct),
+  }
 }
 
 function toPositionRow(symbol: string, p: unknown): PositionRow {
@@ -210,6 +237,7 @@ export function assembleDashboardPayload(raw: RawSteering): DashboardPayload {
       // which derives positionCount from the positions list — never let the two disagree).
       position_count: positions.length,
     },
+    perf: toPerf(snapshot.perf_vs_benchmark),
     positions,
     health,
     pending_approvals: pending,
