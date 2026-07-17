@@ -8,7 +8,7 @@
 - **Track ID**: F96
 - **Title**: 진입 실행 가드(decision→fill 드리프트) + 뉴스 신선도/priced-in 할인
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
+- **Status**: merged → main 6211cfc (2026-07-17)
 - **Branch**: feat/F96
 - **Worktree**: .claude/worktrees/F96
 - **Submodule branch**: — (monorepo; Python 전용, operator-console 미변경 예상)
