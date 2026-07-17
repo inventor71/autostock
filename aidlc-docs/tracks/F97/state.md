@@ -8,7 +8,7 @@
 - **Track ID**: F97
 - **Title**: Daily 성과 평가 — 에이전트 누적수익 vs S&P500(SPY) buy-and-hold, alpha 표시
 - **Type**: feature
-- **Status**: merge-awaiting  <!-- active → merge-awaiting (set when Build & Test passes) → merged (by /ai-dlc-merge) -->
+- **Status**: merged → main 802499a (2026-07-17)
 - **Branch**: feat/F97
 - **Worktree**: .claude/worktrees/F97
 - **Submodule branch**: — (monorepo; operator-console/cli 터치 여부는 surface 결정에 따름)

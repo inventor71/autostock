@@ -122,7 +122,7 @@
 | F94 | 콘솔 계좌-truth 읽기 툴 provider 정합성 (F92 TS판 후속) — operator-console mcp-server.ts의 getAccountInfo/getAllPositions/getOpenPosition/getPortfolioHistory/getOrders가 alpaca-data.ts로 Alpaca 직결 → account_farm 인스턴스가 공유 Alpaca 계좌(RTX/TMO) 읽음. account_farm일 때 데몬 snapshot 경유로 수정 | merged | feat/F94 → main ae853d6 | — (제거됨) | — (monorepo) | 940a99e→rebased b43a188→ae853d6 | 2026-07-05 |
 | F95 | Symbol 클릭 → 주요 정보 floating panel (종목 클릭 시 오버레이로 quote/position/thesis/decision 등 노출) | merged | feat/F95 → main d93593b | — (제거됨) | — (monorepo) | 4f3fcbf | 2026-07-11 |
 | F96 | 진입 실행 가드(decision→fill 드리프트) + 뉴스 신선도/priced-in 할인 — 모멘텀 진입 MARKET 주문의 나쁜 체결 방지(execute_decision 드리프트 가드) + news 툴 age_hours/priced_in_risk 노출 + 프롬프트 priced-in 규칙 | merged | feat/F96 → main 6211cfc | — (제거됨) | — (monorepo) | 4f3fcbf→rebased 9f3629b | 2026-07-17 |
-| F97 | Daily 성과 평가 — 에이전트 누적수익 vs S&P500(SPY) buy-and-hold, alpha 표시 (`workspace/equity.jsonl`의 기존 일별 equity+SPY 마크를 조인) | active | feat/F97 | .claude/worktrees/F97 | — (monorepo) | 4f3fcbf | 2026-07-10 |
+| F97 | Daily 성과 평가 — 에이전트 누적수익 vs S&P500(SPY) buy-and-hold, alpha 표시 (`workspace/equity.jsonl`의 기존 일별 equity+SPY 마크를 조인) | merged | feat/F97 → main 802499a | — (제거됨) | — (monorepo) | 4f3fcbf→rebased fa39f86 | 2026-07-17 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
