@@ -82,7 +82,9 @@ _CONSERVATIVE_DISPOSITION = (
 _AGGRESSIVE_DISPOSITION = (
     "## Posture — aggressive (short-horizon momentum)\n"
     "Favor momentum, breakouts, volume surges and same-week catalysts (use "
-    "`movers`, intraday action). A moderately-confirmed setup is enough to act — "
+    "`movers`, intraday action) — but a catalyst already a day old (news "
+    "`priced_in_risk=elevated`) is likely priced in, so favor the fresh move, not "
+    "the late chase. A moderately-confirmed setup is enough to act — "
     "do not wait for perfect conviction, and do not fear turnover. Trade for a "
     "short-term edge: tight stops, fast profit-taking (reward:risk >= 1:1.5), and "
     "a short `valid_until` (intraday to a few days)."

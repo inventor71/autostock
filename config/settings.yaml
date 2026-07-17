@@ -45,6 +45,10 @@ risk:
   atr_stop_multiple: 3.0  # default stop = 3x ATR when LLM gives no level
   market_halt_threshold_pct: -0.03  # halt new buys if SPY day-change <= -3%
   default_risk_reward: 2.5  # derived take-profit R:R when LLM gives no target
+  # F96: entry drift guard. A momentum entry (LLM entry >= price) that has run
+  # adversely past the anchor by > this many ATR at execution time is downgraded
+  # MARKET -> LIMIT capped at anchor±(N*ATR), bounding the worst fill. 0 disables.
+  entry_drift_guard_atr: 0.5
   # F60: master short on/off. Shipped OFF — long-only until you flip this to true.
   # false → every short entry (agent + /short + auto-flip) is rejected; covering an
   # existing short still works. Restart the daemon after changing.

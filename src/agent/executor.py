@@ -355,6 +355,11 @@ class DecisionExecutor:
             atr = self._atr(d.symbol)
             if atr is not None:
                 metadata["atr"] = atr  # lets RiskManager fall back to an ATR stop
+            # F96: the decision-time price (stamped by the orchestrator on limit-less
+            # entries) is the drift-guard anchor for a market order — without it a
+            # momentum BUY/SELL_SHORT could fill far from where the agent decided.
+            if d.ref_price is not None:
+                metadata["ref_price"] = d.ref_price
             # SELL_SHORT carries prev_close so RiskManager's individual-stock
             # squeeze guard (reject a short into a name already up >=N% today) has
             # the data it needs — without it the guard is dead (critic #3).

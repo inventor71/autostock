@@ -381,6 +381,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         shorting_enabled=settings.risk.shorting_enabled,
         aggressiveness=settings.agent.aggressiveness,
         signal_brief_provider=signal_brief_provider,
+        price_provider=data_provider.get_latest_price,  # F96 decision-time anchor
     )
     executor = DecisionExecutor(
         broker, risk_manager, data_provider, journal=session.journal, universe=universe
@@ -450,6 +451,7 @@ def _build_risk_manager(settings, *, use_bracket_orders: bool, apply_aggressiven
         atr_stop_multiple=r.atr_stop_multiple,
         market_halt_threshold_pct=r.market_halt_threshold_pct,
         default_risk_reward=r.default_risk_reward,
+        entry_drift_guard_atr=r.entry_drift_guard_atr,
         shorting_enabled=r.shorting_enabled,
         short_market_halt_threshold_pct=r.short_market_halt_threshold_pct,
         individual_stock_halt_pct=r.individual_stock_halt_pct,

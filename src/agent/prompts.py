@@ -120,7 +120,11 @@ following:
 4. Discovery: scan `python -m src.agent.tools scoreboard`, then for each
    promising candidate dig in with indicators / fundamentals / news (and web
    search) before writing a thesis. Add a BUY — always with a stop, and a target
-   where you have one — only on genuine conviction.{short_discovery}
+   where you have one — only on genuine conviction. Freshness check: the `news`
+   tool tags each headline with `age_hours` / `priced_in_risk` — a catalyst marked
+   `elevated` (older than a day) is likely already priced in, so do NOT chase an
+   entry near the 20d high on it; demand a fresh trigger or a better level, or
+   pass.{short_discovery}
 {screening_journal}
 5. Update watchlist.md with the names you are tracking and why.
 {short_block}

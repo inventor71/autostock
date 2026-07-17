@@ -79,7 +79,9 @@ class AgentTradingLoop:
         reflection_max_lessons: int = 10,
 shorting_enabled: bool = True,
         aggressiveness: str = "balanced",
-signal_brief_provider: Callable[[], str | None] | None = None,    ):
+signal_brief_provider: Callable[[], str | None] | None = None,
+        price_provider: Callable[[str], float] | None = None,
+    ):
         self.session = session or AgentSession()
         self.journal: Journal = self.session.journal
         self.universe = universe
@@ -101,6 +103,10 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
         # F61: optional callable that returns the market-signal brief text to
         # prepend to the research prompt. Fail-honest — any error → no brief.
         self._signal_brief_provider = signal_brief_provider
+        # F96: optional price lookup (symbol -> last price) used to stamp a
+        # decision-time ``ref_price`` on market entries, so the executor's drift
+        # guard has an anchor for a limit-less BUY/SELL_SHORT. Fail-honest.
+        self._price_provider = price_provider
         self.last_new_decisions: list[Decision] = []
         self.last_kept: list[Decision] = []
         self.last_rejected: list[Decision] = []
@@ -291,6 +297,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
             ver = self._guidance_version()
             lvl = self._aggr.level
             hzn = self._aggr.grading_horizon_days
+            # F96: stamp the decision-time price on market entries (BUY/SELL_SHORT
+            # with no limit level) so the executor's drift guard has an anchor. Done
+            # here — between turns, right after the LLM wrote the line and long
+            # before execution — so the anchor is the price the agent actually
+            # decided at, not the (possibly drifted) execution-time price.
+            self._stamp_ref_prices(new)
             needs_stamp = any(
                 d.prompt_version != ver
                 or d.aggressiveness != lvl
@@ -302,8 +314,31 @@ signal_brief_provider: Callable[[], str | None] | None = None,    ):
                     d.prompt_version = ver
                     d.aggressiveness = lvl
                     d.grading_horizon_days = hzn
+            # Re-persist if either the guidance stamp OR a ref_price was applied (a
+            # ref_price mutates ``new`` in place, so persist even when the guidance
+            # fields were already current — else the anchor is lost on restart).
+            if needs_stamp or any(d.ref_price is not None for d in new):
                 self.journal.restamp_decisions(all_d)
         return new
+
+    def _stamp_ref_prices(self, new: list[Decision]) -> None:
+        """F96: fill ``ref_price`` on market entries lacking one. Fail-honest — a
+        missing provider or a per-symbol fetch error just leaves ref_price None
+        (the drift guard then does not apply to that decision)."""
+        if self._price_provider is None:
+            return
+        for d in new:
+            if d.action not in ("BUY", "SELL_SHORT"):
+                continue
+            if d.limit is not None or d.ref_price is not None:
+                continue  # a limit level is its own anchor; never overwrite
+            try:
+                px = self._price_provider(d.symbol)
+            except Exception as exc:  # noqa: BLE001 — anchor is best-effort
+                logger.warning(f"ref_price stamp failed for {d.symbol}: {exc}")
+                continue
+            if px is not None and px > 0:
+                d.ref_price = float(px)
 
     def _cached_outcomes(self) -> list:
         """Today's DecisionOutcomes, cached per session-day. ``collect_outcomes``
