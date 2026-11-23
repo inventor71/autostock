@@ -343,3 +343,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-07-17 — **/ai-dlc-merge triage** — foreign 2건(mobile-realdevice-test-guide.md, tracks/F83 abandoned) → 사용자 선택 "머지 전에 별도 커밋" (9f3629b). 큐 승인: F96 → F97 (겹침 0, base 4f3fcbf).
 - 2026-07-17 — **F96 merged** → main 6211cfc (진입 드리프트 가드 + 뉴스 신선도/priced-in). rebase 4f3fcbf→9f3629b: 충돌은 레지스트리 테이블 1건뿐(F95 close 행 vs F96 신규 행 — 양쪽 보존), 코드 충돌 없음. verify green: pytest 1528 passed(유일 실패 test_health_publish는 worktree-경로 아티팩트, main에서 8/8 통과 확인). --no-ff.
 - 2026-07-17 — **F97 merged** → main 802499a (agent vs S&P500 daily 성과 스코어카드). rebase 4f3fcbf→fa39f86(F96 포함): 충돌은 레지스트리 1건뿐(양쪽 행 보존), `steering/runtime.py`는 auto-merge — perf_vs_benchmark 배선(:343)+_perf_block(:420) 정합 확인. verify green: pytest 1541 passed / TS 69 pass(opencode 16 + app 53) / typecheck 19/19. --no-ff.
+
+2026-11-23 — F100 merged locally at 6e246ac: Toss US adapter and private read-only setup; 1,753 Python tests passed; no account credentials or orders used.

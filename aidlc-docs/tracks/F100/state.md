@@ -1,8 +1,8 @@
 # Track F100 — 토스증권 OpenAPI 연동과 안전한 계좌 연결
 
-- **Status**: merge-awaiting
+- **Status**: merged → main 6e246ac (2026-11-23, local)
 - **Branch**: feat/F100
-- **Worktree**: .claude/worktrees/F100
+- **Worktree**: — (merged; temporary worktree removed)
 - **Base commit**: 749d641
 - **Start Date**: 2026-11-23
 
@@ -16,6 +16,7 @@ stop-market bracket으로 가장하지 않는다. 지원되지 않는 주문은 
 
 사용자의 구현 및 자율 진행 승인을 적용하여 단계별 재승인 없이 로컬 구현/검증을 진행한다.
 실거래 실행은 요청 범위에 포함되지 않는다. CodeKB는 참고만 하고 실제 연결 지점을 재확인한다.
+사용자가 US stocks first를 명시적으로 선택했다 (2026-11-23).
 
 ## Extension Configuration
 
