@@ -4,7 +4,36 @@ The Toss integration uses the official REST API, checked against OpenAPI **1.2.2
 on 2026-11-23. It is opt-in. Linking an account does not switch the running Alpaca
 daemon or enable trading.
 
+## Reuse an existing toss-stock connection
+
+If `~/Project/toss-stock` already monitors your account, connect without copying its
+client ID, secret or token:
+
+```bash
+venv/bin/python -m src.execution.brokers.toss.setup --from-toss-stock ~/Project/toss-stock
+venv/bin/python -m src.execution.brokers.toss.setup --check
+```
+
+Autostock verifies the existing token and selected account, then saves **only the token
+file path and account selection** in its private connection file. It does not read the
+other project's `.env`. If toss-stock has no saved account choice, exactly one eligible
+account must be returned. Failed verification preserves any previous Autostock connection.
+
+This mode is **always read-only**, including when live writes are enabled in configuration.
+The existing toss-stock monitor remains responsible for refreshing `.cache/token.json`;
+Autostock rereads that file on each request and never issues or stores its own token.
+Keep toss-stock's monitor running. If the token expires or is rejected, let toss-stock
+refresh its connection and retry `--check`. Autostock stops with an explanation instead
+of invalidating the monitor's token. Missing, malformed or insecure token files also fail
+closed. No changes or restart are required in toss-stock.
+
+Use the account and quote commands below to select Toss for an individual invocation.
+The daemon's configured broker remains unchanged by account linking.
+
 ## Link your account locally
+
+Use this standalone mode only when another program is **not** managing tokens for the
+same API client. If toss-stock is already connected, use the shared connection above.
 
 1. Sign into [Toss Securities WTS](https://tossinvest.com/). In **Settings → Open API**,
    issue a client ID and client secret. Register the **public IP of the machine running
@@ -56,7 +85,7 @@ AUTOSTOCK_DATA_PROVIDER=toss venv/bin/python -m src.agent.tools quote AAPL
 AUTOSTOCK_DATA_PROVIDER=toss venv/bin/python -m src.agent.tools indicators AAPL
 ```
 
-The shared token cache prevents concurrent daemon/tool processes from repeatedly
+In standalone mode, the shared token cache prevents concurrent daemon/tool processes from repeatedly
 revoking each other's token. Run instances for the same credentials under the same
 OS user and shared state directory. Separate machines must not independently mint
 tokens for the same client.

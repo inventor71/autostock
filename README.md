@@ -169,7 +169,16 @@ or the private user file for Toss described below; never commit credentials.
 
 ### Toss Securities (optional)
 
-Link a Toss account privately from your own terminal:
+Already using `~/Project/toss-stock`? Reuse its token without copying keys:
+
+```bash
+venv/bin/python -m src.execution.brokers.toss.setup --from-toss-stock ~/Project/toss-stock
+```
+
+This connection is always read-only; keep the existing toss-stock monitor running to
+renew its token. See [shared connection details](docs/TOSS.md#reuse-an-existing-toss-stock-connection).
+
+Without another token manager, link a Toss account privately from your own terminal:
 
 ```bash
 venv/bin/python -m src.execution.brokers.toss.setup

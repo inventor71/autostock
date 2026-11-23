@@ -66,10 +66,13 @@ class TossClient:
         self, credentials: TossCredentials, *, read_only: bool = True,
         state_dir: Path | str | None = None, http: httpx.Client | None = None,
     ):
+        if credentials.shared_token_file and not read_only:
+            raise BrokerError("Shared Toss tokens are read-only in Autostock")
         self.credentials = credentials
         self.read_only = read_only
         self.state_dir = Path(state_dir) if state_dir is not None else storage.state_dir()
-        identity = credentials.client_id + "\0" + credentials.client_secret
+        identity = ("shared\0" + credentials.shared_token_file if credentials.shared_token_file
+                    else credentials.client_id + "\0" + credentials.client_secret)
         self._identity = hashlib.sha256(identity.encode()).hexdigest()
         self._http = http or httpx.Client(
             timeout=httpx.Timeout(10.0, connect=5.0), follow_redirects=False, trust_env=False,
@@ -85,6 +88,19 @@ class TossClient:
         self.close()
 
     def _token(self, rejected: str | None = None) -> str:
+        if self.credentials.shared_token_file:
+            # toss-stock remains the sole token issuer. Never create, copy or
+            # refresh a token here: that would revoke its running monitor's token.
+            cached = storage.read_json(Path(self.credentials.shared_token_file))
+            token, expiry = cached.get("access_token"), cached.get("expires_at", 0)
+            if (not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", token) or
+                    not isinstance(expiry, (int, float)) or not math.isfinite(expiry) or
+                    expiry <= time.time() + 5 or token == rejected):
+                raise BrokerError(
+                    "Shared Toss token is missing, expired or rejected; let toss-stock "
+                    "refresh its connection, then retry. Autostock will not issue a token."
+                )
+            return token
         path = self.state_dir / f"token-{self._identity}.json"
         with storage.locked(path.with_suffix(".lock")):
             cached = storage.read_json(path)
@@ -120,7 +136,7 @@ class TossClient:
         method = method.upper()
         if method not in {"GET", "POST", "DELETE"} or not path.startswith("/api/v1/"):
             raise BrokerError("Unsupported Toss API request")
-        if method != "GET" and self.read_only:
+        if method != "GET" and (self.read_only or self.credentials.shared_token_file):
             raise BrokerError("Toss is read-only; linking credentials does not enable trading")
         if account and not self.credentials.account_seq:
             raise BrokerError("Select a Toss account before account-scoped requests")
@@ -167,7 +183,7 @@ class TossClient:
         raise BrokerError("Toss read retries exhausted")
 
     def create_order(self, payload: dict) -> dict:
-        if self.read_only:
+        if self.read_only or self.credentials.shared_token_file:
             raise BrokerError("Toss is read-only; linking credentials does not enable trading")
         key = payload.get("clientOrderId", "")
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,36}", key):

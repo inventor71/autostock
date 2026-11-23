@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from src.core.exceptions import BrokerError
+from src.execution.brokers.toss import storage
 from src.execution.brokers.toss.client import TossClient
 from src.execution.brokers.toss.credentials import (
     TossCredentials,
@@ -33,9 +34,34 @@ def _verify(client: TossClient, accounts: list[dict]) -> None:
     print(f"Read-only access verified for account ending {str(account['accountNo'])[-4:]}.")
 
 
+def _link_toss_stock(root: Path, path: Path) -> None:
+    root = root.expanduser().resolve(strict=True)
+    credentials = TossCredentials(shared_token_file=str(root / ".cache/token.json"))
+    # Use toss-stock's own account choice, if available. Never load its .env,
+    # import its Python code or silently pick a different account.
+    selected = storage.read_json(root / ".cache/account.json").get("accountSeq")
+    with TossClient(credentials) as client:
+        accounts = _accounts(client)
+        if selected is None:
+            if len(accounts) != 1:
+                raise BrokerError("Select an account in toss-stock before linking Autostock")
+            selected = accounts[0]["accountSeq"]
+        credentials = replace(credentials, account_seq=str(selected))
+        client.credentials = credentials
+        _verify(client, accounts)
+    # Save only after all checks pass; a failed link preserves existing settings.
+    save_credentials(credentials, path)
+    print(f"Shared token connection saved at {path} (permissions 0600).")
+    print("Read-only: toss-stock manages token renewal. No keys or tokens were copied.")
+    print("Account linked. Autostock configuration and trading permissions were not changed.")
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Link Toss locally without enabling trading")
-    parser.add_argument("--check", action="store_true", help="Verify the saved account; no trading")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="Verify the saved account; no trading")
+    mode.add_argument("--from-toss-stock", type=Path, metavar="DIRECTORY",
+                      help="Reuse toss-stock's token in read-only mode; no keys copied or tokens issued")
     parser.add_argument("--credentials-file", type=Path, help="Private file outside the repository")
     args = parser.parse_args(argv)
     path = credential_path(args.credentials_file)
@@ -47,6 +73,9 @@ def main(argv=None) -> int:
         if args.check:
             with TossClient(load_credentials(path)) as client:
                 _verify(client, _accounts(client))
+            return 0
+        if args.from_toss_stock is not None:
+            _link_toss_stock(args.from_toss_stock, path)
             return 0
         if not sys.stdin.isatty() or not sys.stderr.isatty():
             raise BrokerError("Run setup in your own terminal; credentials require hidden interactive input")
