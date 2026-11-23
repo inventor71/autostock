@@ -123,6 +123,8 @@
 | F95 | Symbol 클릭 → 주요 정보 floating panel (종목 클릭 시 오버레이로 quote/position/thesis/decision 등 노출) | merged | feat/F95 → main d93593b | — (제거됨) | — (monorepo) | 4f3fcbf | 2026-07-11 |
 | F96 | 진입 실행 가드(decision→fill 드리프트) + 뉴스 신선도/priced-in 할인 — 모멘텀 진입 MARKET 주문의 나쁜 체결 방지(execute_decision 드리프트 가드) + news 툴 age_hours/priced_in_risk 노출 + 프롬프트 priced-in 규칙 | merged | feat/F96 → main 6211cfc | — (제거됨) | — (monorepo) | 4f3fcbf→rebased 9f3629b | 2026-07-17 |
 | F97 | Daily 성과 평가 — 에이전트 누적수익 vs S&P500(SPY) buy-and-hold, alpha 표시 (`workspace/equity.jsonl`의 기존 일별 equity+SPY 마크를 조인) | merged | feat/F97 → main 802499a | — (제거됨) | — (monorepo) | 4f3fcbf→rebased fa39f86 | 2026-07-17 |
+| F98 | 모바일 단일 origin 배포 (근본 수정, F93 후속) — `autostock serve`가 prod 빌드 앱을 같은 origin에 서빙 → 폰이 URL 하나로 자동 연결(서버 추가/기본값/CORS/QR 불일치 단계 소멸) + `/autostock` 라우팅 리다이렉트 버그 | active | feat/F98 | .claude/worktrees/F98 | — (monorepo) | 76ae872 | 2026-07-17 |
+| F99 | 데몬 안정성 버그 2개 수정 — yfinance 배치 조회 크래시(early-session 정지) + 파일 디스크립터 누수(`Too many open files` → steering/equity 쓰기 실패) | active | feat/F99 | .claude/worktrees/F99 | — (monorepo) | 76ae872 | 2026-07-28 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
