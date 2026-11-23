@@ -36,6 +36,12 @@ def _broker():
 def _universe() -> list[str]:
     from config.config import get_settings
     from src.universe.factory import resolve_universe
+    if get_settings().broker.provider == "toss_shadow":
+        broker = _broker()
+        try:
+            return broker.read()["universe"]
+        finally:
+            broker.close()
     return resolve_universe(get_settings())
 
 

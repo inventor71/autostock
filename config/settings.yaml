@@ -10,6 +10,7 @@ broker:
   #   alpaca     → AlpacaBroker (Trading API, own paper account, ALPACA_API_KEY)
   #   account_farm → AccountFarmBroker (Broker API sandbox, BROKER_API_KEY + BROKER_ACCOUNT_ID)
   #   toss → US Toss adapter; private setup, paper=false, read-only default (docs/TOSS.md)
+  #   toss_shadow → dedicated src.evals.toss_shadow runner only; local USD simulation
   provider: alpaca
   # API keys should be set via environment variables:
   # ALPACA_API_KEY, ALPACA_API_SECRET (alpaca provider)

@@ -12,6 +12,11 @@ from __future__ import annotations
 
 def create_broker(settings):
     """Create broker based on config (alpaca | kis | account_farm | toss)."""
+    if getattr(settings.broker, "provider", "") == "toss_shadow":
+        if not settings.broker.paper or settings.app.mode == "live" or not settings.toss_shadow.run_dir:
+            raise ValueError("Toss shadow requires paper=true, a run_dir, and a non-live app mode")
+        from src.execution.brokers.toss.shadow import TossShadowBroker
+        return TossShadowBroker(create_toss_client(settings, data_only=True), settings.toss_shadow.run_dir)
     if (settings.broker.name or "").lower() == "toss" and settings.broker.provider != "toss":
         raise ValueError("broker.name=toss requires broker.provider=toss; refusing an Alpaca fallback")
     if getattr(settings.broker, "provider", "") == "toss":
@@ -42,7 +47,7 @@ def create_broker(settings):
         # Fail loud on an unknown provider — a silent fallback would trade on the
         # wrong (Alpaca) account when the config names a provider we don't know.
         raise ValueError(
-            f"Unknown broker.provider {provider!r}; expected 'alpaca', 'account_farm' or 'toss'"
+            f"Unknown broker.provider {provider!r}; expected 'alpaca', 'account_farm', 'toss' or 'toss_shadow'"
         )
     from src.execution.brokers.alpaca_broker import AlpacaBroker
     return AlpacaBroker(

@@ -138,6 +138,138 @@ window. Inspect the actual order history in Toss before issuing a new intent; de
 the journal to make a retry succeed can create duplicates. Reads retry bounded transient
 errors; writes, modifications and cancellations do not retry automatically.
 
+## Automatic commission refresh
+
+`account` now includes `trading_costs`: the account-specific US rate, confirmation time,
+and next check time. The `/api/v1/commissions` response is cached privately per connection
+and account. Refresh is due after **6 hours or the end of the applicable KST date**, whichever
+comes first. The expiry date is inclusive; `2026-11-24` stops applying at
+`2026-11-25T00:00:00+09:00`. Null / `9999-12-31` expiry dates still get the six-hour refresh.
+Refresh happens on use; the shadow runner checks it every polling cycle even outside
+market hours. The program must be running to perform a scheduled check.
+
+An expired schedule returned again by the API, an ambiguous schedule, or a failed refresh
+does **not** fall back to the old rate or zero. New live BUY submissions are blocked;
+risk-reducing live SELLs remain available. In the shadow account, all simulated fills wait
+for cost confirmation and automatically resume after a successful refresh. Positions and
+observations remain available, with the failure visible in `health.cost_error`.
+
+Annual capital-gains tax is deliberately separate. The commission API does not supply all
+taxes or regulatory charges: the dry model currently estimates SEC sell fees at
+$20.60/million, rounded up to cents, and zero TAF for the October–December 2026 holiday.
+These **dated assumptions require review after 2026-12-31**; fills pause outside their
+review window. Account commission refresh is automatic; scraping unstructured pages is
+not used to silently change regulatory assumptions. See the
+[SEC rate advisory](https://www.sec.gov/rules-regulations/fee-rate-advisories/2026-2) and
+[FINRA holiday filing](https://www.govinfo.gov/content/pkg/FR-2026-09-23/html/2026-19392.htm).
+Commission rounding is conservatively upward, and the public small-order commission
+waiver is not assumed for an account-specific promotion. This can overestimate small-trade
+costs; each fill retains the exact rate and assumptions used.
+
+## Multi-day dry evaluation
+
+Use a **local shadow account fed by Toss GET quotes**. It does not create, reset or trade
+an Alpaca account. Alpaca's paper simulator excludes latency slippage and regulatory
+fees, and does not constrain fills by quoted quantities; see its
+[paper specification](https://docs.alpaca.markets/us/docs/paper-trading).
+
+From the repository root, initialize a new run:
+
+```bash
+venv/bin/python -m src.evals.toss_shadow --dir research-comparisons/toss-shadow/trial-01 init --days 7
+```
+
+This takes one snapshot of your US holdings (quantities and average purchase prices) and
+available USD cash. It preserves the historical cost basis, but measures new performance
+from the snapshot's market value. Initial existing gains/fees are not counted again.
+The initial capital is a **USD slice**, not complete Toss NAV: KRW, reserved/unsettled
+funds and real pending orders are not imported. Later actual trades/deposits do not change
+the counterfactual account. A second `init` in the same directory is rejected.
+
+Models, risk settings, universe, duration and daily call budget are frozen at initialization.
+By default the configured US universe is unioned with the existing holdings; `--symbols
+AAPL,MSFT,SPY` selects a smaller pool while retaining every held symbol. Model provider,
+model IDs and efforts come from the existing settings/environment. No provider switch is
+made automatically. Defaults: 7 **calendar** days, one research/intraday turn per 60 minutes,
+at most 8 attempted turns per New York date. Failures and restarts count against this budget.
+The first turn runs during the regular session. Multi-agent research and automatic prompt
+self-rewriting are off in this comparison so its policy stays fixed.
+
+Observe one cycle without using a model:
+
+```bash
+venv/bin/python -m src.evals.toss_shadow --dir research-comparisons/toss-shadow/trial-01 run --once
+```
+
+Run continuously with the configured trading agent:
+
+```bash
+venv/bin/python -m src.evals.toss_shadow --dir research-comparisons/toss-shadow/trial-01 run --agent
+```
+
+Keep the machine and toss-stock token monitor running. Ctrl-C stops the runner; the same
+command resumes the same account and original deadline. Polling continues in parallel
+while the model reasons. No new turn or order starts after the persisted deadline.
+Shutdown lets an already-running model call finish within its provider timeout and does
+not execute that final turn's decisions. `--seconds 60` limits a short observation run;
+`--poll-seconds 5` is the default observation cadence. An agent call budget is **not** a
+dollar cap or a readable Codex weekly-usage meter.
+
+For unattended operation on this Linux host, a separate user service is optional:
+
+```bash
+systemd-run --user --unit=autostock-toss-shadow --property=WorkingDirectory="$PWD" --setenv=PATH="$PATH" \
+  --property=UMask=0077 --property=Restart=on-failure \
+  "$PWD/venv/bin/python" -m src.evals.toss_shadow \
+  --dir "$PWD/research-comparisons/toss-shadow/trial-01" run --agent
+journalctl --user -u autostock-toss-shadow -f
+```
+
+Stop with `systemctl --user stop autostock-toss-shadow`. This is independent of the existing
+Autostock daemon. A second runner for the same directory is rejected. Only use the dedicated
+`src.evals.toss_shadow` entry point; the ordinary agent mode rejects the shadow provider
+because it would otherwise reuse the normal journal. Do not export shadow environment
+overrides to the normal daemon.
+
+Inspect results while it runs or afterwards (no API request):
+
+```bash
+venv/bin/python -m src.evals.toss_shadow --dir research-comparisons/toss-shadow/trial-01 report
+```
+
+The directory is gitignored and private (0700, state files 0600):
+
+| Artifact | What to compare |
+|---|---|
+| `account.json` | Durable cash, positions, pending orders, all fills with quote evidence and cost breakdown; frozen settings and attempted turns |
+| `equity.jsonl` | Periodic strategy/hold-book valuations, quote timestamps, HTTP latency and health; gaps remain visible |
+| `workspace/` | Separate agent decisions, reasoning, execution outcomes and model usage logs |
+| `report` output | Net marked return, same-start buy-and-hold return, excess return, maximum observed drawdown, incurred fees, execution shortfall and additional 10 bps/fill stress sensitivity |
+
+An `executed` decision in the existing agent journal means an order was submitted; consult
+`account.json` fills for actual **simulated** executions. The report's marked return includes
+incurred costs; open positions have not been liquidated. `metrics.valid_snapshots`,
+`health`, `agent_error_count` and `blocked_polls` distinguish a losing strategy from a broken
+feed/model run. A few days can reveal excessive turnover or operational failures, but do
+not establish statistically reliable superior returns.
+
+Execution defaults are deliberately explicit: buy at ask / sell at bid, 2 bps additional
+adverse slippage, minimum one-second activation delay, maximum 15-second quote age,
+10% of displayed size, partial fills and DAY entry expiry. The same timestamped liquidity
+cannot be consumed again on restart. Limit orders require an executable price including
+modeled slippage; a last-price touch is insufficient. Stops wait for a later observation
+and fill at the available gap price. Poll interval/feed delays add to the nominal latency.
+Use `init --latency-seconds`, `--slippage-bps`, `--participation`, `--interval-minutes`,
+`--max-turns-per-day` for a **new** comparison run.
+
+This remains a simulation: Toss's selected-exchange books do not reveal consolidated
+liquidity, queue priority or real routing latency. Stops/OCO are local hypothetical
+protection, not a capability of the live adapter. Cancels are local/immediate; USD sale
+proceeds are reusable immediately, without settlement restrictions. FX, annual capital
+gains tax, dividends, splits, mergers and ADR fees are not modeled. Avoid interpreting a
+corporate-action window or data outage as strategy alpha. The extra-cost stress result is
+a sensitivity calculation, not a replay of a different latency path.
+
 ## Verification
 
 ```bash

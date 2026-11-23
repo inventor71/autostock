@@ -52,6 +52,11 @@ class TossConfig(BaseModel):
     read_only: bool = True
 
 
+class TossShadowConfig(BaseModel):
+    # Set by the dedicated dry runner; never points at a real/paper broker account.
+    run_dir: str = ""
+
+
 class TradingConfig(BaseModel):
     mode: str = "batch"
     batch_interval_minutes: int = 60
@@ -173,6 +178,7 @@ class Settings(BaseSettings):
     broker: BrokerConfig = BrokerConfig()
     data: DataConfig = DataConfig()
     toss: TossConfig = TossConfig()
+    toss_shadow: TossShadowConfig = TossShadowConfig()
     trading: TradingConfig = TradingConfig()
     risk: RiskConfig = RiskConfig()
     backtest: BacktestConfig = BacktestConfig()
@@ -240,6 +246,7 @@ _ENV_OVERRIDES: dict[str, tuple[str, str]] = {
     "AUTOSTOCK_DATA_PROVIDER": ("data", "provider"),
     "AUTOSTOCK_APP_MODE": ("app", "mode"),
     "AUTOSTOCK_TOSS_READ_ONLY": ("toss", "read_only"),
+    "AUTOSTOCK_SHADOW_DIR": ("toss_shadow", "run_dir"),
     "AUTOSTOCK_AGENT_PROVIDER": ("agent", "provider"),
     "AUTOSTOCK_AGENT_MODEL": ("agent", "model"),
     "AUTOSTOCK_RESEARCH_MODEL": ("agent", "research_model"),

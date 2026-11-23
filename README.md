@@ -190,6 +190,11 @@ adapter supports US account/data access and simple orders; autonomous Toss tradi
 blocked because its native conditional orders differ from our required stop-market brackets.
 See [Toss setup and compatibility](docs/TOSS.md) for the credential/IP steps and limitations.
 
+For a multi-day virtual account seeded from Toss holdings and USD cash, see
+[Toss dry evaluation](docs/TOSS.md#multi-day-dry-evaluation). It uses a separate local ledger,
+Toss quotes, refreshed commission rates and conservative execution costs; no real orders
+or Alpaca account changes are involved.
+
 ### Trading judgment and research comparisons
 
 Model selection belongs to the trader, independently of your coding assistant's

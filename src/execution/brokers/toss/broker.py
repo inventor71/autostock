@@ -57,6 +57,12 @@ class TossBroker(BaseBroker):
     def close(self):
         self.client.close()
 
+    def get_cost_profile(self):
+        from src.execution.brokers.toss.costs import CommissionSchedule
+        return {"commission": CommissionSchedule(self.client).get(),
+                "annual_capital_gains_tax_included": False,
+                "note": "Commission rate only; execution fees/taxes are reported by Toss on fills"}
+
     def _write_enabled(self):
         if self.client.read_only:
             raise BrokerError("Toss is read-only; account linking does not enable live orders")
@@ -111,6 +117,10 @@ class TossBroker(BaseBroker):
 
     def submit_order(self, order: Order) -> FilledOrder:
         self.validate_order(order)
+        if order.side == OrderSide.BUY:
+            # A stale promotion must not silently fund a new exposure decision.
+            # Risk-reducing sells remain available when fee discovery is down.
+            self.get_cost_profile()
         symbol = order.symbol.upper()
         self._stock(symbol)
         if not self.is_market_open():
