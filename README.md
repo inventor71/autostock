@@ -164,8 +164,22 @@ active_strategies:
 ```
 
 Precedence: **CLI args > environment variables > `.env` > YAML > code defaults.** Nested keys
-via `__` (e.g. `RISK__STOP_LOSS_PCT=0.03`). API keys come from the environment / `.env` only —
-never committed.
+via `__` (e.g. `RISK__STOP_LOSS_PCT=0.03`). API keys come from the environment / `.env`,
+or the private user file for Toss described below; never commit credentials.
+
+### Toss Securities (optional)
+
+Link a Toss account privately from your own terminal:
+
+```bash
+venv/bin/python -m src.execution.brokers.toss.setup
+```
+
+The command hides credential input, stores it outside Git with owner-only permissions,
+and verifies read-only access. It does not switch brokers or enable trading. The initial
+adapter supports US account/data access and simple orders; autonomous Toss trading is
+blocked because its native conditional orders differ from our required stop-market brackets.
+See [Toss setup and compatibility](docs/TOSS.md) for the credential/IP steps and limitations.
 
 ### Trading judgment and research comparisons
 

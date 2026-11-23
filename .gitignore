@@ -23,6 +23,9 @@ env/
 # Environment variables
 .env
 .env.local
+# Defense in depth for accidental copies; Toss setup stores secrets outside Git.
+toss-credentials*.json
+.toss/
 # F10 verification: TEST paper account creds (keep .env.test.example tracked)
 .env.test
 # F90 prod multi-instance: per-instance account secrets (keep config/.env.example tracked)

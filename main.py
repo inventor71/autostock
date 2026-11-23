@@ -15,6 +15,12 @@ from src.universe.factory import resolve_universe
 def create_data_provider(settings, broker=None):
     """Create data provider based on config. A KIS broker shares its REST client
     (so both honour one token, respecting KIS's 1-issuance/min cap)."""
+    if settings.data.provider == "toss":
+        from src.data.providers.toss_provider import TossDataProvider
+        from src.execution.brokers.factory import create_toss_client
+        from src.execution.brokers.toss.broker import TossBroker
+        client = broker.client if isinstance(broker, TossBroker) else create_toss_client(settings, data_only=True)
+        return TossDataProvider(client)
     if (settings.broker.name or "").lower() == "kis" or settings.data.provider == "kis":
         from src.data.providers.kis_provider import KisDataProvider
         client = getattr(broker, "client", None)
@@ -346,6 +352,12 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
     from src.trading.modes.agent import AgentTradingMode
 
     broker = create_broker(settings)
+    if getattr(broker, "supports_bracket_orders", True) is False:
+        broker.close()
+        raise ValueError(
+            "This broker cannot provide the agent's required stop-market brackets. "
+            "Toss supports account/data tools and simple orders; autonomous agent trading is disabled."
+        )
     data_provider = create_data_provider(settings, broker=broker)
     # F85: the agent path applies the aggressiveness risk overlay (bracket orders on).
     risk_manager = _build_risk_manager(

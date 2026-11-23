@@ -349,6 +349,10 @@ def account(broker) -> dict:
     }
     if orders_error is not None:
         out["open_orders_error"] = orders_error
+    if getattr(state, "valuation_basis", "account_equity") != "account_equity":
+        out["valuation_basis"] = state.valuation_basis
+        out["currency"] = state.currency
+        out["valuation_note"] = "Available cash plus US holdings; excludes reserved/unsettled cash and KRW assets. Not account NAV."
     return out
 
 

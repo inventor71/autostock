@@ -31,6 +31,7 @@ class DataPipelineChecker(BaseChecker):
     def _check_primary_provider(self) -> CheckResult:
         """Fetch one latest price via the configured data provider."""
         t0 = time.monotonic()
+        provider = None
         try:
             from main import create_data_provider
             provider = create_data_provider(self._settings)
@@ -56,6 +57,9 @@ class DataPipelineChecker(BaseChecker):
                 duration_ms=elapsed,
                 error=str(e),
             )
+        finally:
+            if provider is not None and self._settings.data.provider == "toss":
+                provider.client.close()
 
     def _check_yfinance(self) -> CheckResult:
         """YFinance fallback check (only if primary is alpaca)."""

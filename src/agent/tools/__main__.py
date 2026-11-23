@@ -14,6 +14,11 @@ from src.agent.tools import market
 
 
 def _provider():
+    from config.config import get_settings
+    settings = get_settings()
+    if settings.data.provider == "toss":
+        from main import create_data_provider
+        return create_data_provider(settings)
     from src.data.providers.yfinance_provider import YFinanceProvider
     return YFinanceProvider()
 

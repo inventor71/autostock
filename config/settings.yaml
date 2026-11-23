@@ -9,15 +9,24 @@ broker:
   # Which broker implementation to use:
   #   alpaca     → AlpacaBroker (Trading API, own paper account, ALPACA_API_KEY)
   #   account_farm → AccountFarmBroker (Broker API sandbox, BROKER_API_KEY + BROKER_ACCOUNT_ID)
+  #   toss → US Toss adapter; private setup, paper=false, read-only default (docs/TOSS.md)
   provider: alpaca
   # API keys should be set via environment variables:
   # ALPACA_API_KEY, ALPACA_API_SECRET (alpaca provider)
   # BROKER_API_KEY, BROKER_API_SECRET, BROKER_ACCOUNT_ID (account_farm provider)
 
 data:
-  provider: yfinance  # yfinance, alpaca
+  provider: yfinance  # yfinance, alpaca, toss
   cache_dir: ./data
   default_timeframe: 1d
+
+# Toss is opt-in; account linking never changes the selected broker.
+# python -m src.execution.brokers.toss.setup stores keys outside this repository.
+# No documented Toss paper endpoint: broker.paper must be false if selected.
+toss:
+  read_only: true
+  credentials_file: ""  # default: ~/.config/autostock/toss/credentials.json
+  state_dir: ""         # default: ~/.local/state/autostock/toss
 
 trading:
   mode: batch  # batch, realtime

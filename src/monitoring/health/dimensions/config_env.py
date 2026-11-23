@@ -50,11 +50,20 @@ class ConfigEnvChecker(BaseChecker):
         missing: list[str] = []
         s = self._settings
 
-        # Always-needed broker keys — checked via settings attributes
-        if not s.alpaca_api_key:
-            missing.append("ALPACA_API_KEY")
-        if not s.alpaca_api_secret:
-            missing.append("ALPACA_API_SECRET")
+        # Validate only the selected account provider. Toss's private credential
+        # file is intentionally outside Settings and need not expose Alpaca keys.
+        if s.broker.provider == "toss":
+            from src.core.exceptions import BrokerError
+            from src.execution.brokers.toss.credentials import load_credentials
+            try:
+                load_credentials(s.toss.credentials_file)
+            except (BrokerError, OSError):
+                missing.append("Toss private credentials (run Toss setup)")
+        elif s.broker.provider == "alpaca" and (getattr(s.broker, "name", "") or "").lower() != "kis":
+            if not s.alpaca_api_key:
+                missing.append("ALPACA_API_KEY")
+            if not s.alpaca_api_secret:
+                missing.append("ALPACA_API_SECRET")
 
         # LLM-specific keys
         providers = {s.llm.provider}

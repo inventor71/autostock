@@ -34,6 +34,7 @@ class BrokerConfig(BaseModel):
     # provider selects the broker implementation:
     #   "alpaca"     → AlpacaBroker (Trading API, one own paper account)
     #   "account_farm" → AccountFarmBroker (Broker API sandbox, per-account *_for_account)
+    #   "toss" → TossBroker (US live account access, read-only by default; no paper endpoint)
     provider: str = "alpaca"
 
 
@@ -41,6 +42,14 @@ class DataConfig(BaseModel):
     provider: str = "yfinance"
     cache_dir: str = "./data"
     default_timeframe: str = "1d"
+
+
+class TossConfig(BaseModel):
+    # These are paths/switches only. Secrets are loaded lazily from private
+    # user storage, so Settings dumps and validation errors cannot expose them.
+    credentials_file: str = ""
+    state_dir: str = ""
+    read_only: bool = True
 
 
 class TradingConfig(BaseModel):
@@ -163,6 +172,7 @@ class Settings(BaseSettings):
     app: AppConfig = AppConfig()
     broker: BrokerConfig = BrokerConfig()
     data: DataConfig = DataConfig()
+    toss: TossConfig = TossConfig()
     trading: TradingConfig = TradingConfig()
     risk: RiskConfig = RiskConfig()
     backtest: BacktestConfig = BacktestConfig()
@@ -226,6 +236,10 @@ _ENV_OVERRIDES: dict[str, tuple[str, str]] = {
     # env var -> (settings section, key)
     "AUTOSTOCK_AGGRESSIVENESS": ("agent", "aggressiveness"),
     "AUTOSTOCK_BROKER_PROVIDER": ("broker", "provider"),
+    "AUTOSTOCK_BROKER_PAPER": ("broker", "paper"),
+    "AUTOSTOCK_DATA_PROVIDER": ("data", "provider"),
+    "AUTOSTOCK_APP_MODE": ("app", "mode"),
+    "AUTOSTOCK_TOSS_READ_ONLY": ("toss", "read_only"),
     "AUTOSTOCK_AGENT_PROVIDER": ("agent", "provider"),
     "AUTOSTOCK_AGENT_MODEL": ("agent", "model"),
     "AUTOSTOCK_RESEARCH_MODEL": ("agent", "research_model"),

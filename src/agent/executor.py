@@ -438,8 +438,6 @@ class DecisionExecutor:
         if already:
             return ExecutionOutcome(d, "skipped_hold", "already protected at this stop")
 
-        self._cancel_and_wait(d.symbol, opens)
-
         if target is not None:
             order = Order(
                 symbol=d.symbol, side=protective_side, qty=position.qty,
@@ -450,6 +448,10 @@ class DecisionExecutor:
                 symbol=d.symbol, side=protective_side, qty=position.qty,
                 order_type=OrderType.STOP, stop_price=new_stop,
             )
+        validate = getattr(self.broker, "validate_order", None)
+        if callable(validate):
+            validate(order)
+        self._cancel_and_wait(d.symbol, opens)
         filled = self.broker.submit_order(order)
         detail = f"{label} {d.symbol} ({position.side.value}) stop->{new_stop:.2f}"
         if target is not None:

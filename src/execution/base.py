@@ -21,6 +21,14 @@ class BaseBroker(ABC):
     # override this to 0 to avoid a throttled polling stall.
     cancel_settle_wait: float = 6.0
 
+    def validate_order(self, order: Order) -> None:
+        """Check provider capabilities before canceling existing protection.
+
+        Providers with a restricted order vocabulary override this. Validation
+        must not place or cancel orders.
+        """
+        return None
+
     def get_open_orders(self, symbol: str | None = None) -> list[OpenOrder]:
         """List resting (open) orders, optionally for one symbol.
 

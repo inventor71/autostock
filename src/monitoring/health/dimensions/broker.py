@@ -29,15 +29,17 @@ class BrokerChecker(BaseChecker):
     def _check_connectivity(self) -> CheckResult:
         """Call broker.get_portfolio_state() — proves auth + account reachable."""
         t0 = time.monotonic()
+        broker = None
         try:
             from src.execution.brokers.factory import create_broker
             broker = create_broker(self._settings)
             pf = broker.get_portfolio_state()
+            label = "capital estimate" if getattr(pf, "valuation_basis", "") == "available_cash_plus_positions" else "equity"
             elapsed = (time.monotonic() - t0) * 1000
             return CheckResult(
                 name="connectivity",
                 status=CheckStatus.OK,
-                detail=f"Broker OK — equity=${pf.equity:,.0f}, {pf.position_count} positions",
+                detail=f"Broker OK — {label}=${pf.equity:,.0f}, {pf.position_count} positions",
                 severity=Severity.ERROR,
                 duration_ms=elapsed,
             )
@@ -51,10 +53,14 @@ class BrokerChecker(BaseChecker):
                 duration_ms=elapsed,
                 error=str(e),
             )
+        finally:
+            if broker is not None and self._settings.broker.provider == "toss":
+                broker.close()
 
     def _check_market_open(self) -> CheckResult:
         """Check market clock."""
         t0 = time.monotonic()
+        broker = None
         try:
             from src.execution.brokers.factory import create_broker
             broker = create_broker(self._settings)
@@ -78,10 +84,14 @@ class BrokerChecker(BaseChecker):
                 duration_ms=elapsed,
                 error=str(e),
             )
+        finally:
+            if broker is not None and self._settings.broker.provider == "toss":
+                broker.close()
 
     def _check_open_orders(self) -> CheckResult:
         """Count resting (open) orders."""
         t0 = time.monotonic()
+        broker = None
         try:
             from src.execution.brokers.factory import create_broker
             broker = create_broker(self._settings)
@@ -104,3 +114,6 @@ class BrokerChecker(BaseChecker):
                 duration_ms=elapsed,
                 error=str(e),
             )
+        finally:
+            if broker is not None and self._settings.broker.provider == "toss":
+                broker.close()

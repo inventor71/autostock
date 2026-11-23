@@ -78,6 +78,8 @@ def fetch_benchmark(data_provider, symbols: tuple[str, ...] = ("SPY", "QQQ", "^V
 
 def record_equity(portfolio: PortfolioState, path: str | Path, benchmark: dict | None = None) -> dict:
     """Append a snapshot of the account to the JSONL equity log; return it."""
+    if getattr(portfolio, "valuation_basis", "account_equity") != "account_equity":
+        raise ValueError("Available cash plus holdings is not account NAV; equity returns were not recorded")
     snap = snapshot(portfolio, benchmark=benchmark)
     append_record(path, snap)
     logger.info(
