@@ -347,3 +347,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 2026-11-23 — F100 merged locally at 6e246ac: Toss US adapter and private read-only setup; 1,753 Python tests passed; no account credentials or orders used.
 
 2026-11-23 — F101 merged locally at 24b32f7: reuse toss-stock token for read-only account/data access, no keys copied or tokens issued; 1,770 tests passed and live GET checks succeeded.
+
+2026-11-23 — F102 merged locally at 4d0ef71: expiring Toss commission refresh and isolated durable shadow evaluation; 1,806 tests passed, real GET-only setup/quote checks succeeded, no live orders or model calls.

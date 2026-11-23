@@ -1,9 +1,9 @@
 # F102 — Toss 요율 자동 갱신과 독립 가상 운용
 
-**Status**: merge-awaiting
-**Branch**: feat/F102
+**Status**: merged
+**Branch**: feat/F102 → main 4d0ef71 (feature f6883d8)
 **Base**: 3a407b6
-**Workspace**: .claude/worktrees/F102
+**Workspace**: removed after local merge
 **Updated**: 2026-11-23
 
 ## Scope / authorization
@@ -20,7 +20,7 @@
 - [x] Code generation
 - [x] Build and test / read-only smoke / review: 1806 passed, 30 기존 경고; Ruff/diff check 통과.
 - [x] Post-merge guide
-- [ ] Local integration
+- [x] Local integration: merge 4d0ef71, push 없음; 기존 데몬/실계좌 주문 없음.
 
 ## Extension Configuration
 

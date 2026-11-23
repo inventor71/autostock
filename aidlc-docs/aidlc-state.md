@@ -128,7 +128,7 @@
 | F100 | 토스증권 OpenAPI — 안전한 로컬 계좌 연결, US broker/data adapter, 주문 기능 차이 검증 | merged | feat/F100 → main 6e246ac | — (제거됨) | — (monorepo) | 749d641 | 2026-11-23 |
 | F101 | toss-stock 기존 토큰 공유 — 키 복사 없는 읽기 전용 계좌 연결 | merged | feat/F101 → main 24b32f7 | — (제거됨) | — (monorepo) | e082768 | 2026-11-23 |
 
-| F102 | Toss 요율 자동 갱신과 독립 가상 운용 | active | feat/F102 | .claude/worktrees/F102 | — (monorepo) | 3a407b6 | 2026-11-23 |
+| F102 | Toss 요율 자동 갱신과 독립 가상 운용 | merged | feat/F102 → main 4d0ef71 | — (제거됨) | — (monorepo) | 3a407b6 | 2026-11-23 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under

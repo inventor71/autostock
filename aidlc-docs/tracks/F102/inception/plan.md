@@ -30,7 +30,7 @@
 2. [x] src/execution/brokers/toss/shadow.py: 가상 장부, 체결, cost attribution, baseline.
 3. [x] src/evals/toss_shadow.py: 시드/운용/보고 CLI, factory/config 연동과 agent 격리.
 4. [x] 재시작/부분 체결/비용/호가/계좌 분리/runner 회귀 테스트; 전체 Python suite.
-5. [x] docs/TOSS.md 및 post-merge-guide, 실제 GET-only smoke; 로컬 통합 대기.
+5. [x] docs/TOSS.md 및 post-merge-guide, 실제 GET-only smoke; 4d0ef71 로컬 통합 완료.
 
 ## 검증 한계
 

@@ -26,3 +26,9 @@ HTTP 요청 중 요율 만료/정규장 종료 경계를 보완했다. 최종 18
 강제 요율 재조회/AAPL orderbook 파싱 검증 성공. GET 외 HTTP 차단 hook 검증 2 GET,
 주문·토큰 발급·모델 호출 0회. 원격 push, 기존 데몬 재시작, 장기 agent 실행 없음.
 단기 가상 성과/수익 향상을 입증했다는 주장은 하지 않는다.
+
+## 2026-11-23 — Local integration
+
+feature f6883d8를 main에 --no-ff merge 4d0ef71로 통합했다. main은 base 이후 변경 없었고
+병합 결과 tree가 검증한 feature와 동일함을 확인했다. 전용 worktree/branch 정리.
+AI-DLC 레지스트리와 track 기록 종료; push와 기존 프로세스 재시작은 하지 않았다.
