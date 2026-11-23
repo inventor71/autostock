@@ -63,12 +63,17 @@
   companion outside of Docker, for a local/bare-metal single-instance setup.
 - **Key Resources**:
   - `install.ts` — creates a `~/.local/bin/autostock` shim (bakes `AUTOSTOCK_ROOT`) and
-    installs two systemd `--user` units (enabled + linger, so they survive logout).
+    installs two systemd `--user` units (enabled + linger, so they survive logout); also
+    warns loudly if `~/.local/bin` is missing from `PATH` or if another `autostock` binary
+    shadows the shim earlier on `PATH`.
   - `autostock-daemon.service` — `ExecStart=python main.py --mode agent --steering`,
     `WorkingDirectory=$AUTOSTOCK_ROOT` (`.env` loading is CWD-relative), `Restart=on-failure`.
   - `autostock-serve.service` (F71) — `ExecStart=~/.local/bin/autostock serve`, headless
-    opencode server bound to the Tailscale interface only, password-gated
-    (`OPENCODE_SERVER_PASSWORD`).
+    opencode server bound to the Tailscale tailnet interface IPv4 only (`tailscale ip -4`;
+    never `0.0.0.0`), password-gated (`OPENCODE_SERVER_PASSWORD`, mandatory — refuses to
+    start unsecured). Installed + enabled at install time but not auto-started (it
+    fail-closes without a password/tailnet, so install must not require either); first start
+    is `systemctl --user start autostock-serve` or a reboot.
   - `daemon.ts` — health/wedge detection: watches `snapshot.json`'s `published_at` for
     staleness (45s window, more patient than the 5s publish cadence to absorb slow LLM
     turns); auto-restarts once on a detected wedge.
@@ -82,7 +87,7 @@
 | Verify (`docker-compose.verify.yml`) | Dedicated `.env.test` TEST account (pinned `EXPECTED_ACCOUNT_NUMBER`) | Deterministic unit/typecheck CI plus human-observable "attach" smoke runs; never touches the prod account |
 | Production, single instance | `.env` at repo root, Alpaca or KIS paper/live | Default single-account deployment via systemd units |
 | Production, multi-instance (F90) | `config/.env.<name>` per instance, `account_farm` sub-accounts or separate Alpaca accounts | Runs N agent instances concurrently (e.g. different aggressiveness settings or accounts) via `COMPOSE_PROJECT_NAME` namespacing |
-| Mobile / remote | Tailscale tailnet, HTTPS via Tailscale cert | Phone PWA dashboard + WebAuthn-gated remote steering, fronted by `tailscale serve` on top of the local `opencode serve` (API) and `vite` (PWA) processes |
+| Mobile / remote | Tailscale tailnet, HTTPS via Tailscale cert | Phone PWA dashboard + WebAuthn-gated remote steering, fronted by `tailscale serve` on top of the local `opencode serve` (API, bound to the tailnet IPv4 only, password-gated) and `vite` (PWA) processes; WebAuthn passkey registration/assertion pairs against the `tailscale serve` HTTPS origin (`*.ts.net`) since passkeys require a secure context |
 
 ## Configuration & Secrets
 
@@ -109,15 +114,18 @@
 
 ## CI/CD
 
-- **Pipeline**: GitHub Actions.
+- **Pipeline**: GitHub Actions. There is currently exactly one workflow in the repo
+  (`.github/workflows/`): `codekb-refresh.yml` — there is no separate automated
+  test/lint/build workflow; `scripts/verify.sh` / `scripts/verify-run.sh` (typecheck, unit,
+  smoke) are run manually or via local `pre-commit`, not on every push.
 - **CodeKB Refresh** (`.github/workflows/codekb-refresh.yml`): triggers on every push to
   `main` (ignoring changes under `aidlc-docs/codekb/**` to avoid a self-triggering loop) or
   manually via `workflow_dispatch`. A cooldown gate requires at least 4 hours since the last
   bot-authored refresh commit, unless the code change since the last CodeKB baseline exceeds
   3% of `src/*.py` lines, in which case it proceeds immediately. The refresh step runs the
-  headless `claude -p` CLI (subscription auth) with a restricted tool set
-  (`Bash,Read,Edit,Write,Glob,Grep`) executing this same Reverse Engineering procedure, writes
-  output under `aidlc-docs/codekb/`, and commits/pushes back to `main` as
+  headless `claude -p` CLI (subscription `CLAUDE_CODE_OAUTH_TOKEN` auth) with a restricted
+  tool set (`Bash,Read,Edit,Write,Glob,Grep`) executing this same Reverse Engineering
+  procedure, writes output under `aidlc-docs/codekb/`, and commits/pushes back to `main` as
   `codekb-ci[bot]` with message `docs: codekb refresh (<sha>)` — only if there are actual
   diffs.
 - **Config Location**: `.github/workflows/`
