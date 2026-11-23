@@ -346,6 +346,10 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
 
     ``fresh`` forces a clean session on launch (otherwise a same-day restart
     resumes today's session)."""
+    if getattr(settings.broker, "provider", "") == "toss_shadow":
+        raise ValueError(
+            "Use python -m src.evals.toss_shadow for an isolated workspace and bounded dry run"
+        )
     from src.agent.executor import DecisionExecutor
     from src.agent.orchestrator import AgentTradingLoop
     from src.agent.session import AgentSession

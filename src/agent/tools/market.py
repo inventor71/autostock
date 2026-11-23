@@ -349,6 +349,11 @@ def account(broker) -> dict:
     }
     if orders_error is not None:
         out["open_orders_error"] = orders_error
+    if callable(getattr(type(broker), "get_cost_profile", None)):
+        try:
+            out["trading_costs"] = broker.get_cost_profile()
+        except Exception:
+            out["trading_costs"] = {"status": "unavailable", "new_entries": "deferred"}
     if getattr(state, "valuation_basis", "account_equity") != "account_equity":
         out["valuation_basis"] = state.valuation_basis
         out["currency"] = state.currency

@@ -24,6 +24,8 @@ def broker_fixture(client_factory, examples, us_order, *, read_only=False, extra
                 return result
         if path == "/api/v1/stocks":
             return [{"symbol": "AAPL", "currency": "USD", "status": "ACTIVE"}]
+        if path == "/api/v1/commissions":
+            return [{"marketCountry": "US", "commissionRate": "0.001"}]
         if path == "/api/v1/market-calendar/US":
             now = datetime.now(UTC)
             return {"today": {"regularMarket": {
