@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -16,10 +17,16 @@ from loguru import logger
 class BaseLLMClient(ABC):
     """Abstract base class for LLM API clients."""
 
-    def __init__(self, api_key: str, model: str | None = None, temperature: float = 0.3):
+    def __init__(self, api_key: str, model: str | None = None, temperature: float = 0.3,
+                 reasoning_effort: str = "high", max_output_tokens: int = 32768):
         self.api_key = api_key
         self.model = model or self.default_model
         self.temperature = temperature
+        if reasoning_effort not in ("low", "medium", "high", "xhigh", "max"):
+            raise ValueError(f"Unsupported reasoning effort: {reasoning_effort}")
+        self.reasoning_effort = reasoning_effort
+        self.max_output_tokens = max_output_tokens
+        self.last_usage: dict = {}
         self._validate_api_key()
 
     @property
@@ -38,7 +45,7 @@ class BaseLLMClient(ABC):
         self,
         system_prompt: str,
         user_message: str,
-        max_tokens: int = 1024,
+        max_tokens: int | None = None,
     ) -> str:
         """Send a completion request and return the response text.
 
@@ -63,6 +70,9 @@ class BaseLLMClient(ABC):
         for attempt in range(max_retries):
             try:
                 return func()
+            except ValueError:
+                # Invalid or incomplete output is not a transient transport failure.
+                raise
             except Exception as e:
                 last_exception = e
                 if attempt < max_retries - 1:
@@ -79,7 +89,7 @@ class ClaudeClient(BaseLLMClient):
 
     @property
     def default_model(self) -> str:
-        return "claude-sonnet-4-6"
+        return "claude-sonnet-5-5"
 
     def _validate_api_key(self) -> None:
         if not self.api_key:
@@ -89,21 +99,31 @@ class ClaudeClient(BaseLLMClient):
         self,
         system_prompt: str,
         user_message: str,
-        max_tokens: int = 1024,
+        max_tokens: int | None = None,
     ) -> str:
         import anthropic
 
         client = anthropic.Anthropic(api_key=self.api_key)
 
         def _call():
+            modern = self.model.startswith(("claude-fable-", "claude-opus-5", "claude-sonnet-5", "claude-haiku-5"))
+            options = ({"thinking": {"type": "adaptive"},
+                        "output_config": {"effort": self.reasoning_effort}} if modern
+                       else {"temperature": self.temperature})
             response = client.messages.create(
                 model=self.model,
-                max_tokens=max_tokens,
-                temperature=self.temperature,
+                max_tokens=max_tokens or self.max_output_tokens,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],
+                **options,
             )
-            return response.content[0].text
+            self.last_usage = {"model": response.model, "usage": response.usage.model_dump()}
+            if response.stop_reason != "end_turn":
+                raise ValueError(f"Claude response did not complete: {response.stop_reason}")
+            text = "".join(b.text for b in response.content if b.type == "text")
+            if not text.strip():
+                raise ValueError("Claude response contained no final text")
+            return text
 
         return self._retry_with_backoff(_call)
 
@@ -113,7 +133,7 @@ class OpenAIClient(BaseLLMClient):
 
     @property
     def default_model(self) -> str:
-        return "gpt-4o"  # rolling alias (OpenAI keeps it pointed at the latest gpt-4o)
+        return "gpt-6-astra"
 
     def _validate_api_key(self) -> None:
         if not self.api_key:
@@ -123,23 +143,29 @@ class OpenAIClient(BaseLLMClient):
         self,
         system_prompt: str,
         user_message: str,
-        max_tokens: int = 1024,
+        max_tokens: int | None = None,
     ) -> str:
         from openai import OpenAI
 
         client = OpenAI(api_key=self.api_key)
 
         def _call():
-            response = client.chat.completions.create(
+            reasoning_model = self.model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4"))
+            options = ({"reasoning": {"effort": self.reasoning_effort}} if reasoning_model
+                       else {"temperature": self.temperature})
+            response = client.responses.create(
                 model=self.model,
-                max_tokens=max_tokens,
-                temperature=self.temperature,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
+                instructions=system_prompt,
+                input=user_message,
+                max_output_tokens=max_tokens or self.max_output_tokens,
+                store=False,
+                **options,
             )
-            return response.choices[0].message.content
+            self.last_usage = {"model": response.model, "usage": response.usage.model_dump()
+                               if response.usage else None}
+            if response.status != "completed" or not response.output_text.strip():
+                raise ValueError(f"OpenAI response did not complete: {response.status}")
+            return response.output_text
 
         return self._retry_with_backoff(_call)
 
@@ -166,10 +192,6 @@ class ClaudeCodeClient(BaseLLMClient):
 
     # The CLI launches a full coding agent; deny every tool so it answers as a
     # plain text completion and can't run commands, read files, or hit the web.
-    _DISALLOWED_TOOLS = (
-        "Bash Edit Write Read Glob Grep WebSearch WebFetch NotebookEdit Task TodoWrite"
-    )
-
     def __init__(
         self,
         api_key: str,
@@ -177,14 +199,17 @@ class ClaudeCodeClient(BaseLLMClient):
         temperature: float = 0.3,
         cli_path: str = "claude",
         timeout: float = 120.0,
+        reasoning_effort: str = "high",
+        max_output_tokens: int = 32768,
     ):
         self.cli_path = cli_path
         self.timeout = timeout
-        super().__init__(api_key=api_key, model=model, temperature=temperature)
+        super().__init__(api_key=api_key, model=model, temperature=temperature,
+                         reasoning_effort=reasoning_effort, max_output_tokens=max_output_tokens)
 
     @property
     def default_model(self) -> str:
-        return "sonnet"  # CLI alias -> current Sonnet; full names also accepted
+        return "claude-sonnet-5-5"
 
     def _validate_api_key(self) -> None:
         # No API key needed -- auth is inherited from the logged-in CLI session.
@@ -198,15 +223,18 @@ class ClaudeCodeClient(BaseLLMClient):
         self,
         system_prompt: str,
         user_message: str,
-        max_tokens: int = 1024,
+        max_tokens: int | None = None,
     ) -> str:
         cmd = [
             self.cli_path,
             "-p",
             "--output-format", "json",
             "--model", self.model,
+            "--effort", self.reasoning_effort,
             "--system-prompt", system_prompt,
-            "--disallowed-tools", self._DISALLOWED_TOOLS,
+            "--tools", "",
+            "--strict-mcp-config",
+            "--safe-mode",
             "--no-session-persistence",
         ]
 
@@ -220,6 +248,7 @@ class ClaudeCodeClient(BaseLLMClient):
                     text=True,
                     cwd=tmp_dir,
                     timeout=self.timeout,
+                    env={**os.environ, "CLAUDE_CODE_EFFORT_LEVEL": self.reasoning_effort},
                 )
             if proc.returncode != 0:
                 raise RuntimeError(
@@ -238,6 +267,8 @@ def create_llm_client(
     api_key: str,
     model: str | None = None,
     temperature: float = 0.3,
+    reasoning_effort: str = "high",
+    max_output_tokens: int = 32768,
 ) -> BaseLLMClient:
     """Factory function to create an LLM client.
 
@@ -262,4 +293,6 @@ def create_llm_client(
     if provider not in providers:
         raise ValueError(f"Unsupported LLM provider: {provider}. Choose from: {list(providers.keys())}")
 
-    return providers[provider](api_key=api_key, model=model, temperature=temperature)
+    return providers[provider](api_key=api_key, model=model, temperature=temperature,
+                               reasoning_effort=reasoning_effort,
+                               max_output_tokens=max_output_tokens)

@@ -20,6 +20,7 @@ the authoritative copy outside the agent cwd; this is not a hard lockout.
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 from pathlib import Path
 
@@ -33,7 +34,8 @@ SEED_VERSION = "seed"
 _SEED_GUIDANCE = (
     "Refine these heuristics over time from your measured outcomes:\n"
     "- Weigh downside before upside; size to the stop distance, not conviction.\n"
-    "- Prefer setups your past calls actually scored well on (see the lessons shown).\n"
+    "- Treat lessons as conditional evidence; repeated independent outcomes matter "
+    "more than a recent win or a high metric.\n"
 )
 
 
@@ -150,6 +152,11 @@ def propose_rewrite(
         logger.warning(f"self-rewrite proposal failed: {exc}")
         return RewriteResult(action="held", reason=f"proposal error: {exc}")
 
+    if not isinstance(proposed, str) or not proposed.strip():
+        return RewriteResult(action="held", reason="proposal is empty or invalid")
+    if proposed.strip() == current.evolved_section.strip():
+        return RewriteResult(action="held", reason="no evidence-supported change")
+
     result = check_compliance(proposed, current.evolved_section,
                               is_seed_parent=(current.version == SEED_VERSION))
     if not result.ok:
@@ -176,13 +183,17 @@ def maybe_rollback(
     history: GuidanceHistory,
     version_excess: dict[str, float | None],
     *,
+    version_samples: dict[str, int] | None = None,
+    min_sample: int = MIN_EFFICACY_SAMPLE,
     today: date | None = None,
     n_days: int = 5,
     margin: float = 0.0,
 ) -> bool:
     """Auto-rollback ONE generation: if the current version, after ``n_days`` of
     live data, has worse benchmark-excess than its parent (by more than margin),
-    revert to the parent. Cold-start: no decision until n_days of live data.
+    revert to the parent. Both versions need enough measured outcomes as well as
+    the cooldown; missing counts do not establish degradation. This historical
+    comparison is a conservative heuristic, not a controlled causal experiment.
     Returns True iff a rollback happened. (Multi-generation drift is only
     SURFACED by a separate seed-regression report, not auto-corrected.)
     """
@@ -192,9 +203,12 @@ def maybe_rollback(
         return False
     if (today - cur.created_at.date()).days < n_days:
         return False  # cold-start
+    counts = version_samples or {}
+    if min(counts.get(cur.version, 0), counts.get(cur.parent_version, 0)) < min_sample:
+        return False
     m_new = version_excess.get(cur.version)
     m_par = version_excess.get(cur.parent_version)
-    if m_new is None or m_par is None:
+    if m_new is None or m_par is None or not all(map(math.isfinite, (m_new, m_par))):
         return False
     if m_new + margin < m_par:
         cur_obj = history.versions[cur.version]

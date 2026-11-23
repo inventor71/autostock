@@ -44,8 +44,8 @@ class DecisionOutcome(BaseModel):
     price_path: list[OHLC] = []
     match_method: Literal["execution_log", "heuristic", "unmatched"] = "unmatched"
     # F62: benchmark-relative (SPY/QQQ) excess return, DIRECTION-AWARE, computed by
-    # the collector. Defined only for entry decisions (BUY -> base, SELL_SHORT ->
-    # -base); None for exits/HOLD/missing-benchmark. F62 efficacy aggregates on it.
+    # the collector: signed stock return minus the long benchmark return on matching
+    # dates. None for exits/HOLD/missing-benchmark. This is a forecast, not filled P&L.
     excess: float | None = None
     # F85: whether this decision's grading horizon has elapsed (or its round-trip
     # closed). Efficacy buckets ONLY mature outcomes, so a long-horizon (conservative)

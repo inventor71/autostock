@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from loguru import logger
@@ -13,11 +14,13 @@ from src.risk.position_sizer import PositionSizer
 
 def _pos_float(value: Any) -> float | None:
     """Coerce an LLM-supplied level to a positive float, else None."""
+    if isinstance(value, bool):
+        return None
     try:
         f = float(value)
     except (TypeError, ValueError):
         return None
-    return f if f > 0 else None
+    return f if math.isfinite(f) and f > 0 else None
 
 
 # F9: structured outcome of the human-order gate (FR-6). Carries a machine

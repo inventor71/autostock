@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from loguru import logger
 
 from src.core.models import PortfolioState
@@ -43,7 +45,12 @@ class PositionSizer:
         Returns:
             Number of whole shares to trade.
         """
-        if price <= 0:
+        if not all(math.isfinite(v) for v in (
+            price, portfolio.equity, portfolio.cash, stop_loss_pct, confidence,
+            self.max_position_pct, self.max_portfolio_risk,
+        )):
+            return 0
+        if price <= 0 or stop_loss_pct <= 0 or not 0 <= confidence <= 1:
             return 0
 
         total_equity = portfolio.equity

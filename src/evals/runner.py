@@ -22,16 +22,26 @@ def evaluate_scenario(
     *,
     guidance_history: dict | None = None,
     guidance_label: str = "seed",
-    model: str = "sonnet",
+    model: str = "claude-sonnet-5-5",
     timeout: float | None = None,
     runner=None,
     session_factory=None,
     keep_sandbox: bool = False,
+    research_mode: str = "single",
+    n_agents: int = 3,
+    effort: str = "high",
+    provider: str = "claude_code",
+    prompt_module=None,
+    manual: str | None = None,
+    observer=None,
+    api_client=None,
 ) -> dict[str, Any]:
     if not isinstance(scenario, Scenario):
         scenario = load_scenario(scenario)
+    if "TODO_MANUAL" in scenario.model_dump_json():
+        raise ValueError("Unreviewed scenario skeleton: resolve TODO_MANUAL before model evaluation")
 
-    sandbox = build_sandbox(scenario, guidance_history=guidance_history)
+    sandbox = build_sandbox(scenario, guidance_history=guidance_history, manual=manual)
     try:
         journal = Journal(sandbox.workspace)
         decisions_before = len(journal.read_decisions())
@@ -40,6 +50,9 @@ def evaluate_scenario(
         loop, result = run_scenario_turn(
             sandbox, model=model, timeout=timeout,
             runner=runner, session_factory=session_factory,
+            research_mode=research_mode, n_agents=n_agents,
+            effort=effort, provider=provider, prompt_module=prompt_module,
+            observer=observer, api_client=api_client,
         )
         artifacts = collect_artifacts(
             sandbox, loop, result,
@@ -55,6 +68,8 @@ def evaluate_scenario(
             "response_text": artifacts.response_text,
             "new_decisions": [d.model_dump(mode="json") for d in artifacts.new_decisions],
             "thesis_changed": sorted(artifacts.thesis_changes),
+            "thesis_changes": artifacts.thesis_changes,
+            "research_mode": research_mode if scenario.turn_type == "research" else None,
             "tier1": tier1,
             "sandbox": str(sandbox.root) if keep_sandbox else None,
         }

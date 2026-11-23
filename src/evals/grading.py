@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 from src.core.models import Position
 from src.core.types import PositionSide
@@ -43,10 +44,26 @@ class FixturePriceProvider:
         )
 
 
+def replay_risk_manager(scenario: Scenario):
+    from config.config import RiskConfig
+    from main import _build_risk_manager
+
+    risk = (scenario.risk or RiskConfig()).model_copy(update={"shorting_enabled": scenario.shorting_enabled})
+    return _build_risk_manager(
+        SimpleNamespace(risk=risk, agent=SimpleNamespace(aggressiveness=scenario.aggressiveness)),
+        use_bracket_orders=True, apply_aggressiveness=True,
+    )
+
+
 def _seeded_broker(scenario: Scenario):
     from src.execution.brokers.simulated_broker import SimulatedBroker
 
-    broker = SimulatedBroker()
+    account = scenario.tool_fixtures.get("account", {}).get("_", {})
+    held_value = sum(float(h["qty"]) * scenario.prices.get(sym, float(h["avg_entry_price"]))
+                     * (-1 if h.get("side") == "short" else 1)
+                     for sym, h in scenario.held.items())
+    cash = account.get("cash", 100000.0 - held_value) if isinstance(account, dict) else 100000.0 - held_value
+    broker = SimulatedBroker(initial_capital=float(cash))
     # Every replay symbol needs a simulated tape price BEFORE any order lands,
     # held or not — a fresh BUY fills at this price.
     for sym, price in scenario.prices.items():
@@ -77,14 +94,14 @@ def replay_through_executor(
     its journal to the live workspace and logs executions there."""
     from src.agent.executor import DecisionExecutor
     from src.agent.journal import Journal
-    from src.risk.manager import RiskManager
-
     executor = DecisionExecutor(
         broker=_seeded_broker(scenario),
-        risk_manager=RiskManager(use_bracket_orders=True),
+        risk_manager=replay_risk_manager(scenario),
         data_provider=FixturePriceProvider(scenario.prices),
         journal=Journal(journal_root),
         universe=scenario.universe,
+        clock=(lambda dt: scenario.as_of.astimezone(dt.tzinfo) if dt.tzinfo
+               else scenario.as_of.replace(tzinfo=None)) if scenario.as_of else None,
     )
     results = []
     for d in decisions:

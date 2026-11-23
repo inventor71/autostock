@@ -49,7 +49,7 @@ def call_api(prompt: str, options: dict, context: dict) -> dict:
             scenario_path,
             guidance_history=guidance_history,
             guidance_label=label,
-            model=str(cfg.get("model", "sonnet")),
+            model=str(cfg.get("model", "claude-sonnet-5-5")),
             timeout=float(cfg["timeout"]) if cfg.get("timeout") else None,
         )
     except Exception as exc:  # surface as a failed case, not a crashed run

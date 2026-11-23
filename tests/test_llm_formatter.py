@@ -72,7 +72,7 @@ def test_claude_default_model_is_current_not_stale():
     from src.strategy.llm.client import ClaudeClient
 
     client = ClaudeClient(api_key="test-key")
-    assert client.default_model == "claude-sonnet-4-6"
+    assert client.default_model == "claude-sonnet-5-5"
     assert client.default_model != "claude-sonnet-4-20250514"  # the retired stale id
 
 

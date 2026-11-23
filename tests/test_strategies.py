@@ -172,6 +172,7 @@ class TestMainLLMInjectionHelpers:
         return SimpleNamespace(
             llm=SimpleNamespace(
                 provider=provider, model="m", temperature=0.4,
+                reasoning_effort="high", max_output_tokens=32768,
                 prompt_version="v1", lookback_days=10, include_news=True,
             ),
             anthropic_api_key="anthropic-key",

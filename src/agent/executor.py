@@ -51,6 +51,7 @@ class DecisionExecutor:
         journal: Journal | None = None,
         *,
         universe: list[str],
+        clock=None,
     ):
         # The agent path REQUIRES a RiskManager constructed with bracket-mode
         # enabled — it builds resting brackets from the agent's levels. Validate
@@ -65,6 +66,7 @@ class DecisionExecutor:
         self.data_provider = data_provider
         self.journal = journal or Journal()
         self.universe = {s.upper() for s in universe}
+        self._clock = clock or _now_like
         self._state_file = self.journal.root / ".executor_state.json"
 
     # ------------------------------------------------------------------ #
@@ -233,7 +235,7 @@ class DecisionExecutor:
             logger.warning(f"Rejecting out-of-universe decision: {d.symbol} {d.action}")
             return ExecutionOutcome(d, "skipped_out_of_universe")
 
-        if d.valid_until is not None and d.valid_until < _now_like(d.valid_until):
+        if d.valid_until is not None and d.valid_until < self._clock(d.valid_until):
             return ExecutionOutcome(d, "skipped_expired", f"valid_until {d.valid_until}")
 
         if d.action == "HOLD":

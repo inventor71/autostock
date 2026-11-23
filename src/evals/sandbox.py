@@ -17,9 +17,11 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 
 from src.agent.tools.fixtures import FIXTURE_ENV
 from src.evals.scenario import Scenario
+from src.core.markettime import ET
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TEMPLATE = _REPO_ROOT / "evals" / "workspace_template"
@@ -43,6 +45,7 @@ def build_sandbox(
     *,
     guidance_history: dict | None = None,
     template_dir: str | Path = DEFAULT_TEMPLATE,
+    manual: str | None = None,
 ) -> Sandbox:
     """Materialize the scenario into an isolated workspace + fixture dir.
 
@@ -62,6 +65,8 @@ def build_sandbox(
             "contract must be pinned in git, not read from the live workspace"
         )
     shutil.copy(claude_md, ws / "CLAUDE.md")
+    if manual is not None:
+        (ws / "CLAUDE.md").write_text(manual, encoding="utf-8")
 
     for rel, content in scenario.workspace_files.items():
         target = ws / rel
@@ -101,7 +106,9 @@ def _fixture_env(sandbox: Sandbox):
     tools as subprocesses; AgentSession copies os.environ into the agent env,
     so a process-level variable is the only channel that survives the hops."""
     prev = os.environ.get(FIXTURE_ENV)
+    previous_root = os.environ.get("AGENT_JOURNAL_ROOT")
     os.environ[FIXTURE_ENV] = str(sandbox.fixture_dir)
+    os.environ["AGENT_JOURNAL_ROOT"] = str(sandbox.workspace)
     try:
         yield
     finally:
@@ -109,15 +116,26 @@ def _fixture_env(sandbox: Sandbox):
             os.environ.pop(FIXTURE_ENV, None)
         else:
             os.environ[FIXTURE_ENV] = prev
+        if previous_root is None:
+            os.environ.pop("AGENT_JOURNAL_ROOT", None)
+        else:
+            os.environ["AGENT_JOURNAL_ROOT"] = previous_root
 
 
 def run_scenario_turn(
     sandbox: Sandbox,
     *,
-    model: str = "sonnet",
+    model: str = "claude-sonnet-5-5",
     timeout: float | None = None,
     runner=None,
     session_factory=None,
+    research_mode: str = "single",
+    n_agents: int = 3,
+    effort: str = "high",
+    provider: str = "claude_code",
+    prompt_module=None,
+    observer=None,
+    api_client=None,
 ):
     """Run the scenario's turn through the production loop. Returns the
     ``AgentTradingLoop`` (whose ``last_new_decisions`` carry the stamped
@@ -126,19 +144,51 @@ def run_scenario_turn(
     from src.agent.session import AgentSession
 
     scenario = sandbox.scenario
+    if research_mode not in ("single", "sequential", "parallel"):
+        raise ValueError(f"unknown research mode: {research_mode}")
+    if not 2 <= n_agents <= 5:
+        raise ValueError("n_agents must be between 2 and 5 for comparison")
     if session_factory is not None:
         session = session_factory(sandbox)
-    else:
+    elif provider == "openai":
+        from config.config import get_settings
+        from src.agent.openai_session import OpenAIAgentSession
+        session = OpenAIAgentSession(
+            workspace=sandbox.workspace, model=model, effort=effort,
+            api_key=get_settings().openai_api_key, client=api_client, observer=observer,
+            one_shot=scenario.turn_type != "research", allow_web=False,
+            session_date=scenario.as_of.astimezone(ET).date() if scenario.as_of else None,
+            **({"timeout": timeout} if timeout else {}),
+        )
+    elif provider == "claude_code":
         session = AgentSession(
             workspace=sandbox.workspace,
             model=model,
-            one_shot=True,  # fresh uuid per run — never resume a date-keyed session
+            effort=effort,
+            session_date=scenario.as_of.astimezone(ET).date() if scenario.as_of else None,
+            # Sequential research must retain context BETWEEN its rounds. Its
+            # state lives in this unique sandbox, never a production session.
+            one_shot=scenario.turn_type != "research",
             runner=runner,
             **({"timeout": timeout} if timeout else {}),
         )
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
     loop = AgentTradingLoop(
         session=session,
         universe=scenario.universe,
+        portfolio_provider=lambda: SimpleNamespace(positions=scenario.held),
+        research_model=model,
+        research_effort=effort,
+        research_timeout=timeout,
+        multi_agent_enabled=research_mode != "single",
+        multi_agent_mode=research_mode if research_mode != "single" else "sequential",
+        multi_agent_n=n_agents,
+        signal_brief_provider=lambda: (
+            f"Information cutoff: {scenario.as_of.isoformat()}. Evaluate at this time; "
+            "ignore later events, including anything recalled from training.\n" + (scenario.brief or "")
+        ) if scenario.as_of else scenario.brief,
+        shorting_enabled=scenario.shorting_enabled,
         # reflection drives lesson recall via outcome collection (price
         # provider = network). The v1 turn types never consume recalled
         # lessons, so disable it outright — structural zero-network guarantee.
@@ -146,13 +196,16 @@ def run_scenario_turn(
         # F85: run the turn at the scenario's aggressiveness so behavior grading
         # can compare conservative vs aggressive posture.
         aggressiveness=scenario.aggressiveness,
+        prompt_module=prompt_module,
+        as_of=scenario.as_of,
     )
 
     with _fixture_env(sandbox):
-        if scenario.turn_type == "intraday":
+        if scenario.turn_type == "research":
+            result = loop.run_morning_research()
+        elif scenario.turn_type == "intraday":
             result = loop.run_intraday(scenario.brief)
         elif scenario.turn_type == "wake":
-            from types import SimpleNamespace
             events = [SimpleNamespace(reason=r) for r in scenario.wake_reasons]
             result = loop.run_wake(scenario.brief, events, timeout=timeout)
         else:  # eod

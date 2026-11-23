@@ -9,25 +9,34 @@ memory) and distills generalizable lessons into ``lessons.md``.
 
 from __future__ import annotations
 
+import math
+
 from src.agent.journal import Decision
 
 
 def _safe_price(data_provider, symbol: str) -> float | None:
     try:
-        return float(data_provider.get_latest_price(symbol))
+        price = float(data_provider.get_latest_price(symbol))
+        return price if math.isfinite(price) and price > 0 else None
     except Exception:
         return None
 
 
-def _status(d: Decision, price: float | None, held: bool) -> str:
+def _status(d: Decision, price: float | None, held: bool, side: str = "long") -> str:
     if held:
-        if d.target is not None and price is not None and price >= d.target:
-            return "at/above target"
-        if d.stop is not None and price is not None and price <= d.stop:
-            return "at/below stop"
+        if side == "short":
+            if d.stop is not None and price is not None and price >= d.stop:
+                return "at/above stop"
+            if d.target is not None and price is not None and price <= d.target:
+                return "at/below target"
+        else:
+            if d.stop is not None and price is not None and price <= d.stop:
+                return "at/below stop"
+            if d.target is not None and price is not None and price >= d.target:
+                return "at/above target"
         return "open"
-    if d.action == "BUY" and d.limit is not None and price is not None and price > d.limit:
-        return "entry pending (price above limit)"
+    if d.action in ("BUY", "SELL_SHORT"):
+        return "not held; fill/pending status unverified"
     if d.action == "HOLD":
         return "hold"
     return "flat/closed"
@@ -40,8 +49,10 @@ def outcome_lines(decisions, broker, data_provider, lookback: int = 20) -> list[
         price = _safe_price(data_provider, d.symbol)
         try:
             pos = broker.get_position(d.symbol)
+            position_known = True
         except Exception:
             pos = None
+            position_known = False
         held = pos is not None and getattr(pos, "qty", 0) > 0
 
         # F54: P&L% is direction-aware. A short gains as price falls — using the
@@ -51,7 +62,7 @@ def outcome_lines(decisions, broker, data_provider, lookback: int = 20) -> list[
         unrealized_pct = None
         if held and price is not None and pos.avg_entry_price > 0:
             if pos_side == "short":
-                unrealized_pct = (pos.avg_entry_price / price - 1) * 100
+                unrealized_pct = (1 - price / pos.avg_entry_price) * 100
             else:
                 unrealized_pct = (price / pos.avg_entry_price - 1) * 100
 
@@ -73,6 +84,7 @@ def outcome_lines(decisions, broker, data_provider, lookback: int = 20) -> list[
             if unrealized_pct is not None:
                 holding += f" {unrealized_pct:+.1f}%"
             parts.append(holding)
-        parts.append(f"-> {_status(d, price, held)}")
+        status = _status(d, price, held, pos_side) if position_known else "position unavailable"
+        parts.append(f"-> {status}")
         lines.append(" | ".join(parts))
     return lines

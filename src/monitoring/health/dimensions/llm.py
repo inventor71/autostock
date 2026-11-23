@@ -20,21 +20,24 @@ class LLMChecker(BaseChecker):
     def check(self) -> list[CheckResult]:
         results: list[CheckResult] = []
 
-        provider = self._settings.llm.provider
-
-        if provider == "claude":
-            results.append(self._check_claude_api())
-        elif provider == "claude_code":
-            results.append(self._check_claude_cli())
-        elif provider == "openai":
-            results.append(self._check_openai_api())
-        else:
-            results.append(CheckResult(
-                name="llm_unknown_provider",
-                status=CheckStatus.WARNING,
-                detail=f"Unknown LLM provider: {provider}",
-                severity=Severity.ERROR,
-            ))
+        providers = [self._settings.llm.provider]
+        agent = getattr(self._settings, "agent", None)
+        if agent is not None and agent.provider not in providers:
+            providers.append(agent.provider)
+        for provider in providers:
+            if provider == "claude":
+                results.append(self._check_claude_api())
+            elif provider == "claude_code":
+                results.append(self._check_claude_cli())
+            elif provider == "openai":
+                results.append(self._check_openai_api())
+            else:
+                results.append(CheckResult(
+                    name="llm_unknown_provider",
+                    status=CheckStatus.WARNING,
+                    detail=f"Unknown LLM provider: {provider}",
+                    severity=Severity.ERROR,
+                ))
 
         # Cost tracking from monitor.json (works regardless of provider)
         results.append(self._check_cost())
@@ -45,8 +48,17 @@ class LLMChecker(BaseChecker):
     # individual checks
     # ------------------------------------------------------------------
 
+    def _api_models(self, provider: str, default: str) -> list[str]:
+        models = []
+        if self._settings.llm.provider == provider:
+            models.append(self._settings.llm.model or default)
+        agent = getattr(self._settings, "agent", None)
+        if agent is not None and agent.provider == provider:
+            models.extend((agent.model, agent.research_model))
+        return list(dict.fromkeys(models or [default]))
+
     def _check_claude_api(self) -> CheckResult:
-        """Minimal Anthropic API call (max_tokens=1, trivial prompt)."""
+        """Check authentication and configured model access without generating tokens."""
         t0 = time.monotonic()
         try:
             from anthropic import Anthropic
@@ -58,18 +70,15 @@ class LLMChecker(BaseChecker):
                     detail="ANTHROPIC_API_KEY not set",
                     severity=Severity.ERROR,
                 )
-            client = Anthropic(api_key=api_key)
-            model = self._settings.llm.model or "claude-sonnet-4-6"
-            resp = client.messages.create(
-                model=model,
-                max_tokens=1,
-                messages=[{"role": "user", "content": "ping"}],
-            )
+            client = Anthropic(api_key=api_key, timeout=10, max_retries=0)
+            models = self._api_models("claude", "claude-sonnet-5-5")
+            for model in models:
+                client.models.retrieve(model)
             elapsed = (time.monotonic() - t0) * 1000
             return CheckResult(
                 name="claude_api",
                 status=CheckStatus.OK,
-                detail=f"Claude API ({model}) OK ({elapsed:.0f}ms)",
+                detail=f"Claude model access ({', '.join(models)}) OK ({elapsed:.0f}ms); generation not tested",
                 severity=Severity.ERROR,
                 duration_ms=elapsed,
             )
@@ -85,7 +94,7 @@ class LLMChecker(BaseChecker):
             )
 
     def _check_claude_cli(self) -> CheckResult:
-        """Check claude CLI is on PATH and authenticated."""
+        """Check claude CLI availability; this does not test account/model access."""
         t0 = time.monotonic()
         try:
             cli_path = shutil.which("claude")
@@ -131,7 +140,7 @@ class LLMChecker(BaseChecker):
             )
 
     def _check_openai_api(self) -> CheckResult:
-        """Minimal OpenAI API call."""
+        """Check authentication and configured model access without generating tokens."""
         t0 = time.monotonic()
         try:
             from openai import OpenAI
@@ -143,18 +152,15 @@ class LLMChecker(BaseChecker):
                     detail="OPENAI_API_KEY not set",
                     severity=Severity.ERROR,
                 )
-            client = OpenAI(api_key=api_key)
-            model = self._settings.llm.model or "gpt-4o"
-            client.chat.completions.create(
-                model=model,
-                max_tokens=1,
-                messages=[{"role": "user", "content": "ping"}],
-            )
+            client = OpenAI(api_key=api_key, timeout=10, max_retries=0)
+            models = self._api_models("openai", "gpt-6-astra")
+            for model in models:
+                client.models.retrieve(model)
             elapsed = (time.monotonic() - t0) * 1000
             return CheckResult(
                 name="openai_api",
                 status=CheckStatus.OK,
-                detail=f"OpenAI ({model}) OK ({elapsed:.0f}ms)",
+                detail=f"OpenAI model access ({', '.join(models)}) OK ({elapsed:.0f}ms); generation not tested",
                 severity=Severity.ERROR,
                 duration_ms=elapsed,
             )

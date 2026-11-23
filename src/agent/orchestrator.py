@@ -11,6 +11,7 @@ job (see ``src/agent/executor.py``).
 
 from __future__ import annotations
 
+import math
 import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,6 +26,7 @@ from src.agent import prompts
 from src.agent.journal import Decision, Journal
 from src.agent.session import AgentSession, AgentTurnResult
 from src.core.models import PortfolioState
+from src.core.markettime import ET
 
 
 @dataclass
@@ -70,6 +72,7 @@ class AgentTradingLoop:
         universe: list[str],
         portfolio_provider: Callable[[], PortfolioState] | None = None,
         research_model: str | None = None,
+        research_effort: str | None = None,
         research_timeout: float | None = None,
         multi_agent_enabled: bool = False,
         multi_agent_mode: str = "sequential",
@@ -77,15 +80,20 @@ class AgentTradingLoop:
         research_signals: list[str] | None = None,
         reflection_enabled: bool = True,
         reflection_max_lessons: int = 10,
-shorting_enabled: bool = True,
+        shorting_enabled: bool = True,
         aggressiveness: str = "balanced",
-signal_brief_provider: Callable[[], str | None] | None = None,
+        signal_brief_provider: Callable[[], str | None] | None = None,
         price_provider: Callable[[str], float] | None = None,
+        prompt_module=None,
+        as_of=None,
     ):
         self.session = session or AgentSession()
+        self.prompts = prompt_module or prompts
+        self.as_of = as_of
         self.journal: Journal = self.session.journal
         self.universe = universe
         self.research_model = research_model
+        self.research_effort = research_effort
         self.research_timeout = research_timeout
         self.portfolio_provider = portfolio_provider
         self._multi_agent_enabled = multi_agent_enabled
@@ -158,7 +166,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         # F64: prepend the constitution + evolvable guidance on guidance-bearing
         # turns only (not eod/reconcile).
         if turn_type in ("research", "intraday", "wake"):
-            prompt = self._assemble_turn(prompt)
+            lessons = ""
+            if turn_type == "research":
+                lessons = self.prompts._build_lesson_context(
+                    self._get_lessons(), max_n=self._reflection_max_lessons,
+                )
+            prompt = self._assemble_turn(prompt, lessons=lessons)
 
         # Must index the SAME list _stamp_new slices (read_decisions, which skips
         # malformed lines) — count_decisions counts raw lines, so with any
@@ -167,7 +180,8 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         result = None
         error = False
         try:
-            result = self.session.run_turn(prompt, model=model, timeout=timeout)
+            effort_args = self._research_effort_args() if turn_type == "research" else {}
+            result = self.session.run_turn(prompt, model=model, timeout=timeout, **effort_args)
         except Exception:
             error = True
             raise
@@ -232,7 +246,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,
 
     def _disposition(self) -> str:
         """F85: the aggressiveness posture block injected into decision-emitting
-        prompts. Combines the level disposition with the short tilt (only when
+        self.prompts. Combines the level disposition with the short tilt (only when
         the F60 short master toggle is on — the knob never enables shorts itself).
         Empty for ``balanced`` → prompts are byte-for-byte unchanged."""
         parts = [self._aggr.disposition]
@@ -246,16 +260,23 @@ signal_brief_provider: Callable[[], str | None] | None = None,
                 return self._run_parallel_research()
             return self._run_sequential_research()
         return self._run(
-            prompts.morning_research_prompt(
+            self.prompts.morning_research_prompt(
                 self.universe, self.held_symbols(),
                 shorting_enabled=self._shorting_enabled,
                 signal_brief=self._signal_brief(),
                 disposition=self._disposition(),
+                **self._prompt_date_args(),
             ),
             "research",
             model=self.research_model,
             timeout=self.research_timeout,
         )
+
+    def _research_effort_args(self) -> dict:
+        return {"effort": self.research_effort} if self.research_effort else {}
+
+    def _prompt_date_args(self) -> dict:
+        return {"today": self.as_of.astimezone(ET).date()} if self.as_of is not None else {}
 
     # -- F23: multi-agent research ----------------------------------------- #
 
@@ -281,7 +302,14 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         Every decision-emitting turn routes through here so none silently skips
         the F64 guidance layer (the prior hand-concatenation at each call site
         was easy to miss on a new turn type)."""
-        text = self._guidance_preamble() + "\n\n" + core
+        permissions = (
+            "New short entries are enabled; check borrow/squeeze risk."
+            if self._shorting_enabled else
+            "New short entries are disabled. You may still close/protect an existing short."
+        )
+        text = "\n\n".join((
+            self._guidance_preamble(), getattr(self.prompts, "TRADING_JUDGMENT", ""), permissions, core,
+        ))
         if lessons:
             text += f"\n{lessons}"
         return text
@@ -334,11 +362,14 @@ signal_brief_provider: Callable[[], str | None] | None = None,
                 continue  # a limit level is its own anchor; never overwrite
             try:
                 px = self._price_provider(d.symbol)
+                if px is None or isinstance(px, bool):
+                    continue
+                px = float(px)
             except Exception as exc:  # noqa: BLE001 — anchor is best-effort
                 logger.warning(f"ref_price stamp failed for {d.symbol}: {exc}")
                 continue
-            if px is not None and px > 0:
-                d.ref_price = float(px)
+            if math.isfinite(px) and px > 0:
+                d.ref_price = px
 
     def _cached_outcomes(self) -> list:
         """Today's DecisionOutcomes, cached per session-day. ``collect_outcomes``
@@ -428,15 +459,17 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         error = False
         try:
             r0 = self.session.run_turn(
-                self._assemble_turn(prompts.multi_research_initial_prompt(
+                self._assemble_turn(self.prompts.multi_research_initial_prompt(
                     self.universe, held, self._research_signals, lessons, n_rounds,
                     max_lessons=self._reflection_max_lessons,
                     shorting_enabled=self._shorting_enabled,
                     signal_brief=self._signal_brief(),
                     disposition=self._disposition(),
+                    **self._prompt_date_args(),
                 )),
                 model=self.research_model,
                 timeout=per_round,
+                **self._research_effort_args(),
             )
             agents.append(make_eval(
                 index=0, label="Round 1 · Initial",
@@ -446,9 +479,10 @@ signal_brief_provider: Callable[[], str | None] | None = None,
 
             for i in range(1, n_rounds):
                 ri = self.session.run_turn(
-                    prompts.debate_prompt(i, n_rounds),
+                    self.prompts.debate_prompt(i, n_rounds),
                     model=self.research_model,
                     timeout=per_round,
+                    **self._research_effort_args(),
                 )
                 agents.append(make_eval(
                     index=i, label=f"Round {i + 1} · Debate",
@@ -458,11 +492,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,
 
             result = self.session.run_turn(
                 self._assemble_turn(
-                    prompts.synthesis_prompt(
+                    self.prompts.synthesis_prompt(
                         n_rounds, signal_brief=self._signal_brief(),
                         disposition=self._disposition())),
                 model=self.research_model,
                 timeout=per_round,
+                **self._research_effort_args(),
             )
         except Exception:
             error = True
@@ -487,10 +522,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,
                 n_rounds + 1, len(self.last_new_decisions), len(self.last_kept),
             )
             if not self.last_new_decisions and not error:
-                logger.warning(
-                    "Multi-agent sequential synthesis produced 0 decisions — "
-                    "the agent may have failed to write decisions.jsonl"
-                )
+                logger.info("Research complete with no new actions")
             synthesis_text = getattr(result, "result", "") if result is not None else ""
             record_turn(
                 turns_path, turn_type="research",
@@ -550,20 +582,23 @@ signal_brief_provider: Callable[[], str | None] | None = None,
     def _run_sub_agent(self, task: SubAgentTask, workspace: Path,
                        timeout: float, signal_brief: str | None = None) -> SubAgentReport:
         try:
-            sub = AgentSession.create_sub_agent(
+            sub = self.session.create_sub_agent(
                 workspace=workspace,
-                model=self.research_model or "sonnet",
+                model=self.research_model or getattr(self.session, "model", "claude-sonnet-5-5"),
                 timeout=timeout,
                 runner=self.session._runner,
+                **self._research_effort_args(),
             )
             result = sub.run_turn(
-                prompts.sub_agent_prompt(
+                self.prompts.sub_agent_prompt(
                     task.description, self.universe, self._research_signals,
                     signal_brief=signal_brief,
                     disposition=self._disposition(),
+                    **self._prompt_date_args(),
                 ),
                 model=self.research_model,
                 timeout=timeout,
+                **self._research_effort_args(),
             )
             return SubAgentReport(task.agent_index, task, result.result, True)
         except Exception as exc:
@@ -607,11 +642,12 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         if not report_texts:
             logger.warning("No sub-agent reports; falling back to single-session research")
             return self._run(
-                prompts.morning_research_prompt(
+                self.prompts.morning_research_prompt(
                     self.universe, self.held_symbols(),
                     shorting_enabled=self._shorting_enabled,
                     signal_brief=self._signal_brief(),
                     disposition=self._disposition(),
+                    **self._prompt_date_args(),
                 ),
                 "research", model=self.research_model, timeout=max(total_timeout * 0.3, 60.0),
             )
@@ -629,7 +665,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,
             self._on_turn_start(turn_id, "research")
 
         lessons = self._get_lessons()
-        lesson_ctx = prompts._build_lesson_context(
+        lesson_ctx = self.prompts._build_lesson_context(
             lessons, max_n=self._reflection_max_lessons,
         ) if lessons else ""
         result = None
@@ -637,12 +673,13 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         try:
             result = self.session.run_turn(
                 self._assemble_turn(
-                    prompts.parallel_synthesis_prompt(
+                    self.prompts.parallel_synthesis_prompt(
                         report_texts, signal_brief=signal_brief,
                         disposition=self._disposition()),
                     lessons=lesson_ctx),
                 model=self.research_model,
                 timeout=max(total_timeout * 0.3, 60.0),
+                **self._research_effort_args(),
             )
         except Exception:
             error = True
@@ -666,10 +703,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,
                 len(tasks), len(report_texts), len(self.last_new_decisions), len(self.last_kept),
             )
             if not self.last_new_decisions and not error:
-                logger.warning(
-                    "Multi-agent parallel synthesis produced 0 decisions — "
-                    "the synthesis agent may have failed to write decisions.jsonl"
-                )
+                logger.info("Research complete with no new actions")
             synthesis_text = getattr(result, "result", "") if result is not None else ""
             record_turn(
                 turns_path, turn_type="research",
@@ -713,10 +747,10 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         disp, churn = self._disposition(), self._aggr.intraday_churn
         if brief is not None:
             return self._run(
-                prompts.intraday_prompt(brief=brief, disposition=disp, churn=churn),
+                self.prompts.intraday_prompt(brief=brief, disposition=disp, churn=churn),
                 "intraday")
         return self._run(
-            prompts.intraday_prompt(
+            self.prompts.intraday_prompt(
                 held=self.held_symbols(), disposition=disp, churn=churn),
             "intraday")
 
@@ -729,9 +763,9 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         reasons = [getattr(e, "reason", str(e)) for e in (events or [])]
         # F88: long-horizon (agent_trigger) events carry a macro thesis in payload;
         # surface it so the wake prompt renders a portfolio-level (not symbol-only) branch.
-        macro = prompts.macro_triggers_from_events(events)
+        macro = self.prompts.macro_triggers_from_events(events)
         return self._run(
-            prompts.wake_prompt(
+            self.prompts.wake_prompt(
                 brief, reasons,
                 disposition=self._disposition(),
                 macro_triggers=macro or None,
@@ -744,7 +778,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,
         # them from the broker; otherwise fall back to a plain decision list.
         if outcomes is None:
             outcomes = [f"{d.symbol} {d.action}" for d in self.journal.read_decisions()[-20:]]
-        result = self._run(prompts.eod_review_prompt(outcomes, surge_count=surge_count), "eod")
+        result = self._run(self.prompts.eod_review_prompt(outcomes, surge_count=surge_count), "eod")
         self._run_self_rewrite()
         return result
 
@@ -772,6 +806,7 @@ signal_brief_provider: Callable[[], str | None] | None = None,
             rolled_back = maybe_rollback(
                 hist,
                 {v: ve.avg_excess for v, ve in ver_eff.items()},
+                version_samples={v: ve.applied_n for v, ve in ver_eff.items()},
             )
             changed = rolled_back
             # Rewrite: gate + propose — but NEVER in the same EOD as a rollback

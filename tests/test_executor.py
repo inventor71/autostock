@@ -379,12 +379,12 @@ class TestOutcomeReview:
         assert "now 310.00" in lines[0]
         assert "open" in lines[0]
 
-    def test_entry_pending_when_not_filled(self):
+    def test_absent_position_does_not_prove_an_entry_is_pending(self):
         lines = outcome_lines(
             [Decision(symbol="AAPL", action="BUY", limit=295.0, stop=280.0)],
             SimulatedBroker(), _StubProvider(price=310.0),
         )
-        assert "entry pending" in lines[0]
+        assert "fill/pending status unverified" in lines[0]
 
     def test_below_stop_status(self):
         broker = SimulatedBroker()

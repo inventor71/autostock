@@ -9,13 +9,14 @@ from typing import Literal
 
 import yaml
 from loguru import logger
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 # F85: aggressiveness knob. One operator dial that fans out to prompt disposition,
 # the RiskManager preset overlay, and the learning-loop time-axis. See
 # ``src/agent/aggressiveness.py`` for the level -> parameter mapping (SSOT).
 AggressivenessLevel = Literal["conservative", "balanced", "aggressive"]
+ReasoningEffort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 CONFIG_DIR = Path(__file__).parent
@@ -102,6 +103,8 @@ class LLMConfig(BaseModel):
     provider: str = "claude"  # claude, openai
     model: str | None = None  # None uses provider default
     temperature: float = 0.3
+    reasoning_effort: ReasoningEffort = "high"
+    max_output_tokens: int = Field(default=32768, ge=1024)
     prompt_version: str = "latest"  # latest, best, v1, v2, etc.
     lookback_days: int = 30
     include_news: bool = True
@@ -110,8 +113,12 @@ class LLMConfig(BaseModel):
 class AgentConfig(BaseModel):
     """Agentic PM trader (`--mode agent`) settings."""
 
-    model: str = "sonnet"
-    research_model: str = "opus"
+    provider: Literal["claude_code", "openai"] = "claude_code"
+    model: str = "claude-sonnet-5-5"
+    research_model: str = "claude-opus-5-5"
+    effort: ReasoningEffort = "medium"
+    research_effort: ReasoningEffort = "high"
+    max_output_tokens: int = Field(default=32768, ge=1024)
     turn_timeout: float = 600.0
     research_timeout: float = 1800.0
     research_start_before_open: int = 60
@@ -122,6 +129,15 @@ class AgentConfig(BaseModel):
     # overlay + grading horizon / lesson recency (see src/agent/aggressiveness.py).
     # Shipped ``balanced`` == prior behavior exactly (backward compatible).
     aggressiveness: AggressivenessLevel = "balanced"
+
+    @model_validator(mode="after")
+    def _matching_provider(self):
+        models = (self.model, self.research_model)
+        if self.provider == "openai" and any(m.startswith("claude") or m in ("sonnet", "opus", "fable") for m in models):
+            raise ValueError("OpenAI agent provider requires explicit OpenAI model and research_model values")
+        if self.provider == "claude_code" and any(m.startswith("gpt-") for m in models):
+            raise ValueError("GPT agent models require provider=openai")
+        return self
 
     @field_validator("aggressiveness", mode="before")
     @classmethod
@@ -210,6 +226,11 @@ _ENV_OVERRIDES: dict[str, tuple[str, str]] = {
     # env var -> (settings section, key)
     "AUTOSTOCK_AGGRESSIVENESS": ("agent", "aggressiveness"),
     "AUTOSTOCK_BROKER_PROVIDER": ("broker", "provider"),
+    "AUTOSTOCK_AGENT_PROVIDER": ("agent", "provider"),
+    "AUTOSTOCK_AGENT_MODEL": ("agent", "model"),
+    "AUTOSTOCK_RESEARCH_MODEL": ("agent", "research_model"),
+    "AUTOSTOCK_AGENT_EFFORT": ("agent", "effort"),
+    "AUTOSTOCK_RESEARCH_EFFORT": ("agent", "research_effort"),
 }
 
 

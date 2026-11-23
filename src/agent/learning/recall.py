@@ -179,7 +179,7 @@ def build_lesson_context(lessons: list[LessonRecord], max_n: int = 10) -> str:
     can cite them back in ``lessons_cited`` (F62 attribution loop)."""
     if not lessons:
         return ""
-    lines = ["\n## Lessons relevant to today (apply these; cite the id in lessons_cited):"]
+    lines = ["\n## Relevant lessons (conditional evidence; cite only those used in lessons_cited):"]
     for r in lessons[:max_n]:
         lines.append(f"- [{r.lesson_id}] [{r.category}] {r.takeaway}")
     return "\n".join(lines)

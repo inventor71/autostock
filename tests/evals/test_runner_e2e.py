@@ -74,6 +74,16 @@ GUIDANCE_V2 = {
 
 
 class TestEndToEnd:
+    def test_frozen_cutoff_reaches_research_and_expiry_gate(self):
+        from datetime import datetime, timezone
+        cutoff = datetime(2026,1,5,21,tzinfo=timezone.utc)
+        case = _scenario(turn_type="research",as_of=cutoff)
+        runner = _ActingRunner([{"symbol":"AAPL","action":"HOLD", "valid_until":"2026-01-06T21:00:00+00:00"}])
+        report = evaluate_scenario(case,runner=runner)
+        assert "2026-01-05" in runner.calls[0]["input"]
+        assert "Information cutoff" in runner.calls[0]["input"]
+        assert report["tier1"]["executor_replay"][0]["status"] == "skipped_hold"
+
     def test_pinned_guidance_reaches_prompt_and_stamp(self):
         """Acceptance 7: the pinned version's text is in the subject prompt AND
         stamped onto the emitted decisions."""

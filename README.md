@@ -120,7 +120,8 @@ python main.py --mode agent --fresh    # start clean
 python main.py --mode paper
 ```
 
-Agent mode uses the local `claude` CLI as its brain (subscription auth at `~/.claude/`).
+Agent mode defaults to the local `claude` CLI (subscription auth at `~/.claude/`),
+with an optional OpenAI Responses API backend using `OPENAI_API_KEY`.
 Its daily schedule (ET): pre-market research (~09:00) → execute at the open (09:30) →
 event-driven intraday turns → EOD review (15:55). Journals, decisions, and logs persist
 under `workspace/` (gitignored).
@@ -148,10 +149,10 @@ Behavior is driven by config, not code edits:
 ```yaml
 # config/settings.yaml
 risk:
-  max_position_pct: 0.1     # ≤10% of equity per symbol
+  max_position_pct: 0.05    # ≤5% of equity per symbol
   stop_loss_pct: 0.05       # 5% stop
   take_profit_pct: 0.15     # 15% target
-  max_open_positions: 10
+  max_open_positions: 20
   shorting_enabled: false   # explicit opt-in
 ```
 
@@ -165,6 +166,59 @@ active_strategies:
 Precedence: **CLI args > environment variables > `.env` > YAML > code defaults.** Nested keys
 via `__` (e.g. `RISK__STOP_LOSS_PCT=0.03`). API keys come from the environment / `.env` only —
 never committed.
+
+### Trading judgment and research comparisons
+
+Model selection belongs to the trader, independently of your coding assistant's
+settings. Defaults are pinned to `claude-sonnet-5-5` at Medium for routine turns
+and `claude-opus-5-5` at High for research. Fable 5.2 and Astra are explicit
+comparison candidates; a short synthetic pilot does not promote a model automatically.
+`agent.effort` / `agent.research_effort` are passed on every turn, including resumed
+and parallel research. Turn logs retain requested effort and resolved model IDs.
+
+To select Fable research locally, set `agent.research_model: claude-fable-5-2`
+or `AUTOSTOCK_RESEARCH_MODEL=claude-fable-5-2`. To use Astra in the trader:
+
+```bash
+# Configure OPENAI_API_KEY privately in .env first; Codex login does not supply it.
+export AUTOSTOCK_AGENT_PROVIDER=openai
+export AUTOSTOCK_AGENT_MODEL=gpt-6-astra
+export AUTOSTOCK_RESEARCH_MODEL=gpt-6-astra
+export AUTOSTOCK_AGENT_EFFORT=medium
+export AUTOSTOCK_RESEARCH_EFFORT=max
+```
+
+Restart the daemon deliberately to apply settings. OpenAI uses the same prompts,
+journal and deterministic executor, with bounded journal/market-data tools and
+Responses conversation continuity. Its API calls use reasoning effort and an output
+budget, without temperature. Journal writes cannot place broker orders. API usage is
+separate from Codex subscription usage. The legacy single-shot clients also use
+current defaults (`gpt-6-astra`, `claude-sonnet-5-5`) and reject incomplete output.
+Health probes check configured model access without paid generations; that check
+alone does not establish that a model can complete a trading turn.
+
+Research prompts ask for concise, evidence-based decisions that favor risk-adjusted
+returns after costs. Waiting is valid; repeated indicators or analyst agreement do
+not count as independent confirmation. Deterministic code retains sizing and execution
+limits. Learning feedback distinguishes directional forecasts from realized trades,
+and prompt rewrites and rollbacks require mature samples.
+
+Compare single-pass, sequential review, and parallel analysts on the same frozen cases:
+
+```bash
+python -m src.evals.compare_research --profiles evals/research_profiles.json \
+  --select opus-legacy-high opus-current-high fable-current-high fable-current-medium \
+  --repeats 3
+```
+
+This calls the existing Claude CLI login and simulates execution. Astra profiles use
+the OpenAI API key. Model/effort/prompt profiles are paired on identical cases and
+randomized across modes. Results stay in
+gitignored `research-comparisons/<experiment>/`: `summary.md`, `summary.csv`, and
+complete per-run decisions, usage, and source snapshots. `research-comparisons/README.md`
+indexes all experiments. These are behavior and cost
+checks, not evidence of improved trading returns. Multi-agent research remains enabled;
+see [evals/README.md](evals/README.md#research-mode-comparison) before changing its default.
 
 ---
 

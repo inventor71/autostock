@@ -38,7 +38,7 @@ MARKET_COMMANDS = frozenset({
     "quote", "indicators", "fundamentals", "news", "scoreboard",
     "earnings", "insider", "analyst_upgrades", "institutional", "short_data",
     "macro", "account", "movers", "readthrough", "earnings_calendar",
-    "ipo_calendar",
+    "ipo_calendar", "disclosed_holdings",
 })
 
 

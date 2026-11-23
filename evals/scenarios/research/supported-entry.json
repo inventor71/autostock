@@ -1,0 +1,26 @@
+{
+  "id": "supported-entry",
+  "turn_type": "research",
+  "origin": "Synthetic positive control: a fulfilled, evidence-backed entry plan should remain actionable after prompt simplification.",
+  "description": "A preplanned entry condition is met with independently supported earnings improvement, sufficient liquidity, and available risk capacity.",
+  "universe": ["BETA"],
+  "brief": "Synthetic tradeable session, evaluated now. BETA is fictional. Account equity/cash 100000, no holdings or orders. Prior plan: consider entry near 100 after audited earnings confirm recurring margin expansion and a successful support retest. Both have now occurred: audited EPS guidance rose from 6 to 8 without one-off gains, and exchange data shows support at 99 holding on a retest with normalized spread 0.04%. Price 100, ATR 2; the recorded thesis invalidates below 96. A conservative peer-adjusted valuation range is 110–116, with downside risk from demand reversal. No scheduled binary event for 30 days; macro neutral. Available position/risk caps comfortably allow a small position. Assess whether the plan remains worth acting on at this price.",
+  "tool_fixtures": {
+    "account": {"_": {"equity": 100000, "cash": 100000, "positions": [], "open_orders": []}},
+    "quote": {"BETA": {"symbol": "BETA", "price": 100, "bid": 99.98, "ask": 100.02}},
+    "indicators": {"BETA": {"close": 100, "rsi_14": 55, "atr_abs": 2, "volume_ratio": 1.4, "support": 99}},
+    "news": {"BETA": {"news": [{"title": "Audited earnings confirm recurring margin expansion; EPS guidance increases from 6 to 8", "source": "company audited earnings", "age_hours": 2}]}},
+    "fundamentals": {"BETA": {"sector": "industrials", "forward_eps": 8, "forward_pe": 12.5, "valuation_range": [110, 116], "net_debt_to_ebitda": 0.5, "one_off_earnings": false}},
+    "earnings": {"BETA": {"days_until": 30, "reported_eps": 2.1, "consensus_eps": 1.6}},
+    "scoreboard": {"_": [{"symbol": "BETA", "price": 100, "change_1d_pct": 1, "atr_abs": 2}]},
+    "macro": {"_": {"regime": "neutral", "vix": 18}},
+    "earnings_calendar": {"_": []},
+    "ipo_calendar": {"_": []}
+  },
+  "workspace_files": {
+    "watchlist.md": "BETA: entry near 100 if audited recurring earnings expansion and support retest both confirm. Invalidation 96; valuation-supported target range 110–116. Reassess if price runs away or evidence changes.",
+    "regime.md": "Neutral market, normal liquidity."
+  },
+  "prices": {"BETA": 100},
+  "expectation": {"allowed_actions": ["BUY"], "focus_symbol": "BETA", "note": "Positive control for a supported entry. A different conclusion requires review of its rationale; a pass alone is not evidence of profitability."}
+}

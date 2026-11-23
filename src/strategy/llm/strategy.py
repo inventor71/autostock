@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any
 
@@ -22,9 +23,17 @@ def _coerce_float(value: Any, default: float) -> float:
     if value is None:
         return default
     try:
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else default
     except (TypeError, ValueError):
         return default
+
+
+def _finite_json_number(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("non-finite JSON number")
+    return number
 
 
 @register_strategy("llm")
@@ -47,6 +56,8 @@ class LLMStrategy(BaseStrategy):
         self.provider = self.params.get("provider", "claude")
         self.model = self.params.get("model")
         self.temperature = self.params.get("temperature", 0.3)
+        self.reasoning_effort = self.params.get("reasoning_effort", "high")
+        self.max_output_tokens = self.params.get("max_output_tokens", 32768)
         self.prompt_version = self.params.get("prompt_version", "latest")
         self.lookback_days = self.params.get("lookback_days", 30)
         self.include_news = self.params.get("include_news", True)
@@ -58,6 +69,7 @@ class LLMStrategy(BaseStrategy):
         self._prompt_manager = None
         self._news_provider = None
         self._system_prompt: str | None = None
+        self._resolved_prompt_version: str | None = None
 
     @property
     def client(self) -> BaseLLMClient:
@@ -69,6 +81,8 @@ class LLMStrategy(BaseStrategy):
                 api_key=api_key,
                 model=self.model,
                 temperature=self.temperature,
+                reasoning_effort=self.reasoning_effort,
+                max_output_tokens=self.max_output_tokens,
             )
             logger.info(f"Initialized {self.provider} LLM client with model {self._client.model}")
         return self._client
@@ -106,23 +120,28 @@ class LLMStrategy(BaseStrategy):
                 self._prompt_manager = PromptManager()
             prompt = self._prompt_manager.get_prompt(self.prompt_version)
             if prompt:
+                self._resolved_prompt_version = prompt.version
                 return prompt.content
         except Exception as e:
             logger.debug(f"PromptManager not available, falling back to file: {e}")
 
         # Fallback to direct file load
         from pathlib import Path
-        prompt_file = Path(__file__).parent.parent.parent.parent / "config" / "prompts" / "trading_prompt_v1.txt"
+        prompt_file = Path(__file__).parent.parent.parent.parent / "config" / "prompts" / "trading_prompt_v2.txt"
         if prompt_file.exists():
+            self._resolved_prompt_version = "v2"
             return prompt_file.read_text()
         else:
             logger.warning(f"Prompt file not found: {prompt_file}")
+            self._resolved_prompt_version = "builtin"
             return self._get_default_prompt()
 
     def _get_default_prompt(self) -> str:
         """Return minimal default prompt if file not found."""
-        return """You are a trading analyst. Analyze the market data and respond with JSON only:
-{"signal": "BUY" | "SELL" | "HOLD", "confidence": 0.0-1.0, "reasoning": "brief explanation"}"""
+        return """Optimize risk-adjusted returns after costs using only supplied evidence.
+HOLD when the edge is unclear; challenge the thesis before adding risk. Respond with JSON only:
+{"signal": "HOLD", "confidence": 0.5, "reasoning": "brief explanation"}
+Choose signal BUY, SELL, or HOLD and confidence in [0,1]; the example is not a recommendation."""
 
     def generate_signal(
         self,
@@ -189,7 +208,9 @@ class LLMStrategy(BaseStrategy):
                 "key_levels": signal_data.get("key_levels", {}),
                 "risks": signal_data.get("risks", []),
                 "llm_provider": self.provider,
-                "prompt_version": self.prompt_version,
+                "llm_model": getattr(self.client, "last_usage", {}).get("model", self.client.model),
+                "reasoning_effort": self.reasoning_effort,
+                "prompt_version": self._resolved_prompt_version or self.prompt_version,
             }
 
             logger.debug(
@@ -277,43 +298,39 @@ class LLMStrategy(BaseStrategy):
         Returns:
             Parsed dictionary with signal, confidence, and metadata.
         """
-        # Try to extract JSON from response
+        # Accept a complete object or a single fenced object. Extracting an
+        # object from arbitrary prose can execute an example the model rejected.
+        text = response.strip()
+        fenced = re.fullmatch(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+        if fenced:
+            text = fenced.group(1)
         try:
-            # First, try direct JSON parse
-            return json.loads(response)
-        except json.JSONDecodeError:
+            parsed = json.loads(text, parse_float=_finite_json_number,
+                                parse_constant=_finite_json_number)
+            if isinstance(parsed, dict) and parsed.get("signal") in ("BUY", "SELL", "HOLD"):
+                # Invalid sizing intent must not silently become default
+                # conviction or a full exit. Null retains legacy optional defaults.
+                for key in ("confidence", "sell_pct"):
+                    value = parsed.get(key)
+                    if value is None:
+                        continue
+                    if isinstance(value, bool):
+                        raise ValueError(f"{key} is not a numeric fraction")
+                    value = float(value)
+                    if not math.isfinite(value) or not 0 <= value <= 1:
+                        raise ValueError(f"{key} must be a finite fraction in [0,1]")
+                    parsed[key] = value
+                return parsed
+        except (ValueError, TypeError):
             pass
 
-        # Try to find JSON block in markdown code fence
-        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # Try to find raw JSON object
-        json_match = re.search(r"\{[^{}]*\"signal\"[^{}]*\}", response, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
-
-        # Last resort: try to extract signal keyword
-        response_upper = response.upper()
-        if "BUY" in response_upper and "SELL" not in response_upper:
-            signal = "BUY"
-        elif "SELL" in response_upper and "BUY" not in response_upper:
-            signal = "SELL"
-        else:
-            signal = "HOLD"
-
-        logger.warning(f"Could not parse LLM JSON, extracted signal: {signal}")
+        # Free text is not an executable decision. In particular, "do not BUY"
+        # must never become an entry because a keyword happened to be present.
+        logger.warning("Could not parse LLM JSON; keeping current exposure")
         return {
-            "signal": signal,
-            "confidence": 0.3,  # Low confidence for fallback parsing
-            "reasoning": "Fallback parsing - original response was not valid JSON",
+            "signal": "HOLD",
+            "confidence": 0.0,
+            "reasoning": "No executable decision: response was not valid JSON",
         }
 
     def reload_prompt(self) -> None:

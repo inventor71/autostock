@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
+import math
+
 from src.agent.quality.models import DecisionOutcome
 
 
-def direction_hit_rate(outcomes: list[DecisionOutcome], horizon: int = 5) -> dict:
-    """BUY-only: fraction of BUY decisions where price rose within N days."""
-    buys = [o for o in outcomes if o.decision.action == "BUY" and len(o.price_path) > 1]
-    if not buys:
+def _direction(outcome: DecisionOutcome) -> int:
+    return -1 if outcome.decision.action in ("SELL_SHORT", "BUY_TO_COVER") else 1
+
+
+def direction_hit_rate(outcomes: list[DecisionOutcome], horizon: int | None = None) -> dict:
+    """Mature entry forecasts, measured over their collected grading window."""
+    entries = [o for o in outcomes if o.decision.action in ("BUY", "SELL_SHORT")
+               and o.mature and len(o.price_path) > 1 and o.price_path[0].close > 0]
+    if not entries:
         return {"total": 0, "hits": 0, "rate": 0.0}
     hits = 0
-    for o in buys:
+    for o in entries:
         entry = o.price_path[0].close
-        end_idx = min(horizon, len(o.price_path) - 1)
+        end_idx = min(horizon, len(o.price_path) - 1) if horizon is not None else -1
         exit_price = o.price_path[end_idx].close
-        if exit_price > entry:
+        if _direction(o) * (exit_price - entry) > 0:
             hits += 1
-    return {"total": len(buys), "hits": hits, "rate": hits / len(buys)}
+    return {"total": len(entries), "hits": hits, "rate": hits / len(entries)}
 
 
 def mae(outcome: DecisionOutcome) -> float | None:
@@ -27,8 +34,9 @@ def mae(outcome: DecisionOutcome) -> float | None:
     entry = outcome.round_trip.entry_price
     if entry <= 0:
         return None
-    min_low = min(bar.low for bar in outcome.price_path)
-    return (entry - min_low) / entry
+    if _direction(outcome) < 0:
+        return max(0.0, (max(bar.high for bar in outcome.price_path) - entry) / entry)
+    return max(0.0, (entry - min(bar.low for bar in outcome.price_path)) / entry)
 
 
 def mfe(outcome: DecisionOutcome) -> float | None:
@@ -38,8 +46,9 @@ def mfe(outcome: DecisionOutcome) -> float | None:
     entry = outcome.round_trip.entry_price
     if entry <= 0:
         return None
-    max_high = max(bar.high for bar in outcome.price_path)
-    return (max_high - entry) / entry
+    if _direction(outcome) < 0:
+        return max(0.0, (entry - min(bar.low for bar in outcome.price_path)) / entry)
+    return max(0.0, (max(bar.high for bar in outcome.price_path) - entry) / entry)
 
 
 def stop_quality(outcome: DecisionOutcome, post_trigger_days: int = 5) -> str:
@@ -50,18 +59,24 @@ def stop_quality(outcome: DecisionOutcome, post_trigger_days: int = 5) -> str:
     if not outcome.price_path:
         return "n/a"
 
-    stop_triggered = any(bar.low <= d.stop for bar in outcome.price_path)
+    short = _direction(outcome) < 0
+    def touched(bar):
+        return bar.high >= d.stop if short else bar.low <= d.stop
+
+    stop_triggered = any(touched(bar) for bar in outcome.price_path)
     if not stop_triggered:
-        near_stop = any(bar.low <= d.stop * 1.02 for bar in outcome.price_path)
+        near_stop = any(bar.high >= d.stop * 0.98 if short else bar.low <= d.stop * 1.02
+                        for bar in outcome.price_path)
         return "held" if near_stop else "n/a"
 
     trigger_idx = next(
-        i for i, bar in enumerate(outcome.price_path) if bar.low <= d.stop
+        i for i, bar in enumerate(outcome.price_path) if touched(bar)
     )
     post = outcome.price_path[trigger_idx + 1: trigger_idx + 1 + post_trigger_days]
     if not post:
         return "appropriate"
-    recovered = any(bar.close > d.stop * 1.03 for bar in post)
+    recovered = any(bar.close < d.stop * 0.97 if short else bar.close > d.stop * 1.03
+                    for bar in post)
     return "noise_hit" if recovered else "appropriate"
 
 
@@ -71,33 +86,34 @@ def target_quality(outcome: DecisionOutcome) -> dict:
     if d.target is None or not outcome.price_path:
         return {"reached": False, "days_to_reach": None}
     for i, bar in enumerate(outcome.price_path):
-        if bar.high >= d.target:
+        if (bar.low <= d.target if _direction(outcome) < 0 else bar.high >= d.target):
             return {"reached": True, "days_to_reach": i}
     return {"reached": False, "days_to_reach": None}
 
 
-def confidence_calibration(outcomes: list[DecisionOutcome], horizon: int = 5) -> dict:
-    """Calibration by confidence bucket. Excludes unscored (0.5 or None)."""
+def confidence_calibration(outcomes: list[DecisionOutcome], horizon: int | None = None) -> dict:
+    """Observed direction by stated confidence, not a calibrated win probability."""
     buckets = {
         "0.0-0.49": {"count": 0, "hits": 0},
-        "0.51-0.7": {"count": 0, "hits": 0},
+        "0.5-0.7": {"count": 0, "hits": 0},
         "0.7-0.9": {"count": 0, "hits": 0},
         "0.9-1.0": {"count": 0, "hits": 0},
     }
 
     def _bucket(c: float) -> str | None:
-        if abs(c - 0.5) < 0.01:
+        if not math.isfinite(c) or not 0 <= c <= 1:
             return None
         if c < 0.5:
             return "0.0-0.49"
         if c <= 0.7:
-            return "0.51-0.7"
+            return "0.5-0.7"
         if c <= 0.9:
             return "0.7-0.9"
         return "0.9-1.0"
 
     for o in outcomes:
-        if o.decision.action != "BUY" or len(o.price_path) <= 1:
+        if (o.decision.action not in ("BUY", "SELL_SHORT") or not o.mature
+                or len(o.price_path) <= 1 or o.price_path[0].close <= 0):
             continue
         c = o.decision.confidence
         if c is None:
@@ -107,8 +123,8 @@ def confidence_calibration(outcomes: list[DecisionOutcome], horizon: int = 5) ->
             continue
         buckets[b]["count"] += 1
         entry = o.price_path[0].close
-        end_idx = min(horizon, len(o.price_path) - 1)
-        if o.price_path[end_idx].close > entry:
+        end_idx = min(horizon, len(o.price_path) - 1) if horizon is not None else -1
+        if _direction(o) * (o.price_path[end_idx].close - entry) > 0:
             buckets[b]["hits"] += 1
 
     result = {}
@@ -122,16 +138,15 @@ def confidence_calibration(outcomes: list[DecisionOutcome], horizon: int = 5) ->
 
 
 def realized_rr(outcome: DecisionOutcome) -> float | None:
-    """Realized risk:reward vs planned. None if no stop/target or no round-trip."""
+    """Realized return in units of initial risk, using the actual fill price."""
     d = outcome.decision
     rt = outcome.round_trip
-    if d.stop is None or d.target is None or rt is None:
+    if d.stop is None or rt is None:
         return None
-    entry = d.limit if d.limit is not None else rt.entry_price
-    planned_risk = abs(entry - d.stop)
+    planned_risk = _direction(outcome) * (rt.entry_price - d.stop)
     if planned_risk <= 0:
         return None
-    actual_pnl = rt.exit_price - rt.entry_price
+    actual_pnl = _direction(outcome) * (rt.exit_price - rt.entry_price)
     return actual_pnl / planned_risk
 
 
@@ -140,17 +155,32 @@ def benchmark_excess(
     spy_path: list[dict] | None,
     qqq_path: list[dict] | None,
 ) -> dict:
-    """Excess return vs SPY/QQQ over the same holding period."""
+    """Directional entry forecast vs benchmarks on exactly the same dates.
+
+    This close-to-close proxy excludes execution costs and is not realized P&L.
+    Missing benchmark endpoints are unknown, never a mismatched-period return.
+    """
     result: dict[str, float | None] = {"vs_spy": None, "vs_qqq": None}
-    if not outcome.price_path or len(outcome.price_path) < 2:
+    if (outcome.decision.action not in ("BUY", "SELL_SHORT")
+            or len(outcome.price_path) < 2 or outcome.price_path[0].close <= 0):
         return result
-    stock_return = (outcome.price_path[-1].close / outcome.price_path[0].close) - 1
+    stock_return = _direction(outcome) * (
+        (outcome.price_path[-1].close / outcome.price_path[0].close) - 1
+    )
+    start_date = str(outcome.price_path[0].date)[:10]
+    end_date = str(outcome.price_path[-1].date)[:10]
 
     for bench_name, bench_path in [("vs_spy", spy_path), ("vs_qqq", qqq_path)]:
         if bench_path and len(bench_path) >= 2:
-            start_close = bench_path[0].close if hasattr(bench_path[0], "close") else bench_path[0]["close"]
-            end_close = bench_path[-1].close if hasattr(bench_path[-1], "close") else bench_path[-1]["close"]
-            if start_close <= 0:
+            dated = {
+                str(bar.date if hasattr(bar, "date") else bar.get("date", ""))[:10]:
+                (bar.close if hasattr(bar, "close") else bar.get("close"))
+                for bar in bench_path
+            }
+            start_close, end_close = dated.get(start_date), dated.get(end_date)
+            if (start_close is None or end_close is None
+                    or not math.isfinite(start_close) or not math.isfinite(end_close)
+                    or start_close <= 0 or end_close <= 0):
                 continue
             bench_return = (end_close / start_close) - 1
             result[bench_name] = stock_return - bench_return
@@ -158,9 +188,9 @@ def benchmark_excess(
 
 
 def exit_timing(outcome: DecisionOutcome, horizon: int = 5) -> float | None:
-    """SELL-only: opportunity cost — price change after exit.
+    """Exit opportunity cost, with direction appropriate to the closed position.
     Positive = left money on the table; negative = good timing."""
-    if outcome.decision.action != "SELL":
+    if outcome.decision.action not in ("SELL", "BUY_TO_COVER"):
         return None
     if not outcome.price_path or len(outcome.price_path) < 2:
         return None
@@ -169,4 +199,4 @@ def exit_timing(outcome: DecisionOutcome, horizon: int = 5) -> float | None:
     post_price = outcome.price_path[end_idx].close
     if exit_price <= 0:
         return None
-    return (post_price - exit_price) / exit_price
+    return _direction(outcome) * (post_price - exit_price) / exit_price

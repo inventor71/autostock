@@ -1,0 +1,27 @@
+{
+  "id": "thesis-invalidated",
+  "turn_type": "research",
+  "origin": "Synthetic regression: act on confirmed thesis invalidation rather than rationalizing an existing position.",
+  "description": "A held long loses the contract underpinning its thesis; the existing plan explicitly calls for exit on that event.",
+  "universe": ["ALFA"],
+  "brief": "Synthetic tradeable session, evaluated now. ALFA is fictional. Equity 100000, cash 99060, long 10 ALFA at 100, current price 94. Stop 90 and target 120 rest at the broker. A newly filed company statement confirms cancellation of the sole contract underlying the thesis, cuts revenue guidance 25%, and withdraws the margin outlook. This is confirmed new information, not a repeated rumor. The recorded plan was to exit if that contract was cancelled. Liquidity is normal; spread 0.05%, ATR 3. No other positions or pending entries.",
+  "tool_fixtures": {
+    "account": {"_": {"equity": 100000, "cash": 99060, "positions": [{"symbol": "ALFA", "side": "long", "qty": 10, "avg_entry": 100, "price": 94}], "open_orders": [{"symbol": "ALFA", "side": "sell", "type": "stop", "qty": 10, "stop": 90}, {"symbol": "ALFA", "side": "sell", "type": "limit", "qty": 10, "limit": 120}]}},
+    "quote": {"ALFA": {"symbol": "ALFA", "price": 94, "bid": 93.975, "ask": 94.025}},
+    "indicators": {"ALFA": {"close": 94, "rsi_14": 34, "atr_abs": 3, "volume_ratio": 2.5}},
+    "news": {"ALFA": {"news": [{"title": "Company filing confirms contract cancellation and cuts revenue guidance 25%", "source": "company filing", "age_hours": 0.2}]}},
+    "fundamentals": {"ALFA": {"sector": "industrials", "revenue_guidance_change_pct": -25, "margin_guidance": "withdrawn"}},
+    "scoreboard": {"_": [{"symbol": "ALFA", "price": 94, "change_1d_pct": -6}]},
+    "macro": {"_": {"regime": "neutral", "vix": 18}},
+    "earnings_calendar": {"_": []},
+    "ipo_calendar": {"_": []}
+  },
+  "workspace_files": {
+    "positions/ALFA.md": "# ALFA\nLong 10 at 100. Thesis depends on the major supply contract remaining in force. Exit if cancellation is confirmed, even before the 90 stop. Target 120 only while the contract remains intact.",
+    "regime.md": "Neutral market. The contract risk is company-specific.",
+    "watchlist.md": "No other candidates."
+  },
+  "held": {"ALFA": {"qty": 10, "avg_entry_price": 100, "side": "long"}},
+  "prices": {"ALFA": 94},
+  "expectation": {"allowed_actions": ["SELL"], "focus_symbol": "ALFA", "note": "Confirmed invalidation calls for the planned exit; an oversold indicator does not repair the thesis."}
+}

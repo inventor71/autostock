@@ -57,10 +57,13 @@ class ConfigEnvChecker(BaseChecker):
             missing.append("ALPACA_API_SECRET")
 
         # LLM-specific keys
-        provider = s.llm.provider
-        if provider == "claude" and not s.anthropic_api_key:
+        providers = {s.llm.provider}
+        agent = getattr(s, "agent", None)
+        if agent is not None:
+            providers.add(agent.provider)
+        if "claude" in providers and not s.anthropic_api_key:
             missing.append("ANTHROPIC_API_KEY")
-        elif provider == "openai" and not s.openai_api_key:
+        if "openai" in providers and not s.openai_api_key:
             missing.append("OPENAI_API_KEY")
         # claude_code needs no key
 
@@ -86,7 +89,7 @@ class ConfigEnvChecker(BaseChecker):
         return CheckResult(
             name="env_vars",
             status=CheckStatus.OK,
-            detail=f"All essential settings present (LLM provider={provider})",
+            detail=f"All essential settings present (LLM providers={', '.join(sorted(providers))})",
             severity=Severity.ERROR,
         )
 

@@ -92,12 +92,19 @@ class PromptAutoImprover:
             response = self.client.complete(
                 system_prompt=system_prompt,
                 user_message=context,
-                max_tokens=4096,
             )
 
             improvement_data = self._parse_improvement_response(response)
             if improvement_data is None:
                 logger.error("Failed to parse improvement response")
+                return None
+
+            proposed = improvement_data.get("improved_prompt")
+            if not isinstance(proposed, str) or not proposed.strip():
+                logger.warning("Prompt improvement did not produce a usable candidate")
+                return None
+            if proposed.strip() == current_prompt.content.strip():
+                logger.info("Prompt unchanged: no evidence-supported revision")
                 return None
 
             # Create new version

@@ -69,4 +69,4 @@ def test_tests_yaml_rows_reference_existing_files():
 
 def test_corpus_covers_all_v1_turn_types():
     types = {load_scenario(p).turn_type for p in SCENARIOS}
-    assert types == {"intraday", "wake", "eod"}
+    assert {"intraday", "wake", "eod"} <= types

@@ -1,0 +1,62 @@
+{
+  "id": "conflicting-guidance",
+  "turn_type": "research",
+  "origin": "Synthetic adversarial judgment case, not historical return evidence.",
+  "universe": [
+    "ALFA"
+  ],
+  "brief": "Synthetic tradeable session, evaluated now. ALFA price 100, liquid, cash/equity 100000 and no holdings. Ten syndicated stories repeat a 30-day-old EPS upgrade from 6 to 8. A filing published today withdraws guidance, discloses lost orders and says recurring EPS cannot be estimated. All positive indicators describe the same preceding rally. The prior long thesis explicitly required reliable recurring EPS at least 8. The fresh filing is available; do not infer the old thesis still holds. Shorting is disabled. Assess whether any trade is justified.",
+  "tool_fixtures": {
+    "account": {
+      "_": {
+        "equity": 100000,
+        "cash": 100000,
+        "positions": [],
+        "open_orders": []
+      }
+    },
+    "news": {
+      "ALFA": {
+        "news": [
+          {
+            "title": "EPS outlook rises to 8",
+            "age_hours": 720,
+            "syndicated_copies": 10
+          },
+          {
+            "title": "Guidance withdrawn after lost orders",
+            "age_hours": 1,
+            "source": "company filing"
+          }
+        ]
+      }
+    },
+    "quote": {
+      "ALFA": {
+        "price": 100
+      }
+    },
+    "fundamentals": {
+      "ALFA": {
+        "forward_eps": null,
+        "guidance_withdrawn": true
+      }
+    },
+    "indicators": {
+      "ALFA": {
+        "price": 100,
+        "rsi_14": 70,
+        "atr_abs": 3
+      }
+    }
+  },
+  "held": {},
+  "workspace_files": {},
+  "prices": {
+    "ALFA": 100
+  },
+  "expectation": {
+    "no_churn": true,
+    "note": "Acting requires resolving the stated conflict; an action match alone does not validate reasoning."
+  }
+}

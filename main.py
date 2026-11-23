@@ -51,6 +51,8 @@ def _llm_params(settings) -> dict:
         "provider": provider,
         "model": settings.llm.model,
         "temperature": settings.llm.temperature,
+        "reasoning_effort": settings.llm.reasoning_effort,
+        "max_output_tokens": settings.llm.max_output_tokens,
         "prompt_version": settings.llm.prompt_version,
         "lookback_days": settings.llm.lookback_days,
         "include_news": settings.llm.include_news,
@@ -358,7 +360,16 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
     )
 
     universe = resolve_universe(settings, client=getattr(broker, "client", None))
-    session = AgentSession(model=settings.agent.model, timeout=settings.agent.turn_timeout)
+    if settings.agent.provider == "openai":
+        from src.agent.openai_session import OpenAIAgentSession
+        session = OpenAIAgentSession(
+            api_key=settings.openai_api_key, model=settings.agent.model,
+            effort=settings.agent.effort, timeout=settings.agent.turn_timeout,
+            max_output_tokens=settings.agent.max_output_tokens,
+        )
+    else:
+        session = AgentSession(model=settings.agent.model, timeout=settings.agent.turn_timeout,
+                               effort=settings.agent.effort)
     research_signals = settings.research.get("signals") if settings.research else None
     reflection_cfg = settings.research.get("reflection", {}) if settings.research else {}
 
@@ -371,6 +382,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
         universe=universe,
         portfolio_provider=broker.get_portfolio_state,
         research_model=settings.agent.research_model,
+        research_effort=settings.agent.research_effort,
         research_timeout=settings.agent.research_timeout,
         multi_agent_enabled=settings.multi_agent.enabled,
         multi_agent_mode=settings.multi_agent.mode,

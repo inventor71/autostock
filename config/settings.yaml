@@ -75,8 +75,10 @@ monitoring:
 
 llm:
   provider: claude_code       # claude (API key) | openai (API key) | claude_code (CLI subscription, dev only)
-  model: null                # null uses provider default (claude-sonnet-4-6 / gpt-4o / 'sonnet' for claude_code)
-  temperature: 0.3           # Lower = more deterministic (ignored by claude_code)
+  model: null                # defaults: claude-sonnet-5-5 / gpt-6-astra / claude-sonnet-5-5
+  temperature: 0.3           # legacy non-reasoning models only; omitted for frontier reasoning
+  reasoning_effort: high
+  max_output_tokens: 32768   # includes reasoning tokens for API providers
   prompt_version: latest     # latest, best, v1, v2, etc.
   lookback_days: 30          # Days of historical data for context
   include_news: true         # Include news headlines in LLM context
@@ -85,8 +87,12 @@ llm:
   # claude_code needs no key -- it reuses the logged-in `claude` CLI session.
 
 agent:
-  model: sonnet
-  research_model: opus
+  provider: claude_code      # claude_code (subscription) | openai (Responses API key)
+  model: claude-sonnet-5-5
+  research_model: claude-opus-5-5  # baseline; Fable candidate in evals/research_profiles.json
+  effort: medium
+  research_effort: high
+  max_output_tokens: 32768   # OpenAI only; CLI controls its own output budget
   turn_timeout: 600
   research_timeout: 1800
   research_start_before_open: 60   # start research N min before market open
@@ -102,9 +108,10 @@ agent:
   aggressiveness: balanced  # conservative | balanced | aggressive
 
 multi_agent:
+  # Keep the existing research mode until local comparison runs justify a change.
   enabled: true
   mode: sequential       # sequential (Mode B) | parallel (Mode C)
-  n_agents: 3            # [1,5]; enabled=true enforces >= 2
+  n_agents: 3            # [1,5]; 1 uses one research turn
 
 research:
   signals:

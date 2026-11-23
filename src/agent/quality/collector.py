@@ -314,7 +314,7 @@ def collect_outcomes(
     max_horizon = max((d.grading_horizon_days for _, d in buy_sell), default=lookback_days)
     end = _naive(latest) + pd.Timedelta(days=max(lookback_days, max_horizon))
     for rt in round_trips:
-        c = _to_naive_ts(rt.closed_at) if rt.closed_at else None
+        c = _to_naive_ts(rt["closed_at"]) if rt.get("closed_at") else None
         if c is not None and c > end:
             end = c
     now = _naive(datetime.now())
@@ -447,9 +447,10 @@ def _attach_excess(
     outcomes: list[DecisionOutcome],
     ohlc_cache: dict[str, pd.DataFrame],
 ) -> None:
-    """Set ``outcome.excess`` in place: mean of available SPY/QQQ excess, made
-    direction-aware. Entry decisions only — BUY keeps the long-direction excess,
-    SELL_SHORT inverts it (a short profits as price falls); exits/HOLD stay None.
+    """Attach mean available benchmark excess to entry forecasts.
+
+    benchmark_excess handles both direction and matching dates. This is a
+    decision forecast proxy, not proof that a proposal filled or earned a profit.
     """
     from src.agent.quality.metrics import benchmark_excess
 
@@ -461,18 +462,4 @@ def _attach_excess(
         vals = [v for v in (be.get("vs_spy"), be.get("vs_qqq")) if v is not None]
         if not vals:
             continue
-        base = sum(vals) / len(vals)
-        if o.decision.action == "SELL_SHORT":
-            # ``benchmark_excess`` returns stock_return - bench_return (long-oriented).
-            # For a short: holding return = -stock_return,
-            #   excess = (-stock_return) - bench_return = -(stock_return + bench_return)
-            # From base = stock_return - bench_return → bench_return = stock_return - base:
-            #   excess = -(stock_return + stock_return - base) = base - 2*stock_return
-            # (Old ``-base`` = bench_return - stock_return, wrong by 2×bench_return.)
-            if o.price_path and len(o.price_path) >= 2:
-                stock_return = (o.price_path[-1].close / o.price_path[0].close) - 1
-                o.excess = base - 2.0 * stock_return
-            else:
-                o.excess = None
-        else:
-            o.excess = base
+        o.excess = sum(vals) / len(vals)

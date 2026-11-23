@@ -73,10 +73,10 @@ class _Settings:
         self.risk = _Risk(shorting)
 
 
-def _seed_cache(root):
+def _seed_cache(root, *, as_of=date(2026, 3, 31)):
     write_snapshot(
         HoldingsSnapshot(
-            source_id="sec_13f:0002045724", manager_name="SA LP", as_of=date(2026, 3, 31),
+            source_id="sec_13f:0002045724", manager_name="SA LP", as_of=as_of,
             rows=[
                 HoldingRow(ticker="CLSK", side="LONG", weight=0.5),
                 HoldingRow(ticker="NVDA", side="SHORT", weight=0.5),
@@ -86,14 +86,14 @@ def _seed_cache(root):
 
 def test_factory_overlay_long_only_default(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_JOURNAL_ROOT", str(tmp_path))
-    _seed_cache(tmp_path)
+    _seed_cache(tmp_path, as_of=date.today())
     out = _holdings_overlay(_Settings(enabled=True, shorting=False))
     assert out == ["CLSK"]
 
 
 def test_factory_overlay_includes_short_when_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_JOURNAL_ROOT", str(tmp_path))
-    _seed_cache(tmp_path)
+    _seed_cache(tmp_path, as_of=date.today())
     out = _holdings_overlay(_Settings(enabled=True, shorting=True))
     assert out == ["CLSK", "NVDA"]
 
@@ -106,7 +106,7 @@ def test_factory_overlay_disabled_is_empty(tmp_path, monkeypatch):
 
 def test_factory_overlay_brief_only_source_excluded(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_JOURNAL_ROOT", str(tmp_path))
-    _seed_cache(tmp_path)
+    _seed_cache(tmp_path, as_of=date.today())
     settings = _Settings(
         enabled=True, shorting=True,
         providers=[{"type": "sec_13f", "cik": "0002045724", "overlay": False}])

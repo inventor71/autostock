@@ -229,14 +229,14 @@ class TestTargetQuality:
 
 
 class TestConfidenceCalibration:
-    def test_excludes_default_05(self):
+    def test_includes_honest_05(self):
         o = DecisionOutcome(
             decision=_buy_decision(confidence=0.5),
             price_path=_price_path_up(),
         )
         result = confidence_calibration([o])
         total = sum(v["count"] for v in result.values())
-        assert total == 0
+        assert total == 1
 
     def test_excludes_none(self):
         o = DecisionOutcome(

@@ -159,6 +159,9 @@ def record_turn(
         "et_date": compute_et_date(now),       # F25: ET trading-session key
         "turn_type": turn_type,
         "model": model,
+        "requested_effort": (raw.get("autostock_request") or {}).get("effort"),
+        "provider": (raw.get("autostock_request") or {}).get("provider"),
+        "resolved_models": sorted((raw.get("modelUsage") or {}).keys()),
         "num_decisions": num_decisions,
         "cost_usd": raw.get("total_cost_usd"),
         "duration_ms": raw.get("duration_ms"),

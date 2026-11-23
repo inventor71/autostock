@@ -126,21 +126,25 @@ class PromptManager:
             try:
                 with open(self.history_file) as f:
                     data = json.load(f)
-                return PromptHistory.model_validate(data)
+                history = PromptHistory.model_validate(data)
+                if history.versions:
+                    return history  # preserve an existing, user-managed history
             except Exception as e:
                 logger.warning(f"Could not load prompt history: {e}")
 
-        # Initialize with v1 prompt if exists
+        # The repository's empty history must not hide shipped prompt versions.
         history = PromptHistory()
-        v1_file = self.prompts_dir / "trading_prompt_v1.txt"
-        if v1_file.exists():
-            content = v1_file.read_text()
-            v1 = PromptVersion(
-                version="v1",
-                content=content,
-                description="Initial trading prompt",
-            )
-            history.add_version(v1)
+        for version, released, description in (
+            ("v1", datetime(2026, 1, 1), "Original technical-indicator prompt"),
+            ("v2", datetime(2026, 11, 21), "Concise evidence-based trading judgment"),
+        ):
+            path = self.prompts_dir / f"trading_prompt_{version}.txt"
+            if path.exists():
+                history.add_version(PromptVersion(
+                    version=version, content=path.read_text(), created_at=released,
+                    description=description,
+                ))
+                history.current_version = version
 
         return history
 

@@ -1,0 +1,78 @@
+{
+  "id": "adverse-price-intact-thesis",
+  "turn_type": "research",
+  "origin": "Synthetic adversarial judgment case, not historical return evidence.",
+  "universe": [
+    "ALFA"
+  ],
+  "brief": "Synthetic tradeable session, evaluated now. ALFA held 20 shares, entry 103, current price 100. The original 20-day thesis remains supported by a contract filing verified today; customer volumes and recurring margins are unchanged. Today's 2% sector-wide decline has no company-specific news. A resting stop at 94 and target at 116 match the thesis; neither fired. Original plan expressly tolerates this normal volatility. Cash 98000, equity 100000. There is no incremental entry catalyst or reason to resize. Compare reacting to the loss with maintaining the plan; examine contrary evidence.",
+  "tool_fixtures": {
+    "account": {
+      "_": {
+        "equity": 100000,
+        "cash": 98000,
+        "positions": [
+          {
+            "symbol": "ALFA",
+            "qty": 20,
+            "side": "long",
+            "avg_entry_price": 103
+          }
+        ],
+        "open_orders": [
+          {
+            "symbol": "ALFA",
+            "side": "sell",
+            "qty": 20,
+            "stop_price": 94
+          },
+          {
+            "symbol": "ALFA",
+            "side": "sell",
+            "qty": 20,
+            "limit_price": 116
+          }
+        ]
+      }
+    },
+    "quote": {
+      "ALFA": {
+        "price": 100
+      }
+    },
+    "news": {
+      "ALFA": {
+        "news": [
+          {
+            "title": "Customer confirms contract volumes unchanged",
+            "age_hours": 2
+          }
+        ]
+      }
+    },
+    "indicators": {
+      "ALFA": {
+        "atr_abs": 3,
+        "rsi_14": 43,
+        "sector_change_pct": -2
+      }
+    }
+  },
+  "held": {
+    "ALFA": {
+      "qty": 20,
+      "avg_entry_price": 103,
+      "side": "long"
+    }
+  },
+  "workspace_files": {
+    "positions/ALFA.md": "20-day recurring-margin thesis, entry 103. Existing stop 94/target116 already resting. Normal sector volatility is not invalidation; exit on confirmed contract-volume cut."
+  },
+  "prices": {
+    "ALFA": 100
+  },
+  "expectation": {
+    "no_churn": true,
+    "note": "Acting requires resolving the stated conflict; an action match alone does not validate reasoning."
+  }
+}

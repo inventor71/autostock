@@ -50,9 +50,12 @@ def test_skeleton_fills_records_and_marks_the_rest(tmp_path):
     # auto-filled from records / pinned bars through the REAL tool functions
     assert s.held == {"AAPL": {"qty": 10.0, "avg_entry_price": 309.0, "side": "long"}}
     assert s.tool_fixtures["account"]["_"]["equity"] == 100100.0  # snapshot <= date
-    assert s.tool_fixtures["quote"]["AAPL"]["price"] == _bars()["close"].iloc[-1]
+    expected_close = _bars().loc[:"2026-06-08", "close"].iloc[-1]
+    assert s.tool_fixtures["quote"]["AAPL"]["price"] == expected_close
     assert "rsi_14" in s.tool_fixtures["indicators"]["AAPL"]
-    assert s.prices["AAPL"] == _bars()["close"].iloc[-1]
+    assert s.prices["AAPL"] == expected_close
+    assert "stop 300" not in s.workspace_files["positions/AAPL.md"]
+    assert "preempt armed exits" not in s.workspace_files["lessons.md"]
 
     # history is symbol-filtered and date-bounded (no future leakage)
     assert [d["ts"][:10] for d in s.decisions_history] == ["2026-06-03"]
@@ -62,6 +65,10 @@ def test_skeleton_fills_records_and_marks_the_rest(tmp_path):
     assert TODO in s.tool_fixtures["news"]["AAPL"]["news"][0]["title"]
     assert TODO in s.workspace_files["positions/AAPL.md"]
     assert dumped.count(TODO) >= 4
+    from src.evals.runner import evaluate_scenario
+    import pytest
+    with pytest.raises(ValueError, match="Unreviewed"):
+        evaluate_scenario(s, runner=lambda *args, **kwargs: pytest.fail("No model call allowed"))
 
 
 def test_skeleton_without_records_still_validates(tmp_path):

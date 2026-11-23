@@ -177,6 +177,9 @@ def _make_mode(tmp_path, provider, monkeypatch):
 
     from src.trading.modes.agent import AgentTradingMode
 
+    # The default intraday store is relative to cwd; never use a local live cache.
+    monkeypatch.chdir(tmp_path)
+
     # __init__ sets os.environ["AGENT_JOURNAL_ROOT"]; register it so monkeypatch
     # restores the original on teardown (else it leaks into other tests).
     monkeypatch.setenv("AGENT_JOURNAL_ROOT", str(tmp_path))

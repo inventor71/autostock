@@ -9,10 +9,12 @@ provenance in ``origin`` so a regression maps back to the lesson it guards.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+from config.config import RiskConfig
 
 #: Mirrors src/agent/journal.py DecisionAction (kept as literals so the eval
 #: schema survives without importing the journal at definition time).
@@ -49,12 +51,22 @@ class Expectation(BaseModel):
 
 class Scenario(BaseModel):
     id: str
-    turn_type: Literal["intraday", "wake", "eod"]
+    turn_type: Literal["research", "intraday", "wake", "eod"]
     #: provenance: which lesson / real event this scenario freezes
     origin: str = ""
     description: str = ""
+    as_of: datetime | None = None  # latest information available to the model
+    risk: RiskConfig | None = None  # pinned in comparison snapshots; old fixtures use code defaults
+
+    @field_validator("as_of")
+    @classmethod
+    def _aware_cutoff(cls, value):
+        if value is not None and value.utcoffset() is None:
+            raise ValueError("as_of must include a timezone")
+        return value
 
     universe: list[str]
+    shorting_enabled: bool = False
     #: F85: aggressiveness level the production loop runs at for this scenario
     #: (drives the injected posture / intraday churn guidance). Default "balanced"
     #: keeps every pre-F85 scenario byte-for-byte unchanged.

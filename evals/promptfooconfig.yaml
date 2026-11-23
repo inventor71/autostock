@@ -16,7 +16,7 @@ prompts:
 providers:
   - id: "file://provider.py"
     config:
-      model: sonnet
+      model: claude-sonnet-5-5
 
 defaultTest:
   assert:

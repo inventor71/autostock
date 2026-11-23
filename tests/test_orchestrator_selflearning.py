@@ -51,7 +51,7 @@ def test_rollback_skips_rewrite_in_same_eod(tmp_path, monkeypatch):
     monkeypatch.setattr("src.agent.quality.collector.collect_outcomes",
                         lambda journal: [])
     monkeypatch.setattr("src.agent.learning.self_rewrite.maybe_rollback",
-                        lambda hist, ver_excess: True)  # rollback fired
+                        lambda hist, ver_excess, **kw: True)  # rollback fired
     proposed = []
     monkeypatch.setattr("src.agent.learning.self_rewrite.propose_rewrite",
                         lambda *a, **k: proposed.append(1))
@@ -68,7 +68,7 @@ def test_rewrite_runs_when_no_rollback(tmp_path, monkeypatch):
     monkeypatch.setattr("src.agent.quality.collector.collect_outcomes",
                         lambda journal: [])
     monkeypatch.setattr("src.agent.learning.self_rewrite.maybe_rollback",
-                        lambda hist, ver_excess: False)  # no rollback
+                        lambda hist, ver_excess, **kw: False)  # no rollback
     consulted = []
     monkeypatch.setattr("src.agent.learning.self_rewrite.should_rewrite",
                         lambda hist, sample, **k: consulted.append(sample) or False)

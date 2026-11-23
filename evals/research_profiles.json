@@ -1,0 +1,39 @@
+[
+  {
+    "name": "opus-legacy-high",
+    "provider": "claude_code",
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "prompt_ref": "baseline:pre-frontier"
+  },
+  {
+    "name": "opus-current-high",
+    "provider": "claude_code",
+    "model": "claude-opus-5-5",
+    "effort": "high"
+  },
+  {
+    "name": "fable-current-high",
+    "provider": "claude_code",
+    "model": "claude-fable-5-2",
+    "effort": "high"
+  },
+  {
+    "name": "fable-current-medium",
+    "provider": "claude_code",
+    "model": "claude-fable-5-2",
+    "effort": "medium"
+  },
+  {
+    "name": "astra-current-high",
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "effort": "high"
+  },
+  {
+    "name": "astra-current-max",
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "effort": "max"
+  }
+]

@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "FutureBar": {
+      "additionalProperties": false,
+      "properties": {
+        "open_at": {
+          "format": "date-time",
+          "title": "Open At",
+          "type": "string"
+        },
+        "close_at": {
+          "format": "date-time",
+          "title": "Close At",
+          "type": "string"
+        },
+        "open": {
+          "minimum": 0,
+          "title": "Open",
+          "type": "number"
+        },
+        "high": {
+          "minimum": 0,
+          "title": "High",
+          "type": "number"
+        },
+        "low": {
+          "minimum": 0,
+          "title": "Low",
+          "type": "number"
+        },
+        "close": {
+          "minimum": 0,
+          "title": "Close",
+          "type": "number"
+        }
+      },
+      "required": [
+        "open_at",
+        "close_at",
+        "open",
+        "high",
+        "low",
+        "close"
+      ],
+      "title": "FutureBar",
+      "type": "object"
+    },
+    "OutcomePath": {
+      "additionalProperties": false,
+      "properties": {
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "synthetic",
+            "historical",
+            "forward"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "provenance": {
+          "minLength": 1,
+          "title": "Provenance",
+          "type": "string"
+        },
+        "bars": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/FutureBar"
+            },
+            "type": "array"
+          },
+          "title": "Bars",
+          "type": "object"
+        },
+        "benchmark": {
+          "items": {
+            "$ref": "#/$defs/FutureBar"
+          },
+          "title": "Benchmark",
+          "type": "array"
+        },
+        "cost_bps_per_side": {
+          "default": 10,
+          "minimum": 0,
+          "title": "Cost Bps Per Side",
+          "type": "number"
+        },
+        "borrow_apr": {
+          "default": 0.03,
+          "minimum": 0,
+          "title": "Borrow Apr",
+          "type": "number"
+        },
+        "cash_apr": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cash Apr",
+          "type": "number"
+        },
+        "corporate_actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Corporate Actions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scenario_id",
+        "as_of",
+        "kind",
+        "provenance",
+        "bars",
+        "benchmark"
+      ],
+      "title": "OutcomePath",
+      "type": "object"
+    }
+  },
+  "items": {
+    "$ref": "#/$defs/OutcomePath"
+  },
+  "type": "array"
+}

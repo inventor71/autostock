@@ -11,6 +11,7 @@ def quality_snapshot(
     min_decisions: int = 5,
 ) -> str | None:
     """One-paragraph quality summary. Returns None if too few decisions."""
+    outcomes = [o for o in outcomes if o.mature]
     if len(outcomes) < min_decisions:
         return None
 
@@ -24,7 +25,8 @@ def quality_snapshot(
 
     lines = [
         f"Decision Quality ({s['total_outcomes']} decisions analyzed):",
-        f"  Direction hit rate (BUY): {hr['hits']}/{hr['total']} = {hr['rate']:.0%}",
+        "  Directional/bar-path proxies include unfilled proposals; they are not realized returns.",
+        f"  Direction hit rate (long/short entries): {hr['hits']}/{hr['total']} = {hr['rate']:.0%}",
     ]
     if mae_s["count"] > 0:
         lines.append(f"  Avg MAE: {mae_s['mean']:.1%}, Avg MFE: {mfe_s['mean']:.1%}")
@@ -32,7 +34,7 @@ def quality_snapshot(
         scored = sq["total"] - sq["n/a"]
         noise = sq["noise_hit"]
         lines.append(
-            f"  Stop quality: {sq['appropriate']} appropriate, "
+            f"  Stop-path heuristic (not confirmed fills): {sq['appropriate']} appropriate, "
             f"{noise} noise hits out of {scored} scored"
         )
     if rr["count"] > 0:
@@ -41,6 +43,6 @@ def quality_snapshot(
     scored_cal = {k: v for k, v in cal.items() if v["count"] > 0}
     if scored_cal:
         cal_parts = [f"{k}: {v['rate']:.0%} ({v['count']})" for k, v in scored_cal.items()]
-        lines.append(f"  Confidence calibration: {', '.join(cal_parts)}")
+        lines.append(f"  Observed direction by confidence (sample counts): {', '.join(cal_parts)}")
 
     return "\n".join(lines)

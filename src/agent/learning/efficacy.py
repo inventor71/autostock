@@ -19,6 +19,7 @@ Two distinct counts, deliberately kept separate:
 from __future__ import annotations
 
 from collections import defaultdict
+import math
 
 from pydantic import BaseModel
 
@@ -49,7 +50,7 @@ def applied_counts(decisions: list[Decision]) -> dict[str, int]:
     """
     counts: dict[str, int] = defaultdict(int)
     for d in decisions:
-        for lid in d.lessons_cited:
+        for lid in set(d.lessons_cited):
             counts[lid] += 1
     return dict(counts)
 
@@ -74,7 +75,7 @@ def _gradeable_excess(o: DecisionOutcome) -> float | None:
     (and skew F64 auto-rollback). Sign is preserved (positive divisor) so win_rate
     is unchanged. Pre-F85 callers (mature default True, holding_days default 1) get
     the raw excess back."""
-    if not o.mature or o.excess is None:
+    if not o.mature or o.excess is None or not math.isfinite(o.excess):
         return None
     return o.excess / max(o.holding_days, 1)
 
@@ -90,7 +91,7 @@ def lesson_efficacy(outcomes: list[DecisionOutcome]) -> dict[str, LessonEfficacy
     seen: set[str] = set()
     for o in outcomes:
         e = _gradeable_excess(o)
-        for lid in o.decision.lessons_cited:
+        for lid in set(o.decision.lessons_cited):
             seen.add(lid)
             if e is not None:
                 buckets[lid].append(e)

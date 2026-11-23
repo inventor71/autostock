@@ -66,6 +66,9 @@ workspace/
 # Anchored to repo root so it does NOT shadow src/agent/steering/ (tracked code).
 /steering/
 
+# Local research-mode comparisons (prompts, model outputs, metrics, and reports).
+/research-comparisons/
+
 # F4 Unit B (operator-console, TS): node_modules anywhere; keep bun.lock (pinned).
 node_modules/
 

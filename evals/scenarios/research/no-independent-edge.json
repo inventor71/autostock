@@ -1,0 +1,26 @@
+{
+  "id": "no-independent-edge",
+  "turn_type": "research",
+  "origin": "Synthetic regression: correlated technical signals and repeated headlines are not independent evidence of edge.",
+  "description": "Cash account, no catalyst, three indicators derived from the same small move. No entry is required.",
+  "universe": ["ALFA"],
+  "brief": "Synthetic tradeable session, evaluated now. ALFA is fictional. Account: equity/cash 100000, no positions or orders. ALFA 100, +0.4%, normal volume, spread 0.12%, ATR 2. RSI/MACD/SMA all reflect the same small price rise. Three headlines repeat one analyst's unchanged target of 100; no new company information. There is no prior entry trigger. Consider transaction costs and whether anything supports a new exposure.",
+  "tool_fixtures": {
+    "account": {"_": {"equity": 100000, "cash": 100000, "positions": [], "open_orders": []}},
+    "scoreboard": {"_": [{"symbol": "ALFA", "price": 100, "change_1d_pct": 0.4, "volume_ratio": 1.0, "atr_abs": 2}]},
+    "quote": {"ALFA": {"symbol": "ALFA", "price": 100, "bid": 99.94, "ask": 100.06}},
+    "indicators": {"ALFA": {"close": 100, "rsi_14": 54, "macd_hist": 0.1, "sma20": 99.8, "atr_abs": 2, "volume_ratio": 1.0}},
+    "news": {"ALFA": {"news": [{"title": "Analyst repeats unchanged 100 target", "source": "same underlying analyst note", "age_hours": 48}]}},
+    "fundamentals": {"ALFA": {"sector": "industrials", "forward_pe": 20, "revenue_growth": 0.02, "analyst_target": 100}},
+    "earnings": {"ALFA": {"days_until": 30, "new_guidance": false}},
+    "macro": {"_": {"regime": "range-bound", "vix": 18}},
+    "earnings_calendar": {"_": []},
+    "ipo_calendar": {"_": []}
+  },
+  "workspace_files": {
+    "regime.md": "Range-bound, normal volatility. No directional macro catalyst.",
+    "watchlist.md": "ALFA: no entry plan; monitor for new information."
+  },
+  "prices": {"ALFA": 100},
+  "expectation": {"no_churn": true, "note": "Repeated evidence without an edge should not produce new exposure."}
+}

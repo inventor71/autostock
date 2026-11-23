@@ -72,22 +72,22 @@ class AggressivenessProfile:
 
 _CONSERVATIVE_DISPOSITION = (
     "## Posture — conservative (long-horizon value)\n"
-    "Favor undervalued, fundamentally sound names (low P/E, mean-reversion, "
-    "insider/institutional accumulation) over momentum. Enter ONLY on high "
-    "conviction; when the setup is unclear, HOLD. Assume a long holding period: "
-    "set wide, thesis-based stops and a high reward:risk (aim >= 1:3), and set "
-    "`valid_until` long (weeks). Quality over churn — few, well-researched positions."
+    "Favor durable, well-supported value with a margin of safety. Judge valuation "
+    "in context; low multiples alone are not an edge. Use thesis-based stops "
+    "consistent with volatility and the risk caps. A long holding horizon does "
+    "not justify a stale entry: set `valid_until` from the setup's freshness. "
+    "Wait when the evidence is insufficient; do not manufacture a target to "
+    "meet a reward:risk ratio."
 )
 
 _AGGRESSIVE_DISPOSITION = (
     "## Posture — aggressive (short-horizon momentum)\n"
-    "Favor momentum, breakouts, volume surges and same-week catalysts (use "
-    "`movers`, intraday action) — but a catalyst already a day old (news "
-    "`priced_in_risk=elevated`) is likely priced in, so favor the fresh move, not "
-    "the late chase. A moderately-confirmed setup is enough to act — "
-    "do not wait for perfect conviction, and do not fear turnover. Trade for a "
-    "short-term edge: tight stops, fast profit-taking (reward:risk >= 1:1.5), and "
-    "a short `valid_until` (intraday to a few days)."
+    "Look for short-horizon opportunities in momentum, breakouts, and catalysts. "
+    "Judge what changed and what the price already reflects; headline age alone "
+    "does not establish that. Act promptly when the expected edge survives "
+    "spread/slippage and portfolio risk. Stops must fit actual volatility and "
+    "invalidation, not an arbitrary tight distance. Use a short `valid_until` "
+    "appropriate to the setup. Higher activity is an option, never an objective."
 )
 
 _CONSERVATIVE_CHURN = (
@@ -95,13 +95,13 @@ _CONSERVATIVE_CHURN = (
     "breach or a planned stop/target is hit), do nothing this turn."
 )
 _AGGRESSIVE_CHURN = (
-    "Act on intraday triggers — a breakout, reversal, or volume spike that fits "
-    "your plan is reason to enter or exit now; don't defer a clear short-term move."
+    "Act on intraday triggers when new evidence changes the plan and the edge "
+    "survives costs. A price/volume move alone is not a reason to trade."
 )
 
 _AGGRESSIVE_SHORT_TILT = (
-    "In a weak tape, lean into the downside as readily as the upside — a broken "
-    "or negative-catalyst name is a short candidate, sized for a quick move."
+    "Consider short opportunities when supported by a downside thesis, with "
+    "borrow, squeeze, and gap risk included in the decision."
 )
 
 

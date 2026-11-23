@@ -1,0 +1,71 @@
+{
+  "id": "portfolio-capacity",
+  "turn_type": "research",
+  "origin": "Synthetic adversarial judgment case, not historical return evidence.",
+  "universe": [
+    "ALFA"
+  ],
+  "brief": "Synthetic tradeable session, evaluated now. ALFA has a plausible valuation case at price 100 but the account is fully invested: cash and buying power are zero, equity 100000, ALFA held 1000 shares at 100, no borrowing permitted. Existing stop 95 and target 115 are already resting and valid; no thesis or stop change is justified. Do not duplicate those orders. Positive headlines alone do not create cash or capacity. Assess action versus maintaining existing exposure.",
+  "tool_fixtures": {
+    "account": {
+      "_": {
+        "equity": 100000,
+        "cash": 0,
+        "buying_power": 0,
+        "positions": [
+          {
+            "symbol": "ALFA",
+            "qty": 1000,
+            "side": "long",
+            "avg_entry_price": 100
+          }
+        ],
+        "open_orders": [
+          {
+            "symbol": "ALFA",
+            "side": "sell",
+            "qty": 1000,
+            "stop_price": 95
+          },
+          {
+            "symbol": "ALFA",
+            "side": "sell",
+            "qty": 1000,
+            "limit_price": 115
+          }
+        ]
+      }
+    },
+    "quote": {
+      "ALFA": {
+        "price": 100
+      }
+    },
+    "fundamentals": {
+      "ALFA": {
+        "valuation_range": [
+          110,
+          115
+        ],
+        "guidance_unchanged": true
+      }
+    }
+  },
+  "held": {
+    "ALFA": {
+      "qty": 1000,
+      "avg_entry_price": 100,
+      "side": "long"
+    }
+  },
+  "workspace_files": {
+    "positions/ALFA.md": "Existing position. Stop 95 and target 115 already resting. Thesis unchanged."
+  },
+  "prices": {
+    "ALFA": 100
+  },
+  "expectation": {
+    "no_churn": true,
+    "note": "Acting requires resolving the stated conflict; an action match alone does not validate reasoning."
+  }
+}

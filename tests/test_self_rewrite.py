@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+import pytest
+
 from src.agent.learning.constitution import AGENT_CONSTITUTION
 from src.agent.learning.self_rewrite import (
     GuidanceHistory,
@@ -91,7 +93,8 @@ def _two_gen_history(days_live: int):
 def test_rollback_reverts_degraded_version():
     hist = _two_gen_history(days_live=10)
     # g1 worse than seed on excess
-    changed = maybe_rollback(hist, {"g1": -0.02, "seed": 0.03}, n_days=5)
+    changed = maybe_rollback(hist, {"g1": -0.02, "seed": 0.03}, n_days=5,
+                             version_samples={"g1": 20, "seed": 50})
     assert changed is True
     assert hist.current_version == "seed"
     assert hist.versions["g1"].status == "rolled_back"
@@ -99,16 +102,33 @@ def test_rollback_reverts_degraded_version():
 
 def test_rollback_keeps_improving_version():
     hist = _two_gen_history(days_live=10)
-    changed = maybe_rollback(hist, {"g1": 0.05, "seed": 0.03}, n_days=5)
+    changed = maybe_rollback(hist, {"g1": 0.05, "seed": 0.03}, n_days=5,
+                             version_samples={"g1": 20, "seed": 50})
     assert changed is False
     assert hist.current_version == "g1"
 
 
 def test_rollback_cold_start_holds():
     hist = _two_gen_history(days_live=2)  # only 2 days live
-    changed = maybe_rollback(hist, {"g1": -0.10, "seed": 0.03}, n_days=5)
+    changed = maybe_rollback(hist, {"g1": -0.10, "seed": 0.03}, n_days=5,
+                             version_samples={"g1": 20, "seed": 50})
     assert changed is False  # not enough live data yet
     assert hist.current_version == "g1"
+
+
+@pytest.mark.parametrize("counts", [None, {}, {"g1": 1, "seed": 50}, {"g1": 50, "seed": 1}])
+def test_rollback_needs_samples_for_both_versions(counts):
+    hist = _two_gen_history(days_live=30)
+    assert not maybe_rollback(hist, {"g1": -0.10, "seed": 0.03}, version_samples=counts)
+    assert hist.current_version == "g1"
+
+
+def test_unchanged_guidance_keeps_history_and_cooldown():
+    hist = seed_history()
+    before = hist.model_dump()
+    result = propose_rewrite(hist, {}, rewrite_fn=lambda current, eff: current + "\n")
+    assert result.action == "held"
+    assert hist.model_dump() == before
 
 
 def test_persistence_round_trip(tmp_path):

@@ -92,18 +92,20 @@ class AgentSession:
         self,
         workspace: str | Path | None = None,
         cli_path: str = "claude",
-        model: str = "sonnet",
+        model: str = "claude-sonnet-5-5",
         allowed_tools: list[str] | None = None,
         permission_mode: str = "dontAsk",
         timeout: float = 600.0,
         session_date: date | None = None,
         runner: Callable[..., subprocess.CompletedProcess] | None = None,
         one_shot: bool = False,
+        effort: str = "medium",
     ):
         self.journal = Journal(workspace)
         self.workspace = self.journal.root
         self.cli_path = cli_path
         self.model = model
+        self.effort = effort
         self.allowed_tools = list(allowed_tools or self.DEFAULT_ALLOWED_TOOLS)
         self.permission_mode = permission_mode
         self.timeout = timeout
@@ -116,9 +118,10 @@ class AgentSession:
     def create_sub_agent(
         cls,
         workspace: str | Path,
-        model: str = "sonnet",
+        model: str = "claude-sonnet-5-5",
         timeout: float = 600.0,
         runner: Callable[..., subprocess.CompletedProcess] | None = None,
+        effort: str = "medium",
     ) -> "AgentSession":
         return cls(
             workspace=workspace,
@@ -127,6 +130,7 @@ class AgentSession:
             timeout=timeout,
             runner=runner,
             one_shot=True,
+            effort=effort,
         )
 
     # ------------------------------------------------------------------ #
@@ -188,13 +192,15 @@ class AgentSession:
     # Running a turn
     # ------------------------------------------------------------------ #
     def _build_command(
-        self, session_id: str, system_prompt: str | None, resume: bool, model: str | None = None
+        self, session_id: str, system_prompt: str | None, resume: bool, model: str | None = None,
+        effort: str | None = None,
     ) -> list[str]:
         cmd = [
             self.cli_path,
             "-p",
             "--output-format", "json",
             "--model", model or self.model,
+            "--effort", effort or self.effort,
             "--permission-mode", self.permission_mode,
             "--allowedTools", ",".join(self.allowed_tools),
         ]
@@ -205,14 +211,21 @@ class AgentSession:
 
     def _invoke(
         self, session_id: str, prompt: str, system_prompt: str | None, resume: bool,
-        model: str | None = None, timeout: float | None = None,
+        model: str | None = None, timeout: float | None = None, effort: str | None = None,
     ) -> dict:
-        cmd = self._build_command(session_id, system_prompt, resume, model)
+        chosen_effort = effort or self.effort
+        if chosen_effort not in ("low", "medium", "high", "xhigh", "max"):
+            raise ValueError(f"Unsupported reasoning effort: {chosen_effort}")
+        cmd = self._build_command(session_id, system_prompt, resume, model, chosen_effort)
         # Scrub the operator steering token before it reaches the agent (BR-10.2):
         # dict(os.environ) would otherwise copy the daemon's token to the agent.
         from src.agent.steering.security import scrub_agent_env
 
         env = scrub_agent_env(dict(os.environ))
+        # This variable takes precedence over --effort and saved session settings.
+        # Scope it to the child so research and intraday turns cannot inherit one
+        # another's effort or an operator's unrelated shell setting.
+        env["CLAUDE_CODE_EFFORT_LEVEL"] = chosen_effort
         if self._one_shot:
             env["AGENT_JOURNAL_ROOT"] = str(self.workspace)
         existing_pp = env.get("PYTHONPATH", "")
@@ -240,11 +253,15 @@ class AgentSession:
             raise RuntimeError(f"Could not parse claude JSON output: {exc}") from exc
         if payload.get("is_error"):
             raise RuntimeError(f"claude returned an error: {payload.get('result')}")
+        payload["autostock_request"] = {
+            "provider": "claude_code", "model": model or self.model,
+            "effort": chosen_effort,
+        }
         return payload
 
     def run_turn(
         self, prompt: str, system_prompt: str | None = None, model: str | None = None,
-        timeout: float | None = None,
+        timeout: float | None = None, effort: str | None = None,
     ) -> AgentTurnResult:
         """Run one agent turn. Creates the day's session on the first call and
         resumes it thereafter (id stored in the per-day marker). If the stored id
@@ -267,13 +284,13 @@ class AgentSession:
             "resume" if resume else "new", session_id, model or self.model,
         )
         try:
-            payload = self._invoke(session_id, prompt, system_prompt, resume, model, timeout)
+            payload = self._invoke(session_id, prompt, system_prompt, resume, model, timeout, effort)
         except RuntimeError as exc:
             if any(frag in str(exc).lower() for frag in _SESSION_ERROR_FRAGMENTS):
                 logger.warning("Session id unusable ({}); retrying with a fresh session", exc)
                 session_id = str(uuid.uuid4())
                 resume = False
-                payload = self._invoke(session_id, prompt, system_prompt, resume, model, timeout)
+                payload = self._invoke(session_id, prompt, system_prompt, resume, model, timeout, effort)
             else:
                 raise
 

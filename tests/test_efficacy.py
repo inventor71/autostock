@@ -69,7 +69,7 @@ def test_applied_counts_total_invariant(citations_per_decision):
         for cites in citations_per_decision
     ]
     counts = applied_counts(decisions)
-    assert sum(counts.values()) == sum(len(c) for c in citations_per_decision)
+    assert sum(counts.values()) == sum(len(set(c)) for c in citations_per_decision)
 
 
 # --------------------------------------------------------------------------- #

@@ -30,6 +30,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.agent.tools import market
+from src.core.markettime import ET
 
 from src.evals.scenario import Expectation, Scenario, save_scenario
 
@@ -67,7 +68,8 @@ def _equity_snapshot(workspace: Path, asof: date_t) -> dict | None:
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             row = json.loads(line)
-            if row.get("date") and row["date"] <= asof.isoformat():
+            if (row.get("date") and row["date"] <= asof.isoformat()
+                    and (best is None or row["date"] >= best["date"])):
                 best = row
         except json.JSONDecodeError:
             continue
@@ -109,6 +111,13 @@ def extract_skeleton(
 
     bars = fetch(symbol, asof)
     if bars is not None and not bars.empty:
+        # Providers and injected fetchers may return a wider window. Bound the
+        # data here rather than trusting an end-date argument to prevent leakage.
+        idx = pd.to_datetime(bars.index)
+        if idx.tz is not None:
+            idx = idx.tz_convert(ET)
+        bars = bars.loc[idx.date <= asof].sort_index()
+    if bars is not None and not bars.empty:
         pinned = _PinnedProvider(bars)
         tool_fixtures["quote"] = {symbol: market.quote(symbol, pinned)}
         tool_fixtures["indicators"] = {symbol: market.indicators(symbol, pinned)}
@@ -149,17 +158,17 @@ def extract_skeleton(
     thesis = workspace / "positions" / f"{symbol}.md"
     if thesis.exists():
         workspace_files[f"positions/{symbol}.md"] = (
-            f"<!-- {TODO}: trim Call-vs-Outcome rows AFTER {asof} — the agent "
-            "must not see the future -->\n" + thesis.read_text(encoding="utf-8"))
+            f"{TODO}: reconstruct the thesis using only records available by {asof}. "
+            "The current live thesis was deliberately not copied: it may contain later outcomes.\n")
     lessons = workspace / "lessons.md"
     if lessons.exists():
         workspace_files["lessons.md"] = (
-            f"<!-- {TODO}: remove lessons learned AFTER {asof} -->\n"
-            + lessons.read_text(encoding="utf-8"))
+            f"{TODO}: reconstruct only lessons already known by {asof}; current lessons omitted.\n")
 
     return Scenario(
         id=f"{symbol.lower()}-{asof.isoformat()}-{turn_type}",
         turn_type=turn_type,  # type: ignore[arg-type]
+        as_of=datetime.combine(asof, datetime.max.time(), tzinfo=ET),
         origin=f"{TODO}: which lesson/real event does this freeze?",
         description=f"extracted skeleton for {symbol} as of {asof}",
         universe=sorted({symbol, *held}),
@@ -178,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", required=True, help="YYYY-MM-DD (the frozen day)")
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--turn-type", required=True,
-                        choices=["intraday", "wake", "eod"])
+                        choices=["research", "intraday", "wake", "eod"])
     parser.add_argument("--workspace", default="workspace")
     parser.add_argument("--out", default=None,
                         help="output path (default: evals/scenarios/<turn>/<id>.json)")
