@@ -345,3 +345,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-07-17 — **F97 merged** → main 802499a (agent vs S&P500 daily 성과 스코어카드). rebase 4f3fcbf→fa39f86(F96 포함): 충돌은 레지스트리 1건뿐(양쪽 행 보존), `steering/runtime.py`는 auto-merge — perf_vs_benchmark 배선(:343)+_perf_block(:420) 정합 확인. verify green: pytest 1541 passed / TS 69 pass(opencode 16 + app 53) / typecheck 19/19. --no-ff.
 
 2026-11-23 — F100 merged locally at 6e246ac: Toss US adapter and private read-only setup; 1,753 Python tests passed; no account credentials or orders used.
+
+2026-11-23 — F101 merged locally at 24b32f7: reuse toss-stock token for read-only account/data access, no keys copied or tokens issued; 1,770 tests passed and live GET checks succeeded.

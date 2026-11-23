@@ -1,8 +1,8 @@
 # Track F101 — 기존 toss-stock 인증으로 Autostock 연결
 
-- **Status**: merge-awaiting
+- **Status**: merged → main 24b32f7 (2026-11-23, local)
 - **Branch**: feat/F101
-- **Worktree**: .claude/worktrees/F101
+- **Worktree**: — (merged; temporary worktree removed)
 - **Base commit**: e082768
 - **Start Date**: 2026-11-23
 
@@ -29,7 +29,7 @@
 - [x] setup --from-toss-stock으로 검증 후 계좌 연결 저장
 - [x] 토큰 경쟁·인증 갱신 금지·권한·계좌 선택·기존 연결 보존 테스트
 - [x] 전체 Python 회귀 테스트, 실제 읽기 전용 계좌·시세 조회
-- [ ] 사용 안내 및 AI-DLC 기록 후 로컬 main에 반영
+- [x] 사용 안내 및 AI-DLC 기록 후 로컬 main에 반영
 
 ## Merge Risk Notes
 
