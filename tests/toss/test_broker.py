@@ -144,6 +144,22 @@ def test_fractional_market_exit_supported(make_broker):
     assert body["quantity"] == "0.123456"
 
 
+def test_fractional_generated_market_sell_rounds_down_and_preserves_caller_audit(make_broker):
+    broker, calls, _ = make_broker()
+    order = Order(symbol="AAPL", side=OrderSide.SELL, qty=3.5016709)
+    broker.submit_order(order)
+    body = json.loads(next(r.content for r in calls if r.method == "POST" and r.url.path == "/api/v1/orders"))
+    assert body["quantity"] == "3.50167"
+    assert order.qty == 3.501670
+
+
+def test_subunit_market_sell_is_rejected_without_remote_write(make_broker):
+    broker, calls, _ = make_broker()
+    with pytest.raises(BrokerError, match="minimum unit"):
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.SELL, qty=0.0000009))
+    assert calls == []
+
+
 def test_us_only_valuation_is_explicit_and_not_logged_as_returns(make_broker, tmp_path):
     from src.agent.logs.equity import record_equity
     from src.agent.tools.market import account

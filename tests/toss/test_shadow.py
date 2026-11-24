@@ -610,3 +610,99 @@ def test_unusable_valuation_defers_new_buys_and_model_turns(shadow, tmp_path, mo
     assert not result["health"]["agent_ready"]
     assert result["agent_turn_count"] == 0
     assert not shadow.broker.get_open_orders()
+
+
+@pytest.mark.parametrize("held,pct,expected", [
+    (105.005567, 0.3, 31.501670), (105.005567, 0.4, 42.002226),
+    (76.005632, 0.6, 45.603379), (76.005632, 1, 76.005632),
+    (0.000003, 0.5, 0.000001),
+])
+def test_actual_fractional_trim_patterns_fill_once_and_protect_exact_remainder(shadow, tmp_path, held, pct, expected):
+    from src.agent.journal import Decision
+
+    b = shadow.broker
+    with b.transaction() as state:
+        state["positions"]["AAPL"]["qty"] = held
+        state["initial"]["positions"]["AAPL"]["qty"] = held
+    shadow.feed["volume"] = 200  # 20 shares per observation: large trims fill partially.
+    ex = _executor(shadow, tmp_path)
+    ex.journal.append_decision(Decision(symbol="AAPL", action="SELL", sell_pct=pct))
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=120))
+    result = ex.execute_pending()
+    assert [o.status for o in result] == ["executed", "no_order"]
+    oid = result[0].order_id
+    assert b.read()["orders"][oid]["order"]["qty"] == expected
+    assert expected <= held * pct
+    for _ in range(5):
+        shadow.advance()
+        _executor(shadow, tmp_path).execute_pending()  # Restart before every reconciliation.
+    state = b.read()
+    assert state["orders"][oid]["status"] == "filled"
+    assert {f["order_id"] for f in state["fills"]} == {oid}
+    assert sum(f["qty"] for f in state["fills"]) == pytest.approx(expected, abs=1e-9)
+    remaining = round(held - expected, 6)
+    if remaining:
+        assert b.get_position("AAPL").qty == remaining
+        assert [o.qty for o in b.get_open_orders("AAPL")] == [remaining, remaining]
+    else:
+        assert b.get_position("AAPL") is None and not b.get_open_orders("AAPL")
+    assert not b.report()["execution_retries"]
+
+
+def test_execution_error_backoff_survives_restart_then_recovers_without_delaying_protection(shadow, tmp_path, monkeypatch):
+    from src.agent.journal import Decision
+
+    b = shadow.broker
+    ex = _executor(shadow, tmp_path)
+    ex.journal.append_decision(Decision(symbol="AAPL", action="SELL", sell_pct=0.5))
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=120))
+    submit = b.submit_order
+    attempts = []
+
+    def outage(order):
+        attempts.append(order.qty)
+        raise BrokerError("temporary fixture failure")
+
+    monkeypatch.setattr(b, "submit_order", outage)
+    assert [o.status for o in ex.execute_pending()] == ["error", "no_order"]
+    assert next(iter(b.report()["execution_retries"].values()))["attempts"] == 1
+    for _ in range(4):
+        shadow.advance(5)
+        assert [o.status for o in _executor(shadow, tmp_path).execute_pending()] == ["no_order", "no_order"]
+    assert len(attempts) == 1
+    shadow.advance(10)
+    assert _executor(shadow, tmp_path).execute_pending()[0].status == "error"
+    retry = next(iter(b.report()["execution_retries"].values()))
+    assert retry["attempts"] == 2
+    assert datetime.fromisoformat(retry["next_retry_at"]) == shadow.now[0] + timedelta(seconds=60)
+    monkeypatch.setattr(b, "submit_order", submit)
+    shadow.advance(60)
+    assert _executor(shadow, tmp_path).execute_pending()[0].status == "executed"
+    assert not b.report()["execution_retries"]
+    shadow.advance(2)
+    assert _executor(shadow, tmp_path).execute_pending()[0].status == "executed"
+    assert [o.qty for o in b.get_open_orders("AAPL")] == [1, 1]
+
+
+def test_revised_intent_bypasses_old_error_and_clears_old_retry(shadow, tmp_path):
+    from src.agent.journal import Decision
+
+    b = shadow.broker
+    ex = _executor(shadow, tmp_path)
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=98))
+    assert ex.execute_pending()[0].status == "error"
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=120))
+    assert _executor(shadow, tmp_path).execute_pending()[0].status == "executed"
+    assert not b.report()["execution_retries"]
+
+
+def test_expired_decision_is_not_kept_pending_by_error_backoff(shadow, tmp_path):
+    from src.agent.journal import Decision
+
+    ex = _executor(shadow, tmp_path)
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=98,
+                                        valid_until=shadow.now[0] + timedelta(seconds=1)))
+    assert ex.execute_pending()[0].status == "error"
+    shadow.advance(2)
+    assert ex.execute_pending()[0].status == "skipped_expired"
+    assert not shadow.broker.report()["execution_retries"]

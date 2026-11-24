@@ -10,7 +10,7 @@ import re
 import time
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -42,6 +42,20 @@ def _time(value: str) -> datetime:
     if result.tzinfo is None:
         raise BrokerError("Toss timestamp must include a timezone")
     return result
+
+
+def normalize_market_sell(order: Order) -> None:
+    """Fit a generated cash exit to Toss's unit without increasing exposure.
+
+    Mutate the accepted order so the executor's submission audit also records
+    the actual quantity. Other order types retain their strict validation.
+    """
+    if order.side == OrderSide.SELL and order.order_type == OrderType.MARKET and order.order_class == OrderClass.SIMPLE:
+        qty = decimal_value(order.qty, "quantity", positive=True)
+        rounded = qty.quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+        if rounded <= 0:
+            raise BrokerError("Toss sell quantity is below the minimum unit of 0.000001 shares")
+        order.qty = float(rounded)
 
 
 class TossBroker(BaseBroker):
@@ -116,6 +130,8 @@ class TossBroker(BaseBroker):
             raise BrokerError("Invalid Toss client_order_id")
 
     def submit_order(self, order: Order) -> FilledOrder:
+        self._write_enabled()
+        normalize_market_sell(order)
         self.validate_order(order)
         if order.side == OrderSide.BUY:
             # A stale promotion must not silently fund a new exposure decision.

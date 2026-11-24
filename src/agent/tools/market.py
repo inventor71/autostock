@@ -360,6 +360,7 @@ def account(broker) -> dict:
         out["quote_quality"] = report.get("quote_quality")
         out["fill_count"] = report["fill_count"]
         out["recent_fills"] = report.get("recent_fills", [])
+        out["execution_retries"] = report.get("execution_retries", {})
     if getattr(state, "valuation_basis", "account_equity") != "account_equity":
         out["valuation_basis"] = state.valuation_basis
         out["currency"] = state.currency

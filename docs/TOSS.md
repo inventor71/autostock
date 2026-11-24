@@ -261,6 +261,19 @@ the current spread; an already-crossed target must be reconsidered as an explici
 `recent_fills` in the report and account tool shows the last ten actual simulated fills,
 including whether they came from an entry, exit, stop or take-profit.
 
+Generated simple market SELL quantities are rounded **down** to Toss's six-decimal share
+unit at submission, in both live and shadow adapters. This preserves percentage exits from
+fractional holdings without exceeding the requested quantity; less than 0.000001 shares is
+rejected. BUY sizing and unsupported live protection remain unchanged. The submitted order
+and its execution audit contain the normalized quantity.
+
+Shadow execution errors retain the pending decision and retry after 30, 60, 120, 240 and
+then at most once per 300 seconds. The delay survives restart; a revised decision can proceed
+immediately, and expired/replaced/completed decisions clear their retry state. Waiting for an
+accepted partial fill does not use this error delay, so protection still reconciles each poll.
+`execution_retries` in the report/account tool shows each pending error, attempts and next
+retry time. Data `health` and model-turn completion do not imply every decision executed.
+
 `quote_quality` separates execution freshness from portfolio valuation. Every fill still
 requires a source quote no older than **15 seconds**. Active orders and larger holdings are
 polled first, with at most three extra reads per cycle for stale/error responses. Quotes are

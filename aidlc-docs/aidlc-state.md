@@ -130,6 +130,7 @@
 
 | F102 | Toss 요율 자동 갱신과 독립 가상 운용 | merged | feat/F102 → main 4d0ef71 | — (제거됨) | — (monorepo) | 3a407b6 | 2026-11-23 |
 | F103 | 매도·보호 의도 보존과 Toss 호가 품질 | merged | feat/F103 → main dc2b939 | — (제거됨) | — (monorepo) | 79c756d | 2026-11-24 |
+| F104 | Toss 소수점 매도와 오류 재시도 | active | feat/F104 | .claude/worktrees/F104 | — (monorepo) | 79dc948 | 2026-11-24 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under
