@@ -68,6 +68,7 @@ class DecisionExecutor:
         self.universe = {s.upper() for s in universe}
         self._clock = clock or _now_like
         self._state_file = self.journal.root / ".executor_state.json"
+        self._exposure_orders: dict[str, list[str]] = {}
 
     # ------------------------------------------------------------------ #
     # Cursor (idempotency)
@@ -83,6 +84,7 @@ class DecisionExecutor:
             try:
                 data = json.loads(self._state_file.read_text())
                 cursor = int(data.get("cursor", 0))
+                self._exposure_orders = data.get("exposure_orders", {})
                 terminal_indices = set(data.get("terminal_indices", []))
                 return cursor, terminal_indices
             except Exception:
@@ -97,6 +99,7 @@ class DecisionExecutor:
             self._state_file,
             json.dumps({
                 "cursor": cursor,
+                "exposure_orders": self._exposure_orders,
                 "terminal_indices": sorted(terminal_indices),
                 "updated_at": datetime.now().isoformat(),
             }),
@@ -160,24 +163,29 @@ class DecisionExecutor:
         if not pending:
             return []
 
-        # Collapse multiple decisions for the same symbol in this batch to the
-        # latest one — a later call supersedes earlier ones. This prevents e.g.
-        # two HOLDs for one name placing a protective order and then immediately
-        # trying to replace it within a single cycle. Track the original index
-        # for the execution log (F24: decision→fill linkage).
-        latest_by_symbol: dict[str, tuple[int, Decision]] = {}
+        # Exposure changes and subsequent protection are different intentions.
+        # SELL then HOLD(stop) means trim, then protect the actual remainder.
+        # A new exposure decision (or plain HOLD) replaces the previous plan;
+        # repeated protection updates replace only the previous protection.
+        plans: dict[str, list[tuple[int, Decision]]] = {}
         for i, d in enumerate(pending):
-            latest_by_symbol[d.symbol] = (cursor + i, d)
-        batch: list[tuple[int, Decision]] = list(latest_by_symbol.values())
+            plan = plans.setdefault(d.symbol, [])
+            if self._is_protection(d):
+                if plan and self._is_protection(plan[-1][1]):
+                    plan.pop()
+                plan.append((cursor + i, d))
+            else:
+                plans[d.symbol] = [(cursor + i, d)]
+        batch = sorted(item for plan in plans.values() for item in plan)
 
-        # Any pending index that is NOT the latest for its symbol is superseded —
-        # it will never be executed (a newer same-symbol decision replaces it), so
-        # it is terminal for cursor purposes. Without this the cursor-advance loop
-        # below would stall forever on the first superseded index (it never gets a
-        # status and so never enters terminal_indices).
+        # Replaced intents are terminal, with an explicit audit record.
         kept = {idx for idx, _ in batch}
         for i in range(cursor, len(decisions)):
             if i not in kept:
+                if i not in terminal_indices:
+                    self._log_outcome(ExecutionOutcome(
+                        decisions[i], "skipped_superseded", "Replaced by a newer intent in this batch",
+                    ), decision_index=i)
                 terminal_indices.add(i)
 
         # Filter out already-terminal indices (idempotency: never re-execute a
@@ -196,9 +204,15 @@ class DecisionExecutor:
         })
 
         outcomes: list[ExecutionOutcome] = []
+        unresolved: set[str] = set()
         for idx, d in active_batch:
             try:
-                outcome = self.execute_decision(d, decision_index=idx)
+                if d.symbol in unresolved:
+                    outcome = ExecutionOutcome(d, "no_order", "Waiting for preceding exposure decision")
+                elif self._is_protection(d) and self._awaiting_exposure(d.symbol):
+                    outcome = ExecutionOutcome(d, "no_order", "Waiting for exposure order to finish")
+                else:
+                    outcome = self.execute_decision(d, decision_index=idx)
             except Exception as e:
                 logger.error(f"Execution error for {d.symbol} {d.action}: {e}")
                 outcome = ExecutionOutcome(d, "error", str(e))
@@ -207,6 +221,12 @@ class DecisionExecutor:
             self._log_outcome(outcome, decision_index=idx)
             if outcome.status in _TERMINAL:
                 terminal_indices.add(idx)
+                if outcome.status == "executed" and outcome.order_id and not self._is_protection(d):
+                    tracked = self._exposure_orders.setdefault(d.symbol, [])
+                    if outcome.order_id not in tracked:
+                        tracked.append(outcome.order_id)
+            else:
+                unresolved.add(d.symbol)
 
         # Advance cursor past a contiguous prefix of terminal indices.
         new_cursor = len(decisions)
@@ -217,6 +237,20 @@ class DecisionExecutor:
 
         self._save_cursor(new_cursor, terminal_indices)
         return outcomes
+
+    def _awaiting_exposure(self, symbol: str) -> bool:
+        # Symbol-level dependencies survive a restart or a newer HOLD replacing
+        # the pending protection. Never let reconciliation cancel an active trim.
+        tracked = self._exposure_orders.get(symbol, [])
+        if tracked:
+            opens = {o.order_id for o in self.broker.get_open_orders(symbol)}
+            tracked = [oid for oid in tracked if oid in opens]
+            self._exposure_orders[symbol] = tracked
+        return bool(tracked)
+
+    @staticmethod
+    def _is_protection(d: Decision) -> bool:
+        return d.action == "ADJUST_STOP" or (d.action == "HOLD" and d.stop is not None)
 
     def execute_decision(self, d: Decision, *, decision_index: int = -1) -> ExecutionOutcome:
         """Run ONE decision through the gate (universe/expiry/HOLD/ADJUST_STOP or
@@ -434,6 +468,9 @@ class DecisionExecutor:
             current_stop is not None
             and abs(current_stop - new_stop) < 0.01
             and (target is None or (current_target is not None and abs(current_target - target) < 0.01))
+            and any(o.stop_price == current_stop and abs(o.qty - position.qty) < 1e-6 for o in opens)
+            and (target is None or any(o.limit_price == current_target and abs(o.qty - position.qty) < 1e-6
+                                      for o in opens))
         )
         if already:
             return ExecutionOutcome(d, "skipped_hold", "already protected at this stop")

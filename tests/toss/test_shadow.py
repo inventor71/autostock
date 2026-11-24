@@ -144,6 +144,7 @@ def test_virtual_stop_waits_then_fills_at_gap_price_and_cancels_oco_peer(shadow)
     assert b.get_fills()[0].price == 85
     assert not b.get_open_orders()
     assert b.get_position("AAPL") is None
+    assert b.report()["recent_fills"][0]["reason"] == "stop"
 
 
 def test_cancel_partial_entry_preserves_protection_and_oco_never_oversells(shadow):
@@ -429,3 +430,183 @@ def test_quotes_returning_after_market_close_do_not_fill(shadow, monkeypatch):
     shadow.advance()
     assert b.get_order_status(placed.order_id).qty == 0
     assert not b.get_open_orders()
+
+
+def _executor(shadow, tmp_path):
+    from src.agent.journal import Journal
+    from src.risk.manager import RiskManager
+
+    journal = Journal(tmp_path / "journal")
+    journal.init()
+    return ShadowExecutor(shadow.broker, RiskManager(use_bracket_orders=True),
+                          SimpleNamespace(get_latest_price=lambda _: 100), journal,
+                          universe=["AAPL", "MSFT"], clock=lambda _: shadow.now[0])
+
+
+def test_trim_protection_waits_for_partial_fills_and_survives_new_intent_and_restart(shadow, tmp_path):
+    from src.agent.journal import Decision
+
+    b = shadow.broker
+    ex = _executor(shadow, tmp_path)
+    old = b.submit_order(Order(symbol="AAPL", side=OrderSide.SELL, qty=2,
+                              order_class=OrderClass.OCO, stop_loss_price=90, take_profit_price=120))
+    ex.journal.append_decision(Decision(symbol="AAPL", action="SELL", sell_pct=0.5))
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=91, target=120))
+    outcomes = ex.execute_pending()
+    assert [o.status for o in outcomes] == ["executed", "no_order"]
+    trim = outcomes[0].order_id
+    assert b.read()["orders"][trim]["status"] == "open"
+    shadow.feed["volume"] = 5  # Half a share per poll at the configured participation cap.
+    shadow.advance()
+    assert b.get_order_status(trim).qty == 0.5
+    assert b.get_position("AAPL").qty == 1.5
+    assert all(o.qty == 1.5 for o in b.get_open_orders("AAPL") if o.order_id.startswith(old.order_id))
+    # A newer protection decision must inherit the in-flight exposure dependency.
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=92, target=120))
+    restarted = _executor(shadow, tmp_path)
+    assert restarted.execute_pending()[0].status == "no_order"
+    assert b.read()["orders"][trim]["status"] == "partial"
+    shadow.advance()
+    assert restarted.execute_pending()[0].status == "executed"
+    assert b.get_position("AAPL").qty == 1
+    assert sorted(o.qty for o in b.get_open_orders("AAPL")) == [1, 1]
+    assert any(o.stop_price == 92 for o in b.get_open_orders("AAPL"))
+    assert {f["order_id"] for f in b.read()["fills"]} == {trim}  # never duplicated
+    from src.agent.tools.market import account
+    assert account(b)["recent_fills"][-1]["reason"] == "exit"
+    assert _executor(shadow, tmp_path).execute_pending() == []
+
+
+def test_crossed_replacement_does_not_cancel_valid_protection(shadow, tmp_path):
+    from src.agent.journal import Decision
+
+    b = shadow.broker
+    ex = _executor(shadow, tmp_path)
+    b.submit_order(Order(symbol="AAPL", side=OrderSide.SELL, qty=2,
+                         order_class=OrderClass.OCO, stop_loss_price=90, take_profit_price=120))
+    before = b.get_open_orders("AAPL")
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=91, target=98))
+    outcome = ex.execute_pending()[0]
+    assert outcome.status == "error" and "already crossed" in outcome.detail
+    assert b.get_open_orders("AAPL") == before
+    shadow.advance()
+    assert not b.get_fills()
+
+
+def test_stop_only_protection_survives_day_end_and_is_identified_in_fills(shadow):
+    b = shadow.broker
+    stop = b.submit_order(Order(symbol="AAPL", side=OrderSide.SELL, qty=2,
+                               order_type=OrderType.STOP, stop_price=90))
+    shadow.advance(6 * 3600 + 1)
+    assert b.get_open_orders("AAPL")[0].order_id == stop.order_id
+    shadow.now[0] += timedelta(hours=18)
+    shadow.feed.update(bid=85, ask=86)
+    shadow.advance()
+    shadow.advance()
+    assert b.report()["recent_fills"][0]["reason"] == "stop"
+
+
+def test_stale_retry_requires_new_source_time_to_restore_execution(shadow, monkeypatch):
+    b = shadow.broker
+    order = b.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=1))
+    shadow.feed["timestamp"] = shadow.now[0] - timedelta(seconds=30)
+    stale = shadow.advance()
+    assert stale["health"]["quote_retries"] == 1
+    assert not b.get_fills()
+    request = shadow.client.request
+    reads = [0]
+
+    def recover_on_retry(method, path, **kwargs):
+        if path == "/api/v1/orderbook":
+            reads[0] += 1
+            if reads[0] == 2:
+                shadow.feed["timestamp"] = None
+        return request(method, path, **kwargs)
+
+    monkeypatch.setattr(shadow.client, "request", recover_on_retry)
+    fresh = shadow.advance()
+    assert reads[0] == 2 and fresh["quote_quality"]["all_quotes_fresh"]
+    assert b.get_order_status(order.order_id).qty == 1
+    assert b.read()["fills"][0]["book"]["source_at"] == shadow.now[0].isoformat()
+
+
+def test_tiny_stale_holding_is_indicative_but_cannot_fill(shadow):
+    b = shadow.broker
+    with b.transaction() as state:
+        state["positions"]["AAPL"]["qty"] = 0.01
+        state["initial"]["positions"]["AAPL"]["qty"] = 0.01
+    order = b.submit_order(Order(symbol="AAPL", side=OrderSide.SELL, qty=0.01))
+    shadow.feed["timestamp"] = shadow.now[0] - timedelta(seconds=30)
+    report = shadow.advance()
+    assert report["health"]["status"] == "degraded"
+    assert report["health"]["agent_ready"]
+    assert report["quote_quality"]["status"] == "indicative"
+    assert report["quote_quality"]["fresh_value_pct"]["strategy"] > 99
+    assert report["metrics"]["valid_snapshots"] == 0
+    assert b.get_order_status(order.order_id).qty == 0
+    shadow.advance(121)
+    assert not b.report()["health"]["agent_ready"]
+
+
+def test_session_return_starts_at_fresh_observation_not_old_seed(shadow):
+    shadow.feed.update(bid=109, ask=111)
+    first = shadow.advance()
+    session = first["session_performance"]["2026-11-23"]
+    assert first["net_return_pct"] > 0  # old seed-to-current repricing, not agent alpha
+    assert session["net_return_pct"] == 0
+    assert session["start_fill_count"] == 0
+    shadow.feed.update(bid=98, ask=100)
+    last = shadow.advance(31)["session_performance"]["2026-11-23"]
+    assert last["net_return_pct"] == pytest.approx((1198 / 1220 - 1) * 100)
+    assert last["net_return_pct"] == last["hold_return_pct"]
+
+
+def test_idle_runner_finishes_protection_without_another_model_turn(shadow, tmp_path, monkeypatch):
+    from src.agent.journal import Decision
+
+    b = shadow.broker
+    ex = _executor(shadow, tmp_path)
+    ex.journal.append_decision(Decision(symbol="AAPL", action="SELL", sell_pct=0.5))
+    ex.journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=120))
+    assert [o.status for o in ex.execute_pending()] == ["executed", "no_order"]
+    with b.transaction() as state:
+        state["runner"]["max_turns_per_day"] = 0
+    shadow.now[0] += timedelta(seconds=2)
+    monkeypatch.setattr("src.evals.toss_shadow.build_agent", lambda *_: (None, ex))
+    result = run(b, None, agent=True, seconds=0.1, poll_seconds=1)
+    assert result["agent_turn_count"] == 0
+    assert b.get_position("AAPL").qty == 1
+    assert sorted(o.qty for o in b.get_open_orders("AAPL")) == [1, 1]
+
+
+def test_poll_crossing_run_deadline_never_executes_or_calls_model(shadow, monkeypatch):
+    b = shadow.broker
+    poll = b.poll
+
+    def delayed_poll():
+        result = poll()
+        with b.transaction() as state:
+            state["end_at"] = shadow.now[0].isoformat()
+        return result
+
+    monkeypatch.setattr(b, "poll", delayed_poll)
+    monkeypatch.setattr("src.evals.toss_shadow.build_agent", lambda *_: (
+        None, SimpleNamespace(execute_pending=lambda: pytest.fail("deadline passed"))))
+    report = run(b, None, agent=True, seconds=0.1, poll_seconds=1)
+    assert report["agent_turn_count"] == 0
+    assert not report["health"]["agent_ready"]
+
+
+def test_unusable_valuation_defers_new_buys_and_model_turns(shadow, tmp_path, monkeypatch):
+    from src.agent.journal import Decision
+
+    ex = _executor(shadow, tmp_path)
+    shadow.feed["timestamp"] = shadow.now[0] - timedelta(seconds=30)
+    shadow.advance()
+    ex.journal.append_decision(Decision(symbol="MSFT", action="BUY", stop=90, target=120))
+    assert ex.execute_pending()[0].status == "no_order"
+    monkeypatch.setattr("src.evals.toss_shadow.build_agent", lambda *_: (None, ex))
+    result = run(shadow.broker, None, agent=True, seconds=0.1, poll_seconds=1)
+    assert not result["health"]["agent_ready"]
+    assert result["agent_turn_count"] == 0
+    assert not shadow.broker.get_open_orders()
