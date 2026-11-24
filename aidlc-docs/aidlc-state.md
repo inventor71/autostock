@@ -129,7 +129,7 @@
 | F101 | toss-stock 기존 토큰 공유 — 키 복사 없는 읽기 전용 계좌 연결 | merged | feat/F101 → main 24b32f7 | — (제거됨) | — (monorepo) | e082768 | 2026-11-23 |
 
 | F102 | Toss 요율 자동 갱신과 독립 가상 운용 | merged | feat/F102 → main 4d0ef71 | — (제거됨) | — (monorepo) | 3a407b6 | 2026-11-23 |
-| F103 | 매도·보호 의도 보존과 Toss 호가 품질 | active | feat/F103 | .claude/worktrees/F103 | — (monorepo) | 79c756d | 2026-11-24 |
+| F103 | 매도·보호 의도 보존과 Toss 호가 품질 | merged | feat/F103 → main dc2b939 | — (제거됨) | — (monorepo) | 79c756d | 2026-11-24 |
 
 > Status: `active` / `merged` / `abandoned`. Edit a row only at track **create** / **merge/close**
 > (the only cross-track writes — serialize with `git pull --rebase`). Per-track files under

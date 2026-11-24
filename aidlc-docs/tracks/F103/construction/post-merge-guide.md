@@ -32,11 +32,15 @@ Fable report 명령은 예약 초기화 이후 사용한다. 두 tmux의 report 
 
 ## 검증 상태와 복구
 
-mock 통합/전체 회귀 및 과거 스냅샷 재분류 완료. 장외 재시작 확인은 적용 후 아래에 기록한다.
+mock 통합/전체 회귀 및 과거 스냅샷 재분류 완료. 2026-11-24 11:49 KST에 장외 재시작 검증 완료:
+Opus F103 관찰 주기 2회 이상 진행, health=ok. 기존 장부의 핵심 필드와 커서 hash 동일,
+체결 8건/턴 7회 보존. Fable의 launch/예약 파일 hash도 동일하며 새 대기 프로세스가 정상이다.
+두 실험의 run/report 창이 모두 살아 있다. 상세 검증은 private restart-before.json과
+restart-after.json, 적용 전 백업은 opus-before-F103.tar.gz에 남겼다.
 새 정규장에서 실제 stale 재조회 성공률과 모델 판단 결과는 아직 관측하지 않았다.
 세금·비용 가정과 실계좌 읽기 전용 경계는 기존대로 유지한다.
 
 문제 시 해당 tmux의 run 창에서 Ctrl-C로 dry runner만 중지한다. 적용 전 private 백업과
 검증 기록은 `research-comparisons/F103/`에 둔다. 코드 롤백은 F103 merge commit을 확인한 뒤
-`git revert -m 1 <F103-merge-sha>`를 사용한다. 백업 장부로 복원하면 적용 후 가상 체결이
+`git revert -m 1 dc2b939`를 사용한다. 백업 장부로 복원하면 적용 후 가상 체결이
 사라지므로, 현재 장부를 먼저 별도 보관하고 새 구간으로 표시한다.

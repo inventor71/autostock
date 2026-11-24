@@ -349,3 +349,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 2026-11-23 — F101 merged locally at 24b32f7: reuse toss-stock token for read-only account/data access, no keys copied or tokens issued; 1,770 tests passed and live GET checks succeeded.
 
 2026-11-23 — F102 merged locally at 4d0ef71: expiring Toss commission refresh and isolated durable shadow evaluation; 1,806 tests passed, real GET-only setup/quote checks succeeded, no live orders or model calls.
+
+- 2026-11-24T02:50:55.796971+00:00 | F103 merged dc2b939 | exit/protection intent preservation, bounded Toss valuation quality; 1824 tests; Opus dry resumed and Fable scheduled launcher restarted.
