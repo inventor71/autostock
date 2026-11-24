@@ -23,6 +23,7 @@ from src.execution.base import BaseBroker
 from src.execution.brokers.toss import storage
 from src.execution.brokers.toss.broker import TossBroker, _time
 from src.execution.brokers.toss.costs import ET, CommissionSchedule, TossCosts, number
+from src.execution.brokers.toss.quality import quote_quality, record_session
 
 OPEN = {"open", "partial"}
 ASSUMPTIONS = [
@@ -185,6 +186,19 @@ class TossShadowBroker(BaseBroker):
                 _positive(value)
         if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,19}", order.symbol):
             raise BrokerError("Invalid US symbol")
+        if order.order_class == OrderClass.OCO or (order.side == OrderSide.SELL and order.order_type == OrderType.STOP):
+            stop = order.stop_loss_price if order.order_class == OrderClass.OCO else order.stop_price
+            _positive(stop)
+            if order.order_class == OrderClass.OCO:
+                _positive(order.take_profit_price)
+            book = parse_book(self.client.request("GET", "/api/v1/orderbook",
+                              params={"symbol": order.symbol}), self.clock())
+            age = (self.clock() - _time(book["source_at"])).total_seconds()
+            if not 0 <= age <= self.read()["execution"]["max_quote_age"]:
+                raise BrokerError("Fresh quote required for new protection")
+            if stop >= book["bids"][0]["price"] or (order.order_class == OrderClass.OCO
+                    and order.take_profit_price <= book["asks"][0]["price"]):
+                raise BrokerError("Protection already crossed the current quote; re-evaluate or request an explicit SELL")
 
     def _row(self, order, oid, now, *, group=None, protective=False):
         return {"id": oid, "order": order.model_dump(mode="json"), "status": "open",
@@ -234,8 +248,9 @@ class TossShadowBroker(BaseBroker):
                 held = state["positions"].get(order.symbol, {}).get("qty", 0)
                 if order.qty > held + 1e-8:
                     raise BrokerError("Shadow sells cannot exceed holdings")
-            row = self._row(order, oid, now)
-            if reference is not None:
+            row = self._row(order, oid, now,
+                            protective=order.side == OrderSide.SELL and order.order_type == OrderType.STOP)
+            if reference is not None and order.side == OrderSide.BUY:
                 age = (now - _time(reference["source_at"])).total_seconds()
                 if not 0 <= age <= state["execution"]["max_quote_age"]:
                     raise BrokerError("Fresh quote required to reserve shadow cash")
@@ -334,20 +349,38 @@ class TossShadowBroker(BaseBroker):
             profile = self.costs.profile()
         except BrokerError as exc:
             cost_error = str(exc)
-        symbols = sorted(set(before["positions"]) | set(before["initial"]["positions"]) |
-                         {r["order"]["symbol"] for r in before["orders"].values() if r["status"] in OPEN})
+        active = {r["order"]["symbol"] for r in before["orders"].values() if r["status"] in OPEN}
+        symbols = set(before["positions"]) | set(before["initial"]["positions"]) | active
+        def priority(symbol):
+            qty = max(before["positions"].get(symbol, {}).get("qty", 0),
+                      before["initial"]["positions"].get(symbol, {}).get("qty", 0))
+            return (symbol not in active, -qty * before["marks"].get(symbol, {}).get("price", 0), symbol)
+        symbols = sorted(symbols, key=priority)
         books, errors, latencies = {}, {}, []
+        retries = 0
         if market_open:
-            for symbol in symbols:
+            def fetch(symbol):
                 started = time.monotonic()
                 try:
                     row = self.client.request("GET", "/api/v1/orderbook", params={"symbol": symbol})
                     books[symbol] = parse_book(row, self.clock())
+                    errors.pop(symbol, None)
                 except BrokerError as exc:
                     errors[symbol] = str(exc)
                 latencies.append((time.monotonic() - started) * 1000)
                 # Leave room under the public 15/s MARKET_DATA limit for agent reads.
                 time.sleep(max(0, 0.1 - (time.monotonic() - started)))
+            for symbol in symbols:
+                fetch(symbol)
+            # One retry per symbol, at most three reads. Never rejuvenate source time.
+            for symbol in symbols:
+                book = books.get(symbol)
+                age = (self.clock() - _time(book["source_at"])).total_seconds() if book else None
+                if symbol in errors or age is None or not 0 <= age <= before["execution"]["max_quote_age"]:
+                    fetch(symbol)
+                    retries += 1
+                    if retries == 3:
+                        break
         with self.transaction() as state:
             now = self.clock()
             # Do not use a rate that expired while fetching the orderbooks.
@@ -360,6 +393,8 @@ class TossShadowBroker(BaseBroker):
             market_open = self._session_open(now)  # Fetching books may cross the session close.
             fresh = set()
             for symbol, book in books.items():
+                if symbol in errors:
+                    continue
                 previous = state["marks"].get(symbol, {}).get("source_at")
                 if previous and _time(book["source_at"]) < _time(previous):
                     errors[symbol] = "Orderbook time moved backwards"
@@ -384,10 +419,23 @@ class TossShadowBroker(BaseBroker):
             if profile:
                 state["cost_profile"] = profile
             missing = sorted(set(symbols) - fresh) if market_open else []
+            quality = quote_quality(state, now, fresh, errors) if market_open else state.get("quote_quality")
+            if market_open:
+                state["quote_quality"] = quality
+                quality_metrics = state.setdefault("quality_metrics", {
+                    "since": now.isoformat(), "polls": 0, "fresh_polls": 0,
+                    "indicative_polls": 0, "unavailable_polls": 0, "retry_requests": 0,
+                })
+                quality_metrics["polls"] += 1
+                quality_metrics[quality["status"] + "_polls"] += 1
+                quality_metrics["retry_requests"] += retries
             state["health"] = {"as_of": now.isoformat(), "status": "ended" if ended else
-                               ("blocked" if cost_error or errors or missing else "ok"),
+                               ("blocked" if cost_error or (market_open and not quality["valuation_usable"]) else
+                                ("degraded" if missing else "ok")),
                                "market_open": market_open, "cost_error": cost_error,
                                "missing_or_stale_books": missing, "book_errors": errors,
+                               "agent_ready": not ended and market_open and not cost_error and quality["valuation_usable"],
+                               "quote_retries": retries,
                                "http_ms_max": max(latencies, default=0),
                                "http_ms_mean": sum(latencies) / len(latencies) if latencies else 0}
             state["metrics"]["polls"] += 1
@@ -400,16 +448,18 @@ class TossShadowBroker(BaseBroker):
                 report = self._report(state)
                 equity = report["equity_usd"]
                 metrics = state["metrics"]
-                if not missing and not errors:
+                if quality["all_quotes_fresh"]:
                     metrics["valid_snapshots"] += 1
                     metrics["peak_equity"] = max(metrics["peak_equity"], equity)
                     metrics["max_drawdown_pct"] = max(metrics["max_drawdown_pct"],
                                                       (1 - equity / metrics["peak_equity"]) * 100)
+                    record_session(state, now, report)
                 metrics["snapshots"] += 1
                 state["last_snapshot_at"] = now.isoformat()
                 self._append_snapshot({"at": now.isoformat(), "equity": equity,
                                        "hold_equity": report["hold_equity_usd"],
                                        "health": state["health"], "marks": state["marks"],
+                                       "quote_quality": quality, "implementation": "F103",
                                        "fill_count": len(state["fills"])})
         return self.report()
 
@@ -515,6 +565,14 @@ class TossShadowBroker(BaseBroker):
             for peer in state["orders"].values():
                 if peer["order"]["symbol"] == symbol and peer["order"]["side"] == "sell" and peer["status"] in OPEN:
                     peer["status"] = "canceled"
+        elif side == "sell":
+            # A manual trim leaves existing protection in place while it fills,
+            # but each remaining leg must fit the actual holding, including after
+            # partial fills. OCO peer reductions above preserve group quantities.
+            remaining = state["positions"][symbol]["qty"]
+            for peer in state["orders"].values():
+                if peer["order"]["symbol"] == symbol and peer["protective"] and peer["status"] in OPEN:
+                    peer["order"]["qty"] = min(peer["order"]["qty"], peer["filled_qty"] + remaining)
 
     def _append_snapshot(self, row):
         # Under account.lock. Mode is private even before a runner sets umask.
@@ -528,6 +586,13 @@ class TossShadowBroker(BaseBroker):
     def _report(state):
         def value(positions):
             return sum(p["qty"] * state["marks"][s]["price"] for s, p in positions.items())
+        recent_fills = []
+        for fill in state["fills"][-10:]:
+            order = state["orders"][fill["order_id"]]["order"]
+            reason = ("stop" if order["order_type"] == "stop" else "take_profit") if fill["protective"] else (
+                "entry" if fill["side"] == "buy" else "exit")
+            recent_fills.append({k: fill[k] for k in ("order_id", "symbol", "side", "qty", "price", "at")}
+                                | {"reason": reason})
         equity = state["cash"] + value(state["positions"])
         hold = state["initial"]["cash"] + value(state["initial"]["positions"])
         initial = state["initial"]["equity"]
@@ -544,12 +609,17 @@ class TossShadowBroker(BaseBroker):
                 "stress_extra_10bps_each_fill_usd": extra_cost,
                 "stress_net_return_pct": ((equity - extra_cost) / initial - 1) * 100,
                 "fill_count": len(state["fills"]),
+                "recent_fills": recent_fills,
                 "open_order_count": sum(r["status"] in OPEN for r in state["orders"].values()),
                 "agent_turn_count": len(state["turns"]),
                 "agent_error_count": sum(t["status"] == "error" for t in state["turns"]),
                 "runner_stopped_at": state.get("runner_stopped_at"), "metrics": state["metrics"],
                 "agent_config": state.get("agent_config"), "runner": state.get("runner"),
                 "health": state["health"], "execution": state["execution"],
+                "quote_quality": state.get("quote_quality"),
+                "quality_metrics": state.get("quality_metrics"),
+                "session_performance": state.get("session_performance", {}),
+                "runtime_revisions": state.get("runtime_revisions", []),
                 "cost_profile": state["cost_profile"], "assumptions": state["assumptions"],
                 "return_basis": "marked equity after simulated incurred costs; open positions not liquidated",
                 "stress_note": "Cost sensitivity only; no claim of replaying alternative latency/fill paths"}

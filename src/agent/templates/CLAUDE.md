@@ -82,6 +82,9 @@ Journal numbers are historical observations, not current quotes.
 
 - `BUY`: supply `stop` (required for sizing) and ideally `target`; `limit` null = enter at market.
 - `SELL`: use `sell_pct` for partial exits (1.0 = full).
+  To protect the remainder, follow it with `HOLD` + stop/target; the executor waits
+  for the exit order to finish before sizing protection. Recheck actual fills and
+  current quotes; writing a decision does not mean it filled.
 - `HOLD`: keep the position. If you include a `stop` (and `target`) on a name you
   hold, the executor keeps a resting protective order at those levels — this is
   how you protect a holding. Unchanged, adequately protected positions need

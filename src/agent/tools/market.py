@@ -354,6 +354,12 @@ def account(broker) -> dict:
             out["trading_costs"] = broker.get_cost_profile()
         except Exception:
             out["trading_costs"] = {"status": "unavailable", "new_entries": "deferred"}
+    if getattr(broker, "simulation", False) and callable(getattr(type(broker), "report", None)):
+        report = broker.report()
+        out["simulation"] = True
+        out["quote_quality"] = report.get("quote_quality")
+        out["fill_count"] = report["fill_count"]
+        out["recent_fills"] = report.get("recent_fills", [])
     if getattr(state, "valuation_basis", "account_equity") != "account_equity":
         out["valuation_basis"] = state.valuation_basis
         out["currency"] = state.currency

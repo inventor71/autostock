@@ -36,6 +36,9 @@ class ShadowExecutor(DecisionExecutor):
         existing = self.broker.get_order_status(key)
         if existing is not None:
             return ExecutionOutcome(decision, "executed", "Recovered durable shadow order", order_id=key)
+        quality = self.broker.read().get("quote_quality")
+        if decision.action == "BUY" and quality and not quality["valuation_usable"]:
+            return ExecutionOutcome(decision, "no_order", "Portfolio valuation is not current enough for new exposure")
         self.broker.decision_key = key
         try:
             return super().execute_decision(decision, decision_index=decision_index)
@@ -51,6 +54,9 @@ class ShadowTradingLoop(AgentTradingLoop):
     def _assemble_turn(self, core, *, lessons=""):
         state = self.shadow_broker.read()
         profile = self.shadow_broker.get_cost_profile()
+        quality = state.get("quote_quality") or {}
+        quality_summary = {k: quality.get(k) for k in (
+            "as_of", "status", "fresh_value_pct", "indicative_symbols", "unavailable_symbols")}
         context = (
             "This is a separate Toss USD shadow account. Use the account tool for this virtual book. "
             "Judge opportunities after costs; prefer no trade when the edge is uncertain. "
@@ -59,6 +65,11 @@ class ShadowTradingLoop(AgentTradingLoop):
             f"Execution assumptions: {json.dumps(state['execution'])}. "
             "Stops/OCO are local simulations, not available live Toss brackets. "
             "Annual capital-gains tax is handled separately. Keep the decision rationale concise."
+            " For a partial exit followed by protection, write SELL then HOLD with stop/target; "
+            "protection waits for the exit to finish and uses the actual remaining quantity. "
+            "Check the account's open orders and actual fills: a recorded decision is not a fill. "
+            "Use current quotes for stop/target levels; a target already crossed is not a protective exit. "
+            f"Latest portfolio quote quality: {json.dumps(quality_summary)}."
         )
         return context + "\n\n" + super()._assemble_turn(core, lessons=lessons)
 
@@ -216,6 +227,12 @@ def run(broker, settings, *, agent=False, once=False, seconds=None, poll_seconds
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise BrokerError("This shadow run already has an active runner") from None
+        with broker.transaction() as state:
+            revisions = state.setdefault("runtime_revisions", [])
+            if not revisions or revisions[-1]["implementation"] != "F103":
+                revisions.append({"implementation": "F103", "started_at": broker.clock().isoformat(),
+                                  "note": "Ordered exit/protection intents; separate execution and valuation freshness"})
+            state.pop("runner_stopped_at", None)
         if agent:
             loop, executor = build_agent(settings, broker)
         with ThreadPoolExecutor(max_workers=1, thread_name_prefix="shadow-agent") as pool:
@@ -226,11 +243,17 @@ def run(broker, settings, *, agent=False, once=False, seconds=None, poll_seconds
                         break
                     try:
                         report = broker.poll()
-                        if (agent and (future is None or future.done()) and
-                                report["health"].get("market_open") and not report["health"].get("cost_error")):
-                            turn = claim_turn(broker)
-                            if turn is not None:
-                                future = pool.submit(do_turn, broker, loop, executor, turn, stop)
+                        within_deadline = (not stop.is_set() and broker.clock() < _time(broker.read()["end_at"])
+                                           and not (seconds and time.monotonic() - started >= seconds))
+                        if agent and within_deadline and (future is None or future.done()) and report["health"].get("market_open"):
+                            # Finish deferred protection after an asynchronous fill without
+                            # waiting for another model turn. Never read a journal mid-turn.
+                            executor.execute_pending()
+                            ready = report["health"].get("agent_ready", not report["health"].get("cost_error"))
+                            if ready:
+                                turn = claim_turn(broker)
+                                if turn is not None:
+                                    future = pool.submit(do_turn, broker, loop, executor, turn, stop)
                     except Exception as exc:  # noqa: BLE001 — keep observing after transient outages
                         with broker.transaction() as state:
                             state["health"] = {"status": "error", "as_of": broker.clock().isoformat(),
@@ -249,6 +272,7 @@ def run(broker, settings, *, agent=False, once=False, seconds=None, poll_seconds
             if broker.clock() >= _time(state["end_at"]):
                 from src.execution.brokers.toss.shadow import OPEN
                 state["health"]["status"] = "ended"
+                state["health"]["agent_ready"] = False
                 for row in state["orders"].values():
                     if row["status"] in OPEN:
                         row["status"] = "expired"

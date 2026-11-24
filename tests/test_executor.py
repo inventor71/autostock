@@ -142,6 +142,50 @@ class TestDecisionExecutor:
         assert ex.execute_pending()[0].status == "executed"
         assert broker.get_position("AAPL").qty == 5
 
+    def test_trim_then_protect_remainder_preserves_both_intents(self, tmp_path):
+        ex, broker, journal = _make(tmp_path)
+        broker.set_current_price("AAPL", 100)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))
+        journal.append_decision(Decision(symbol="AAPL", action="SELL", sell_pct=0.5))
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=120))
+        assert [o.status for o in ex.execute_pending()] == ["executed", "executed"]
+        assert broker.get_position("AAPL").qty == 5
+        assert [o.qty for o in broker.get_open_orders("AAPL")] == [5, 5]
+        assert ex.execute_pending() == []
+
+    def test_full_exit_then_protection_does_not_reopen_position(self, tmp_path):
+        ex, broker, journal = _make(tmp_path)
+        broker.set_current_price("AAPL", 100)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))
+        journal.append_decision(Decision(symbol="AAPL", action="SELL", sell_pct=1))
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=120))
+        assert [o.status for o in ex.execute_pending()] == ["executed", "skipped_hold"]
+        assert broker.get_position("AAPL") is None
+        assert not broker.get_open_orders("AAPL")
+
+    def test_failed_trim_leaves_following_protection_pending(self, tmp_path, monkeypatch):
+        ex, broker, journal = _make(tmp_path)
+        broker.set_current_price("AAPL", 100)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))
+        journal.append_decision(Decision(symbol="AAPL", action="SELL", sell_pct=0.5))
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=120))
+        with monkeypatch.context() as patch:
+            patch.setattr(ex.risk_manager, "evaluate_signal", lambda *a: None)
+            assert [o.status for o in ex.execute_pending()] == ["no_order", "no_order"]
+        assert not broker.get_open_orders("AAPL")
+        assert [o.status for o in ex.execute_pending()] == ["executed", "executed"]
+        assert broker.get_position("AAPL").qty == 5
+
+    def test_unchanged_levels_with_wrong_quantity_are_reconciled(self, tmp_path):
+        ex, broker, journal = _make(tmp_path)
+        broker.set_current_price("AAPL", 100)
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=10))
+        broker.submit_order(Order(symbol="AAPL", side=OrderSide.SELL, qty=2,
+                                  order_class=OrderClass.OCO, stop_loss_price=90, take_profit_price=120))
+        journal.append_decision(Decision(symbol="AAPL", action="HOLD", stop=90, target=120))
+        assert ex.execute_pending()[0].status == "executed"
+        assert [o.qty for o in broker.get_open_orders("AAPL")] == [10, 10]
+
     def test_circuit_breaker_blocks_buy(self, tmp_path):
         ex, broker, journal = _make(tmp_path, price=100.0, spy_change=-0.05)  # market -5%
         broker.set_current_price("AAPL", 100.0)

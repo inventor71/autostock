@@ -253,6 +253,31 @@ incurred costs; open positions have not been liquidated. `metrics.valid_snapshot
 feed/model run. A few days can reveal excessive turnover or operational failures, but do
 not establish statistically reliable superior returns.
 
+Partial exits and protection are ordered intents: `SELL` followed by `HOLD` with a stop/target
+submits the trim first, waits for its order to finish, then protects the actual remainder.
+The dependency survives restarts and newer protection decisions. Existing virtual protection
+shrinks as shares sell. Newly requested protection needs a fresh quote and levels beyond
+the current spread; an already-crossed target must be reconsidered as an explicit exit.
+`recent_fills` in the report and account tool shows the last ten actual simulated fills,
+including whether they came from an entry, exit, stop or take-profit.
+
+`quote_quality` separates execution freshness from portfolio valuation. Every fill still
+requires a source quote no older than **15 seconds**. Active orders and larger holdings are
+polled first, with at most three extra reads per cycle for stale/error responses. Quotes are
+never given a newer timestamp locally. A portfolio is `indicative` only when all quotes are
+at most **120 seconds** old, no books failed, and stale holdings total at most **1%** of each
+of the strategy and hold-book equity (including cash). Such holdings remain ineligible to
+fill; worse data pauses model turns and new BUY decisions. `health.status=degraded` makes
+this limited valuation visible. These bounds are valuation tolerances, not proof of price accuracy.
+
+`quality_metrics` counts fresh/indicative/unavailable polls separately from the original
+strict `metrics.valid_snapshots`. `session_performance` measures each New York trading day's
+return between its first and latest fully fresh observations; `start_fill_count` tells you
+whether trades already occurred before that baseline. It does not include the seed-to-open
+repricing. `runtime_revisions` records when an implementation starts applying; old fills and
+returns are retained. Outside market hours, quality retains its last observation's `as_of`
+timestamp. No new quality or session history is inferred for earlier runs.
+
 Execution defaults are deliberately explicit: buy at ask / sell at bid, 2 bps additional
 adverse slippage, minimum one-second activation delay, maximum 15-second quote age,
 10% of displayed size, partial fills and DAY entry expiry. The same timestamped liquidity
