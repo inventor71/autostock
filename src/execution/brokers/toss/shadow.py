@@ -21,7 +21,7 @@ from src.core.models import FilledOrder, OpenOrder, Order, PortfolioState, Posit
 from src.core.types import OrderClass, OrderSide, OrderType
 from src.execution.base import BaseBroker
 from src.execution.brokers.toss import storage
-from src.execution.brokers.toss.broker import TossBroker, _time
+from src.execution.brokers.toss.broker import TossBroker, _time, normalize_market_sell
 from src.execution.brokers.toss.costs import ET, CommissionSchedule, TossCosts, number
 from src.execution.brokers.toss.quality import quote_quality, record_session
 
@@ -222,6 +222,7 @@ class TossShadowBroker(BaseBroker):
             state["orders"][oid] = row
 
     def submit_order(self, order):
+        normalize_market_sell(order)
         self.validate_order(order)
         if not self.is_market_open():
             raise BrokerError("Shadow orders require an open regular US session")
@@ -459,7 +460,7 @@ class TossShadowBroker(BaseBroker):
                 self._append_snapshot({"at": now.isoformat(), "equity": equity,
                                        "hold_equity": report["hold_equity_usd"],
                                        "health": state["health"], "marks": state["marks"],
-                                       "quote_quality": quality, "implementation": "F103",
+                                       "quote_quality": quality, "implementation": "F104",
                                        "fill_count": len(state["fills"])})
         return self.report()
 
@@ -620,6 +621,7 @@ class TossShadowBroker(BaseBroker):
                 "quality_metrics": state.get("quality_metrics"),
                 "session_performance": state.get("session_performance", {}),
                 "runtime_revisions": state.get("runtime_revisions", []),
+                "execution_retries": state.get("execution_retries", {}),
                 "cost_profile": state["cost_profile"], "assumptions": state["assumptions"],
                 "return_basis": "marked equity after simulated incurred costs; open positions not liquidated",
                 "stress_note": "Cost sensitivity only; no claim of replaying alternative latency/fill paths"}

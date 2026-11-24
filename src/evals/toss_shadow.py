@@ -35,15 +35,55 @@ class ShadowExecutor(DecisionExecutor):
         ).hexdigest()[:32]
         existing = self.broker.get_order_status(key)
         if existing is not None:
+            self._clear_retry(key)
             return ExecutionOutcome(decision, "executed", "Recovered durable shadow order", order_id=key)
-        quality = self.broker.read().get("quote_quality")
-        if decision.action == "BUY" and quality and not quality["valuation_usable"]:
+        # Failed decisions remain pending, but polling must not hammer the same
+        # invalid order. Identity includes the content: a revised intent is fresh.
+        state = self.broker.read()
+        retry = state.get("execution_retries", {}).get(key)
+        expired = decision.valid_until is not None and decision.valid_until < self._clock(decision.valid_until)
+        if retry and not expired and self.broker.clock() < _time(retry["next_retry_at"]):
+            return ExecutionOutcome(decision, "no_order", f"Retry deferred until {retry['next_retry_at']}")
+        quality = state.get("quote_quality")
+        if decision.action == "BUY" and not expired and quality and not quality["valuation_usable"]:
             return ExecutionOutcome(decision, "no_order", "Portfolio valuation is not current enough for new exposure")
         self.broker.decision_key = key
         try:
-            return super().execute_decision(decision, decision_index=decision_index)
+            outcome = super().execute_decision(decision, decision_index=decision_index)
+        except Exception as exc:  # Persist backoff, then retain the executor's error audit.
+            self._record_retry(key, decision, decision_index, str(exc))
+            raise
         finally:
             self.broker.decision_key = None
+        if outcome.status == "error":
+            self._record_retry(key, decision, decision_index, outcome.detail)
+        else:
+            self._clear_retry(key)
+        return outcome
+
+    def _record_retry(self, key, decision, index, detail):
+        with self.broker.transaction() as state:
+            retries = state.setdefault("execution_retries", {})
+            previous = retries.get(key, {})
+            attempts = previous.get("attempts", 0) + 1
+            delay = min(300, 30 * 2 ** min(attempts - 1, 4))
+            retries[key] = {"decision_index": index, "symbol": decision.symbol, "action": decision.action,
+                            "attempts": attempts, "last_error": detail,
+                            "next_retry_at": (self.broker.clock() + timedelta(seconds=delay)).isoformat()}
+
+    def _clear_retry(self, key):
+        if key in self.broker.read().get("execution_retries", {}):
+            with self.broker.transaction() as state:
+                state["execution_retries"].pop(key, None)
+
+    def execute_pending(self):
+        outcomes = super().execute_pending()
+        cursor, terminal = self._load_cursor()
+        if self.broker.read().get("execution_retries"):
+            with self.broker.transaction() as state:
+                state["execution_retries"] = {k: r for k, r in state["execution_retries"].items()
+                                              if r["decision_index"] >= cursor and r["decision_index"] not in terminal}
+        return outcomes
 
 
 class ShadowTradingLoop(AgentTradingLoop):
@@ -229,9 +269,9 @@ def run(broker, settings, *, agent=False, once=False, seconds=None, poll_seconds
             raise BrokerError("This shadow run already has an active runner") from None
         with broker.transaction() as state:
             revisions = state.setdefault("runtime_revisions", [])
-            if not revisions or revisions[-1]["implementation"] != "F103":
-                revisions.append({"implementation": "F103", "started_at": broker.clock().isoformat(),
-                                  "note": "Ordered exit/protection intents; separate execution and valuation freshness"})
+            if not revisions or revisions[-1]["implementation"] != "F104":
+                revisions.append({"implementation": "F104", "started_at": broker.clock().isoformat(),
+                                  "note": "Floor Toss market-sell quantities to six decimals; durable execution retry backoff"})
             state.pop("runner_stopped_at", None)
         if agent:
             loop, executor = build_agent(settings, broker)
