@@ -58,5 +58,17 @@ venv/bin/python -m src.evals.toss_shadow --dir research-comparisons/toss-shadow/
 생기지 않는지 확인한다. orders/fills의 새 수량은 6자리 이내이고 후속 보호는 잔여 수량과
 일치해야 한다. 별도 설정 키는 없으며 30초~5분 간격이 기본이다. 일반 콘솔은 건드리지 않는다.
 코드 동작 불변이어도 다음 일반 콘솔 attach 시 F43에 의한 1회 자동 재시작은 정상이다.
-문제 시 해당 tmux run 창의 Ctrl-C로 dry만 중단하고 `git revert -m 1 <F104-merge-sha>`로
+문제 시 해당 tmux run 창의 Ctrl-C로 dry만 중단하고 `git revert -m 1 6bb2354`로
 코드를 복구한다. 백업 복원은 이후 가상 체결을 제거하므로 현재 장부를 별도 보관해야 한다.
+
+## 장중 적용 결과
+
+2026-11-24 23:56 KST 확인: Opus의 GOOGL/SNDK와 Fable의 GOOGL 매도가 각각 한 주문으로
+정상 제출·부분 체결·완료됐으며, 잔여 보유 수량과 stop 수량이 일치한다. 양쪽 execution_retries는
+비어 있고 미처리 커서는 각각 10/10과 6/6이다. 이전 체결과 고정 모델/위험 설정·종료일·모델 턴
+기록은 동일하며 모델 호출을 추가하지 않았다. 두 run/report 창 모두 실행 중이다.
+
+private `incident-before.json`에는 최초 관측 오류와 반복 횟수, 두 `*-before.json` 및 tar.gz에는
+적용 전 장부, `restart-after.json`에는 적용 후 수량·체결·보호·보존 검증이 남는다.
+23:33~23:54경의 실행 지연은 과거 가격으로 복구하지 않았다. 이 구간의 성과 차이를 모델
+판단 차이로 해석하지 않는다. 기존 일반 데몬은 재시작하지 않았고 원격 push는 하지 않았다.

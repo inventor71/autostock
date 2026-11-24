@@ -351,3 +351,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 2026-11-23 — F102 merged locally at 4d0ef71: expiring Toss commission refresh and isolated durable shadow evaluation; 1,806 tests passed, real GET-only setup/quote checks succeeded, no live orders or model calls.
 
 - 2026-11-24T02:50:55.796971+00:00 | F103 merged dc2b939 | exit/protection intent preservation, bounded Toss valuation quality; 1824 tests; Opus dry resumed and Fable scheduled launcher restarted.
+
+- 2026-11-24T14:57:33.769563+00:00 | F104 merged 6bb2354 | floor Toss fractional exits, durable retry backoff; 1834 tests; both dry runs resumed and delayed exits/protection verified.
