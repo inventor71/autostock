@@ -40,6 +40,8 @@ graph TB
         ALPACA["AlpacaBroker<br/>Trading API (paper/live)"]
         FARM["AccountFarmBroker<br/>Broker API sub-account isolation"]
         KIS["KisBroker<br/>Korean REST"]
+        TOSS["TossBroker (F100/F101)<br/>live, read-only-by-default, MARKET/LIMIT only"]
+        TOSSSHADOW["TossShadowBroker (F102-F104)<br/>quote-driven durable dry simulation"]
         SIM["SimulatedBroker<br/>backtest / evals"]
     end
 
@@ -47,6 +49,7 @@ graph TB
         EVRUN["runner.py + grading.py<br/>scenario replay through real executor/RiskManager"]
         CMPRES["compare_research.py<br/>single/sequential/parallel research A-B"]
         RETEVAL["returns.py<br/>post-decision outcome-path scoring"]
+        TOSSEVAL["toss_shadow.py<br/>ShadowExecutor + agent turn runner vs TossShadowBroker"]
     end
 
     subgraph Console["operator-console/ (TypeScript, opencode fork)"]
@@ -89,6 +92,8 @@ graph TB
     FACTORY --> ALPACA
     FACTORY --> FARM
     FACTORY --> KIS
+    FACTORY --> TOSS
+    FACTORY --> TOSSSHADOW
     FACTORY --> SIM
 
     EVRUN --> EXEC
@@ -98,6 +103,9 @@ graph TB
     CMPRES --> OSESSION
     RETEVAL --> EXEC
     RETEVAL --> SIM
+    TOSSEVAL --> TOSSSHADOW
+    TOSSEVAL --> RISK
+    TOSSEVAL --> ORCH
 
     TUI --> CMDS
     EVENTS --> TUI
@@ -147,18 +155,58 @@ graph TB
 - **Purpose**: Broker abstraction and adapters.
 - **Responsibilities**: `BaseBroker` ABC defines the contract (submit_order, positions,
   portfolio state, cancel/close, fills feed, latest prices). `factory.create_broker(settings)`
-  (F92) is the single composition root mapping `broker.provider` (alpaca | kis |
-  account_farm) to a concrete broker — every account-truth read path must call it.
+  (F92) is the single composition root mapping `broker.provider` (alpaca | kis | toss |
+  toss_shadow | account_farm) to a concrete broker — every account-truth read path must call
+  it. `src/execution/brokers/toss/` (F100-F104) adds:
+  - `broker.py` — `TossBroker`, a live-account adapter: US-stocks-only, MARKET/LIMIT orders
+    only (no bracket/OCO/OTO/shorting/extended-hours), whole-share buys, fractional sells
+    floored to 6 decimals (`normalize_market_sell`, F104), read-only unless
+    `toss.read_only=false` and `app.mode=live`; raises rather than guessing when Toss has
+    resting conditional orders it can't represent in the Alpaca-shaped model.
+  - `client.py` — `TossClient`, the raw REST client: GETs retry (3x, exponential backoff,
+    honors `Retry-After`), POSTs never retry (idempotency instead comes from a durable
+    client-order-id intent ledger persisted *before* the HTTP call so a crash can't lose or
+    duplicate an order).
+  - `credentials.py`/`storage.py` — credentials and tokens are stored outside the repo
+    (`~/.config/autostock/toss/`, `~/.local/state/autostock/toss/`) as user-only (0600) files
+    under an `fcntl` lock; either a shared read-only token file (F101, reusing an external
+    `toss-stock` app's token — Autostock never refreshes it) or direct client_id/secret
+    (Autostock mints/refreshes its own token), never both.
+  - `costs.py` — `CommissionSchedule` (live-fetched, 6h-cached commission rate, fail-closed on
+    an ambiguous/missing rate for the day) and `TossCosts` (commission + SEC sell-tax
+    estimate, cost assumptions explicitly bounded to Q4 2026 — raises outside that window
+    rather than silently using a stale fee schedule; F102/F105).
+  - `quality.py` — `quote_quality()` scores how much of portfolio value is backed by a fresh
+    (≤120s) quote; gates whether the shadow account's valuation/BUY decisions are trustworthy.
+  - `shadow.py` — `TossShadowBroker` (F102-F104): a quote-driven, durable local simulation of a
+    full Alpaca-shaped broker (brackets/OCO *are* supported here, unlike the live `TossBroker`)
+    seeded once from the real Toss account, replaying fills against real Toss orderbook quotes
+    with latency/slippage/participation assumptions. F103 fixed protective-leg scaling (a
+    bracket fill or a manual trim now resizes OCO/stop legs to the *actual* remaining quantity,
+    not the original order quantity); F104 fixed fractional market-sell flooring and added
+    exponential-backoff persistent retry for decisions that fail to execute.
 - **Dependencies**: `src/core/`.
 - **Type**: Application.
 
 ### `src/data/`
 - **Purpose**: Market-data abstraction over multiple sources.
 - **Responsibilities**: `BaseDataProvider` interface; Alpaca (primary, with F14 HTTP
-  timeouts), yfinance (fallback, public), KIS (Korean equities), and a news provider with
+  timeouts), yfinance (fallback, public), KIS (Korean equities), Toss (`TossDataProvider`,
+  F100 — quotes/bars for the Toss-brokered account, normalizes Toss's end-of-interval bar
+  timestamps to start-of-interval to match the rest of the codebase), and a news provider with
   keyword-based sentiment scoring. Concurrent price fetch via bounded thread pool
   (`prices.py:fetch_latest_prices`, reused by the F95 quote cache so quotes reflect
-  account-independent market facts, not a broker's marking price).
+  account-independent market facts, not a broker's marking price). **F105** generalized two
+  shared modules consumed by both the normal daemon and the Toss shadow runner:
+  - `news.py` — `fetch_news()` wraps any provider so an exception becomes an explicit
+    `status="unavailable"` `NewsResult` rather than a silently-empty list (the pre-F105 bug);
+    `FallbackNewsProvider` cascades to a secondary provider only when the primary returns
+    nothing *or* stale (>24h) content, and never relabels old content as fresh just because a
+    fallback also returned nothing newer.
+  - `freshness.py` — `latest_quote()`/`bar_metadata()`/`age_seconds()` keep a provider's native
+    `source_as_of` (when the exchange generated the data) strictly separate from
+    `retrieved_at` (when Autostock fetched it); this is the generalized home of the per-item
+    freshness logic that previously lived inline in `src/agent/tools/market.py` (F96).
 - **Dependencies**: `src/core/`.
 - **Type**: Application.
 
@@ -196,9 +244,15 @@ graph TB
   event-driven wake detection (5s scheduler tick, cache-only reads), self-authored long-horizon
   triggers (sandboxed predicate evaluation), human steering channel + approval gate + quote
   warm-cache (F95), self-learning (lesson efficacy, situational recall, bounded self-rewrite of
-  guidance prompts), aggressiveness knob (risk/prompt/learning overlay), and a read-time
+  guidance prompts), aggressiveness knob (risk/prompt/learning overlay), a read-time
   **agent-vs-SPY performance scorecard** (`logs/performance.py`, F97 — cumulative return/alpha
-  joined from the existing equity log, no new persistence).
+  joined from the existing equity log, no new persistence), and (F105)
+  `src/agent/intraday/context.py`'s `IntradayContext` — a shared assembly of the intraday
+  research brief (bars, quotes, news, account snapshot, watchlist) injected into
+  `orchestrator.py`'s `run_intraday()` via an `intraday_brief_provider` callable, used
+  identically by the normal steering-enabled daemon and (via `broker_snapshot()`) the
+  steering-less Toss shadow runner, and persisted to `research-context.json`/`.jsonl` as an
+  audit trail of exactly what data the agent saw and what was missing.
 - **Dependencies**: `src/risk/`, `src/execution/`, `src/data/`, `src/signals/`, `src/core/`.
 - **Type**: Application.
 
@@ -242,7 +296,13 @@ graph TB
   `agent.research_model`. The LLM check validates **model access only**
   (`client.models.retrieve(...)` / `client.messages.create` replaced), not a paid generation —
   so a green check proves auth + model entitlement, not that a model can complete a full
-  trading turn.
+  trading turn. The broker and config/env checkers also close an opened Toss broker after
+  probing it (expensive to keep live) and validate Toss's separate outside-repo credentials
+  file instead of expecting Alpaca-shaped env keys. `research.py` (F105) is a read-only
+  summary — distinct from process health — of the most recently persisted
+  `research-context.json`: it classifies news/price/bar gaps, stale (>60s) or
+  unparseable-timestamp quotes, un-refreshed watchlist symbols, and account-snapshot errors
+  into an explicit `status: "ok"|"degraded"` report for the TUI/health surface.
 - **Dependencies**: `src/execution/`, `src/risk/`, `src/core/`.
 - **Type**: Application.
 
@@ -285,8 +345,15 @@ graph TB
   historical future bars, replayed through a friction-aware `SimulatedBroker` subclass) to
   separate directional-call quality from execution/accounting — explicitly not a continuous
   strategy backtest or profit estimate. Results land in gitignored
-  `research-comparisons/<experiment>/`.
-- **Dependencies**: `src/agent/`, `src/risk/`, `src/execution/` (SimulatedBroker).
+  `research-comparisons/<experiment>/`. `toss_shadow.py` (F102-F105) is a standalone CLI/runner
+  (`init` / `run --agent` / `run --once` / `report`) that drives the real agent/orchestrator
+  against a `TossShadowBroker` instead of Alpaca/SimulatedBroker: its `ShadowExecutor` extends
+  `DecisionExecutor` with a durable decision→order identity (hash of decision index + content,
+  so a crash/restart recovers the same order rather than resubmitting) and exponential-backoff
+  persistent retry (`min(300s, 30 * 2^min(attempts-1,4))`) for decisions that fail to execute,
+  gates BUY orders on `quote_quality.valuation_usable`, and shares the F105
+  `IntradayContext`/research-data-gap machinery with the normal daemon path.
+- **Dependencies**: `src/agent/`, `src/risk/`, `src/execution/` (SimulatedBroker, TossShadowBroker).
 - **Type**: Test.
 
 ### `operator-console/`
@@ -396,13 +463,37 @@ sequenceDiagram
 
 ### Fail-Honest / Fail-Closed Split
 - **Location**: `src/signals/collector.py` (fail-honest: degrade with a visible marker,
-  including the F96 news-freshness/priced-in annotation) vs. `src/risk/manager.py`
-  shorting/stop/drift-guard checks, `src/risk/position_sizer.py` (NaN/Inf and range
-  validation), and `src/universe/base.py` (fail-closed: refuse rather than proceed on
-  missing/invalid data).
+  including the F96 news-freshness/priced-in annotation), `src/data/news.py` (F105:
+  `fetch_news` turns an exception into an explicit `status="unavailable"` result instead of a
+  silently-empty list) vs. `src/risk/manager.py` shorting/stop/drift-guard checks,
+  `src/risk/position_sizer.py` (NaN/Inf and range validation), `src/universe/base.py`
+  (fail-closed: refuse rather than proceed on missing/invalid data), and
+  `src/execution/brokers/toss/costs.py` (fail-closed: refuses to price an order if the
+  commission rate is ambiguous/stale or the hardcoded Q4-2026 fee assumptions have expired).
 - **Purpose**: Research-quality inputs degrade gracefully (better to trade on a partial
-  brief than none); safety-critical decisions (order placement, position sizing, universe
-  selection) refuse outright rather than guess.
+  brief than none, but the gap must be visible — never "no data" silently rendered as "no
+  change"); safety-critical decisions (order placement, position sizing, universe selection,
+  fee pricing) refuse outright rather than guess.
+
+### Source Timestamp vs. Retrieval Timestamp (F105)
+- **Location**: `src/data/freshness.py` (`latest_quote`, `bar_metadata`, `age_seconds`),
+  threaded through `src/signals/records.py` (`MarketSignalBrief.price_source_times`) and
+  `src/monitoring/research.py`.
+- **Purpose**: Every price/bar/news fact carries a `source_as_of` (when the exchange/publisher
+  generated it) that is kept strictly separate from `retrieved_at` (when Autostock fetched it)
+  and is never overwritten on a cache hit — so a day-old cached quote can never be relabeled as
+  current just because it was re-fetched a moment ago. Staleness checks and the prompt's
+  "what actually changed" guidance (`src/agent/prompts.py`) key off `source_as_of`.
+
+### Durable Client-Side Order Intent (Toss)
+- **Location**: `src/execution/brokers/toss/client.py` (`TossClient.create_order`).
+- **Purpose**: Because Toss order-placement POSTs are not safely retryable, the client
+  persists the `{clientOrderId → fingerprint, submitted_at, response}` intent to a local file
+  *before* making the HTTP call. A crash before the response arrives leaves an "unresolved"
+  record that blocks any resubmission (rather than risking a duplicate order); a retry with an
+  identical payload replays the cached response; a retry with a *different* payload under the
+  same client-order-id is rejected outright. This gives idempotency without relying on the
+  broker API being retry-safe.
 
 ### Read-Time Derivation Over Durable Logs
 - **Location**: `src/agent/logs/performance.py` (`compute_performance` / `load_performance`,

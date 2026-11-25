@@ -307,6 +307,187 @@
   clock is aligned before subtraction rather than raising; a missing `published_at` always
   yields `age_hours=None` and `priced_in_risk=None`, never a default/guessed age.
 
+### Toss Broker Integration (F100-F104)
+
+#### Toss Live Trading Is Read-Only Unless Explicitly Opted In
+- **Rule**: `TossClient`/`TossBroker` default to read-only; any write (submit/cancel/replace
+  order, close position) raises unless `toss.read_only=false` AND `app.mode=live` are both
+  set. A shared-token credential (F101, reused from the external `toss-stock` app) is *always*
+  forced read-only — `TossClient.__init__` raises if `shared_token_file` is set and
+  `read_only` is not True, because Autostock has no business minting writes on a token it
+  doesn't own the lifecycle of.
+- **Rationale**: A second live-broker integration must not become a second way to
+  accidentally place real orders; the dangerous capability (writes) must be opt-in twice over
+  (config flag + app mode), and never available at all when borrowing someone else's token.
+- **Implemented In**: `src/execution/brokers/toss/client.py` (`__init__`), `broker.py`
+  (`_write_enabled`), `factory.py` (`create_toss_client`)
+- **Invariants**: A shared-token client can never be constructed in write-enabled mode.
+
+#### Toss Live Order Capability Is Narrower Than Alpaca/KIS (Fail-Closed on the Gap)
+- **Rule**: `TossBroker.validate_order()` accepts only MARKET/LIMIT orders, DAY time-in-force,
+  regular-session hours, whole-share buys, and fractional sells floored to 6 decimals; it
+  rejects BRACKET/OCO/OTO order classes, shorting, and extended hours outright rather than
+  approximating them.
+- **Rationale**: Toss's own OCO semantics (cancel-sibling-on-*trigger*, not on-*fill*) are not
+  equivalent to the stop-market bracket model the rest of the codebase assumes; silently
+  mapping one onto the other could leave a position unprotected or double-protected.
+- **Implemented In**: `src/execution/brokers/toss/broker.py` (`validate_order`)
+- **Invariants**: If any resting Toss conditional (OCO/stop) order is found on the account,
+  `get_open_orders()`/`get_conditional_orders()` raise rather than silently returning an
+  incomplete view the rest of the system might act on.
+
+#### Fractional Market-Sell Quantities Are Floored, Never Rounded Up (F104)
+- **Rule**: `normalize_market_sell()` floors a fractional MARKET sell quantity to
+  `Decimal("0.000001")` (6 decimals) using `ROUND_DOWN`; if the floored quantity drops to zero
+  it raises rather than submitting a zero-share order.
+- **Rationale**: The shared `RiskManager`/position sizer computes quantities at higher
+  (9-digit) precision than Toss's 6-decimal order granularity accepts; rounding up could sell
+  more shares than are actually held, while flooring at the broker boundary keeps the shared
+  risk-sizing code untouched and simply clamps at the last mile.
+- **Implemented In**: `src/execution/brokers/toss/broker.py` (`normalize_market_sell`),
+  mirrored in `src/execution/brokers/toss/shadow.py`'s order matching
+- **Invariants**: The RiskManager's own precision/rounding behavior is unchanged for
+  Alpaca/KIS; only the Toss order-submission boundary clamps.
+
+#### Durable Order Intent Survives a Crash Between Submit and Response (F101/F104)
+- **Rule**: `TossClient.create_order()` persists the `{clientOrderId → fingerprint,
+  submitted_at, response}` intent record *before* issuing the HTTP POST. On restart, a
+  previously-recorded intent with a matching fingerprint returns the cached response (no
+  resubmission); a mismatched fingerprint for the same id raises (refuses to reuse an id for a
+  different order); an intent with no recorded response yet (crashed mid-flight) blocks any
+  new submission under that id until reconciled.
+- **Rationale**: Order-placement POSTs are not safely retryable against a real brokerage;
+  losing track of "did that order actually go through" after a crash must never result in
+  either a silent lost order or an accidental duplicate.
+- **Implemented In**: `src/execution/brokers/toss/client.py` (`create_order`)
+
+#### Protective Legs Scale to Actual Filled/Remaining Quantity, Not the Original Order (F103)
+- **Rule**: In `TossShadowBroker`, when a bracket entry fills, the stop-loss/take-profit legs
+  are sized from the *actual filled quantity*, not the originally submitted order quantity;
+  when a manual trim sell reduces a position, all resting protective legs on that symbol are
+  scaled down proportionally to the *actual remaining* holding.
+- **Rationale**: A partial fill or a manual trim that leaves protective orders sized to the
+  pre-trim quantity could either over-sell on exit (protecting shares no longer held) or
+  under-protect (leaving part of the position naked) — both silently wrong outcomes that F103
+  fixed.
+- **Implemented In**: `src/execution/brokers/toss/shadow.py` (bracket-fill and trim-sell
+  handling in the fill/match path)
+
+#### Shadow Account Is Seeded Once, Never Re-Mirrored From the Live Account (F102)
+- **Rule**: `TossShadowBroker.initialize()` seeds the durable shadow ledger's positions/cash
+  from the live Toss account exactly once; subsequent real deposits or real trades on the live
+  account are explicitly NOT mirrored into the shadow ledger afterward (an assumption recorded
+  in the ledger's own `assumptions` list).
+- **Rationale**: The shadow account exists to answer "how would the agent have traded this
+  book," which requires a frozen starting point — continuously re-syncing from a live account
+  that a human might also be trading would make the comparison meaningless.
+- **Implemented In**: `src/execution/brokers/toss/shadow.py` (`initialize`)
+
+#### Commission/Fee Assumptions Are Explicitly Time-Bounded (Fail-Closed on Staleness) (F102/F105)
+- **Rule**: `TossCosts.profile()` hardcodes the SEC sell-tax rate and related fee assumptions
+  as valid only through a fixed review date (Q4 2026); calling it outside that window raises
+  `BrokerError` rather than silently continuing to use an assumption that may no longer be
+  accurate. The live commission *rate* itself is separately fetched and cached with a 6-hour
+  TTL expiring at KST midnight, and fails closed (raises) if zero or more than one matching
+  rate row exists for the market+date.
+- **Rationale**: Regulatory fee rates and broker commission schedules change; a cost model
+  that silently keeps using an expired assumption would misprice every subsequent simulated or
+  real fill without any visible warning.
+- **Implemented In**: `src/execution/brokers/toss/costs.py` (`CommissionSchedule.get`,
+  `TossCosts.profile`)
+
+#### Quote-Quality Gate Blocks BUY Decisions on Stale Valuation (F102/F105)
+- **Rule**: The shadow account's valuation is only considered usable when ≥99% of portfolio
+  value is backed by a quote fresher than 120 seconds (`fresh_value_pct` ≥ threshold); when it
+  isn't, `quote_quality.valuation_usable=false` and `src/evals/toss_shadow.py`'s
+  `ShadowExecutor` blocks new BUY decisions outright (existing positions/exits are unaffected).
+- **Rationale**: Deciding to buy more based on a valuation computed from stale quotes could
+  compound an already-wrong picture of available buying power; blocking new entries (not
+  exits) mirrors the same asymmetry as the production circuit breaker.
+- **Implemented In**: `src/execution/brokers/toss/quality.py` (`quote_quality`),
+  `src/evals/toss_shadow.py` (`ShadowExecutor`)
+
+#### Persistent Decisions Retry With Exponential Backoff, Not Indefinitely or Instantly (F104)
+- **Rule**: A shadow decision that fails to execute is retried with
+  `delay = min(300s, 30 * 2^min(attempts-1, 4))` backoff rather than being retried every poll
+  tick or abandoned after one failure; the retry record is cleared on success or once the
+  decision's validity window has expired.
+- **Rationale**: A transient quote/orderbook hiccup shouldn't permanently drop a decision, but
+  hammering a failing decision every few seconds wastes cycles and can mask a real, persistent
+  problem (e.g., a quantity that will never be valid) behind log noise.
+- **Implemented In**: `src/evals/toss_shadow.py` (`ShadowExecutor._record_retry`)
+
+### Shared Research Context Freshness (F105)
+
+#### News Fetch Failure Is Never Indistinguishable From "No News"
+- **Rule**: `fetch_news()` (and the underlying provider) turns any fetch exception into an
+  explicit `NewsResult(status="unavailable", errors=[...])`, never a silently-empty `items`
+  list; an empty-but-successful fetch is `status="ok", items=[]`, a distinct, equally
+  explicit outcome.
+- **Rationale**: Before F105, an exception during news fetch was indistinguishable from "this
+  symbol genuinely has no recent news" — the agent (and a human reviewing the brief) had no
+  way to tell "nothing happened" from "we don't know."
+- **Implemented In**: `src/data/news.py` (`fetch_news`, `NewsResult`),
+  `src/data/providers/news_provider.py` (raises instead of returning `[]` on error)
+- **Invariants**: Error detail recorded is the exception *type*, not its message text, to
+  avoid leaking credentials/URLs embedded in a provider error into logs/prompts.
+
+#### Fallback News Provider Never Relabels Old Content as Fresh
+- **Rule**: `FallbackNewsProvider` only consults its secondary provider when the primary
+  returned nothing, or only content older than 24 hours; if the primary already has recent
+  (<24h) content, the fallback is never called. If the primary returned old content and the
+  fallback also returns nothing newer, the original old content is kept (with its true
+  publication time) rather than treated as if the fallback's absence proves it's current.
+- **Rationale**: A cascading fallback must not accidentally launder a stale headline into
+  looking fresh just because a second provider had nothing better to offer.
+- **Implemented In**: `src/data/news.py` (`FallbackNewsProvider`)
+
+#### Source Timestamp Is Never Overwritten by Retrieval Time
+- **Rule**: Every quote/bar/news fact threaded through `src/data/freshness.py` carries its
+  provider-native `source_as_of` (when the exchange/publisher generated the data) completely
+  separately from `retrieved_at` (when Autostock's cache last fetched it); a cache hit never
+  updates `source_as_of` to "now."
+- **Rationale**: Conflating "when we last checked" with "how current the data actually is"
+  would make a day-old cached price look as current as a live tick, defeating every staleness
+  check built on top of it (news freshness, drift guard anchoring, quote quality).
+- **Implemented In**: `src/data/freshness.py` (`latest_quote`, `bar_metadata`, `age_seconds`)
+
+#### Unchecked or Stale Data Is "Unknown," Never Treated as "No Change" (F105)
+- **Rule**: The intraday prompt (`src/agent/prompts.py`) explicitly instructs that
+  unrefreshed, unavailable, or stale data in the brief is unknown — not evidence a prior thesis
+  is still valid — and directs the model to state remaining material gaps rather than
+  proceeding as if the picture were complete; a well-supported no-trade on incomplete data
+  remains an explicitly valid outcome.
+- **Rationale**: An LLM given a brief with silent gaps can over-interpret "I wasn't told
+  anything changed" as "nothing changed," which is a different (and riskier) claim; naming the
+  distinction in the prompt counters that failure mode the same way the F96 "repeated
+  indicators aren't independent confirmation" guidance does.
+- **Implemented In**: `src/agent/prompts.py` (`intraday_prompt`)
+
+#### Shared Context Assembly Is Identical for the Normal Daemon and the Toss Shadow Runner
+- **Rule**: `IntradayContext.build()` is the single implementation of "assemble bars + quotes
+  + news + account snapshot + watchlist for this turn," consumed via
+  `orchestrator.py`'s `intraday_brief_provider` hook by both the steering-enabled normal daemon
+  (`src/trading/modes/agent.py`) and the steering-less Toss shadow runner (via
+  `broker_snapshot()` standing in for the steering snapshot) — there is exactly one
+  implementation of this assembly, not two drifting copies.
+- **Rationale**: F105 was explicitly scoped to fix the shared path so the same bug (or future
+  fix) can't silently apply to only one of the two trading modes.
+- **Implemented In**: `src/agent/intraday/context.py`, `src/agent/orchestrator.py`
+  (`intraday_brief_provider`), `src/trading/modes/agent.py`, `src/evals/toss_shadow.py`
+
+#### Research Data Gaps Are Reported, Not Silently Absorbed
+- **Rule**: `src/monitoring/research.py:read_context_summary()` reduces the last persisted
+  `research-context.json` into an explicit `status: "ok"|"degraded"` report naming exactly
+  which symbols had a news/price/bar gap, which quotes were stale (>60s) or had an unparseable
+  timestamp, which watchlist symbols weren't refreshed, and whether the account snapshot
+  itself failed — scoped explicitly as "last intraday context, not process health" so it is
+  never confused with the broker/risk/LLM health dimensions.
+- **Rationale**: A data-quality problem in the research inputs is a different failure class
+  from "is the process alive" and deserves its own visible, separately-labeled signal rather
+  than being folded into (and diluting) general health status.
+- **Implemented In**: `src/monitoring/research.py` (`read_context_summary`)
+
 ### Self-Learning
 
 #### Lesson Efficacy Requires a Minimum Sample
@@ -427,6 +608,19 @@
 - **Rationale**: Mirrors the F92 fix on the console side — the daemon's snapshot is the only
   place that already knows the correct sub-account for a farmed instance.
 - **Implemented In**: `operator-console/src/account-truth.ts`
+
+#### Toss Provider/Name/Mode Consistency Is Checked at the Factory, Not Assumed
+- **Rule**: `create_broker()` rejects a `broker.name="toss"` configuration whose
+  `broker.provider` isn't also Toss-flavored (refuses to silently fall back to Alpaca), and
+  separately rejects constructing a live-write `TossBroker` (`provider="toss"`) unless
+  `app.mode != "live"` is false (i.e., live mode is actually set) — while `provider="toss_shadow"`
+  requires the opposite (`app.mode != "live"`, paper-only, a configured `run_dir`).
+- **Rationale**: The live-vs-shadow Toss paths have inverted mode requirements (one *requires*
+  live mode, the other *forbids* it); catching a mismatch at factory construction time rather
+  than at first order submission prevents a misconfigured instance from running for hours
+  before the gap is discovered.
+- **Implemented In**: `src/execution/brokers/factory.py` (`create_broker`,
+  `create_toss_client`)
 
 ### Production Multi-Instance Safety (F90)
 

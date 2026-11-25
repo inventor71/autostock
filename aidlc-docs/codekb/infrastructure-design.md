@@ -79,6 +79,41 @@
     turns); auto-restarts once on a detected wedge.
 - **Defined In**: `operator-console/launcher/{cli,config,install,daemon,serve,unit-template,preflight}.ts`
 
+### Toss Account Linking (`src/execution/brokers/toss/setup.py`, outside Docker)
+- **Purpose**: One-time, human-run CLI to link a Toss (토스증권) account — either by reusing
+  an existing `toss-stock` desktop app's auth token (read-only, no token minting) or by
+  entering direct OpenAPI client credentials — and to verify the link read-only before any
+  trading code runs.
+- **Key Resources**:
+  - `python -m src.execution.brokers.toss.setup` — interactive: hidden-input client
+    id/secret prompt, lists BROKERAGE accounts, verifies via read-only API calls, saves
+    `~/.config/autostock/toss/credentials.json` (0600, enforced outside any `.git`-tracked
+    directory).
+  - `... --from-toss-stock <dir>` — reuses the external app's `.cache/token.json` read-only;
+    never mints or refreshes a token itself.
+  - `... --check` — re-verifies saved credentials against live holdings/buying-power reads.
+  - Runtime state (tokens, commission cache, order-intent ledger) lives under
+    `~/.local/state/autostock/toss/`, separate from the credentials file, both 0600 and
+    `fcntl`-locked.
+- **Defined In**: `src/execution/brokers/toss/{setup,credentials,storage}.py`
+
+### Toss Shadow (Dry) Runner (`src/evals/toss_shadow.py`, outside Docker)
+- **Purpose**: A standalone, human- or cron-invoked process that runs the real
+  agent/orchestrator/executor/risk stack against a durable local Toss-quote-driven simulation,
+  separate from the production daemon.
+- **Key Resources**:
+  - `python -m src.evals.toss_shadow init` — seeds a new shadow ledger from the live Toss
+    account under `AUTOSTOCK_SHADOW_DIR`.
+  - `... run --agent` / `... run --once` — runs the observation+agent-turn loop (claims one
+    agent invocation per turn window, polls the shadow broker, persists retry/backoff state).
+  - `... report` — offline report generation from the persisted `equity.jsonl`.
+  - `configure_environment()` pins a dedicated environment for the subprocess:
+    `AUTOSTOCK_BROKER_PROVIDER=toss_shadow`, `AUTOSTOCK_DATA_PROVIDER=toss`,
+    `AUTOSTOCK_TOSS_READ_ONLY=true`, `AUTOSTOCK_SHADOW_DIR=<root>`, `AUTOSTOCK_BROKER_PAPER=true`,
+    `AUTOSTOCK_APP_MODE=paper` — so a shadow run can never accidentally resolve to the live
+    broker/provider stack even if the surrounding shell environment is misconfigured.
+- **Defined In**: `src/evals/toss_shadow.py`, `src/execution/brokers/toss/shadow.py`
+
 ## Environment Topology
 
 | Environment | Account/Region | Purpose |
@@ -88,6 +123,8 @@
 | Production, single instance | `.env` at repo root, Alpaca or KIS paper/live | Default single-account deployment via systemd units |
 | Production, multi-instance (F90) | `config/.env.<name>` per instance, `account_farm` sub-accounts or separate Alpaca accounts | Runs N agent instances concurrently (e.g. different aggressiveness settings or accounts) via `COMPOSE_PROJECT_NAME` namespacing |
 | Mobile / remote | Tailscale tailnet, HTTPS via Tailscale cert | Phone PWA dashboard + WebAuthn-gated remote steering, fronted by `tailscale serve` on top of the local `opencode serve` (API, bound to the tailnet IPv4 only, password-gated) and `vite` (PWA) processes; WebAuthn passkey registration/assertion pairs against the `tailscale serve` HTTPS origin (`*.ts.net`) since passkeys require a secure context |
+| Toss (live), bare process | Real Toss (토스증권) US-equities account, read-only by default | A second live-broker path (F100/F101) deliberately scoped narrower than Alpaca/KIS — reads/writes gated separately by `toss.read_only` and `app.mode`; shared-token credential mode is permanently read-only regardless of `app.mode` |
+| Toss shadow (dry), bare process | Durable local simulation ledger under `AUTOSTOCK_SHADOW_DIR`, driven by real (read-only) Toss quotes | Runs the production agent/executor/risk stack against `TossShadowBroker` via `src/evals/toss_shadow.py`, independent of (and never writing to) the live Toss account or the production Alpaca/KIS daemon |
 
 ## Configuration & Secrets
 
@@ -110,7 +147,14 @@
   `OPENCODE_SERVER_PASSWORD`, `AUTOSTOCK_WEBAUTHN_ORIGIN`) come only from the environment or
   a gitignored `.env`/`config/.env.<name>` file — never committed and never hard-coded.
   gitleaks runs as a pre-commit hook (`.pre-commit-config.yaml`, `.gitleaks.toml`) with an
-  explicit allowlist for `*.env.example` templates and known test fixtures.
+  explicit allowlist for `*.env.example` templates and known test fixtures. **Toss (F100-F104)
+  credentials/tokens are deliberately kept out of this `.env`/`settings.yaml` model entirely**
+  — they live in their own 0600 files outside the repo
+  (`~/.config/autostock/toss/credentials.json`, `~/.local/state/autostock/toss/*.json`),
+  loaded lazily by `src/execution/brokers/toss/credentials.py`/`storage.py`. Toss-specific
+  env vars: `AUTOSTOCK_TOSS_READ_ONLY` (→ `toss.read_only`, default true),
+  `AUTOSTOCK_SHADOW_DIR` (→ `toss_shadow.run_dir`); `AUTOSTOCK_BROKER_PROVIDER` additionally
+  accepts `toss`/`toss_shadow` alongside the existing `alpaca`/`kis`/`account_farm` values.
 
 ## CI/CD
 
@@ -133,7 +177,8 @@
   (entry point `autostockd = "main:main"`); dependencies include `alpaca-py`, `yfinance`,
   `ta`, `apscheduler`, `pydantic`/`pydantic-settings`, `pyyaml`, `loguru`, `rich`, `plotly`,
   `pandas`/`pyarrow` (intraday Parquet feature store), `anthropic`, `openai`,
-  `python-kis`; dev group adds `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`, `hypothesis`,
-  `pre-commit`. Tests marked `manual` (real-LLM calls) are excluded from the default pytest
-  run (`-m manual` opts in). The operator console uses a Bun workspace (typecheck via
-  `bun run typecheck`).
+  `python-kis`, `httpx` (Toss REST client, F100); dev group adds `pytest`, `pytest-asyncio`,
+  `pytest-cov`, `ruff`, `hypothesis`, `pre-commit`. Tests marked `manual` (real-LLM calls) are
+  excluded from the default pytest run (`-m manual` opts in); Toss tests live under
+  `tests/toss/` (unit + integration, with bundled OpenAPI example fixtures). The operator
+  console uses a Bun workspace (typecheck via `bun run typecheck`).

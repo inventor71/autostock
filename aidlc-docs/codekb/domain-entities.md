@@ -269,11 +269,14 @@
 ### MarketSignalBrief
 - **Purpose**: The assembled research-turn context injected into the LLM prompt.
 - **Key Fields**: `movers`, `readthrough_alerts`, `imminent_earnings`, `imminent_ipos`,
-  `sentiment_outliers`, `disclosed_holdings`, `degraded_sources`, `as_of`
+  `sentiment_outliers`, `disclosed_holdings`, `degraded_sources`, `as_of`, `price_source_times:
+  dict[symbol → ISO timestamp]` (F105 — the `source_as_of` of the bar/quote each mover/alert
+  was derived from, rendered inline in the prompt text as e.g. `[daily source=...]` so the LLM
+  can tell a same-day price from a stale cached one)
 - **Relationships**: Assembled by `src/signals/collector.py` from Mover, ReadThroughAlert,
   ImminentEarnings, ImminentIpo, SentimentOutlier records; rendered to markdown by
   `brief.to_prompt_text()`.
-- **Defined In**: `src/signals/brief.py:22-43`
+- **Defined In**: `src/signals/brief.py:22-43`, `records.py` (`price_source_times`, F105)
 - **Lifecycle**: TTL-cached by `(today, horizon_days, ipo_horizon_days, held_set)`; degraded
   sections are explicitly labeled rather than silently omitted.
 
@@ -287,12 +290,14 @@
   fail-honest → None if `published_at` missing) and `priced_in_risk: "fresh"|"elevated"|None`
   (elevated once `age_hours` exceeds the freshness threshold).
 - **Relationships**: Defined in `src/data/providers/news_provider.py`; produced by
-  `YFinanceNewsProvider`; consumed by `MarketDataFormatter._format_news` (classic LLM
-  strategy) and the agent's `news()` tool (PM agent), whose prompt rules treat `elevated`
-  headlines as already-priced-in absent a fresh confirming signal (with an aggressive-posture
-  exception).
-- **Defined In**: `src/data/providers/news_provider.py:13-23`; freshness logic in
-  `src/agent/tools/market.py:235-277`
+  `YFinanceNewsProvider` (now UTC-timestamped and raising on fetch error instead of returning
+  an empty list, F105) wrapped by `src/data/news.py`'s `fetch_news()`/`FallbackNewsProvider`;
+  consumed by `MarketDataFormatter._format_news` (classic LLM strategy) and the agent's
+  `news()` tool (PM agent), whose prompt rules treat `elevated` headlines as already-priced-in
+  absent a fresh confirming signal (with an aggressive-posture exception).
+- **Defined In**: `src/data/providers/news_provider.py:13-23`; freshness logic generalized
+  (F105) into `src/data/freshness.py` (`age_seconds`), still surfaced via
+  `src/agent/tools/market.py:news()`
 - **Lifecycle**: Ephemeral per tool call; `age_hours`/`priced_in_risk` are computed fresh each
   invocation against the injected "now", never cached or persisted.
 
@@ -401,6 +406,125 @@
   `config/config.py:113-154` (AgentConfig)
 - **Lifecycle**: Loaded once at process start from `config/settings.yaml` + env; immutable
   for the life of the process.
+
+### TossCredentials (F100/F101)
+- **Purpose**: The validated, on-disk-persisted identity Autostock uses to talk to a Toss
+  account — deliberately narrow (never stores a secret token value from the shared-token
+  path, and the two credential modes are mutually exclusive by construction).
+- **Key Fields**: `client_id`/`client_secret` (empty strings in shared-token mode; `repr=False`),
+  `account_seq` (required for trading), `shared_token_file` (absolute path to an external
+  `toss-stock` app's token cache; mutually exclusive with client_id/secret)
+- **Relationships**: Loaded/saved by `src/execution/brokers/toss/credentials.py`
+  (`load_credentials`/`save_credentials`); consumed by `TossClient.__init__`; the frozen
+  dataclass's `__post_init__` enforces exactly one of (shared_token_file) or
+  (client_id+client_secret) is populated.
+- **Defined In**: `src/execution/brokers/toss/credentials.py`
+- **Lifecycle**: Created once via the `setup.py` CLI (interactive or `--from-toss-stock`);
+  immutable (frozen) for the process lifetime; file is 0600 outside the repo.
+
+### TossPortfolioState (F100)
+- **Purpose**: A deliberately conservative view of a Toss account — USD cash plus US-listed
+  positions only, explicitly NOT a full cross-currency NAV.
+- **Key Fields**: Same shape as `PortfolioState` plus fixed `currency="USD"`,
+  `valuation_basis="available_cash_plus_positions"`
+- **Relationships**: Returned by `TossBroker.get_portfolio_state()`; KRW/non-US holdings are
+  filtered out before construction (and short positions raise, since Toss shorting isn't
+  supported).
+- **Defined In**: `src/execution/brokers/toss/broker.py`
+- **Lifecycle**: Fetched fresh per call; never persisted as the account's source of truth (the
+  live Toss API remains authoritative; the shadow ledger below is the only persisted copy, and
+  only for the simulation).
+
+### Toss Shadow Account Ledger (F102-F104)
+- **Purpose**: `TossShadowBroker`'s durable local simulation of a full Alpaca-shaped brokerage
+  account — cash, positions, resting orders, and the execution-model assumptions used to
+  fill them — seeded once from the real (live, read-only) Toss account and then evolved purely
+  by replaying real Toss orderbook quotes against configured latency/slippage/participation
+  parameters. Brackets/OCO *are* supported here (unlike the live `TossBroker`), since nothing
+  real is at risk.
+- **Key Fields**: `version` (schema, =1), `source_identity` (binds the ledger to one Toss
+  account), `positions: {symbol: {qty, avg_entry_price}}`, `marks: {symbol: price}`, `cash`,
+  `reserved_cash`, resting `orders` (incl. OCO/bracket group linkage), `assumptions` (8
+  documented simplifications — e.g. no T+2 settlement, no corporate actions), `execution_model`
+  (`latency_seconds`, `slippage_bps`, `participation`, `max_quote_age`), frozen `cost_profile`,
+  frozen agent/risk config, runner cadence.
+- **Relationships**: Read/written (file-locked, atomic) by `TossShadowBroker.read()`/
+  `.transaction()`; initialized once by `.initialize()` from a real `TossBroker`/
+  `TossDataProvider` snapshot; polled by `.poll()`, which matches resting orders against fresh
+  orderbooks, applies `TossCosts` accrual, and appends an `EquitySnapshot`-shaped row to
+  `equity.jsonl`.
+- **Defined In**: `src/execution/brokers/toss/shadow.py`
+- **Lifecycle**: Seeded once (never re-seeded from the live account thereafter — the
+  assumptions list says so explicitly); evolves only through simulated fills; a bracket fill or
+  a manual trim sell (F103) rescales any resting protective legs to the position's *actual*
+  remaining quantity, never the original order's quantity.
+
+### Toss Commission / Cost Profile (F102/F105)
+- **Purpose**: The live-fetched, cached fee schedule used both to price real Toss orders and
+  to cost-account shadow fills.
+- **Key Fields**: `CommissionSchedule.get()` → `{rate, start_date, end_date, expires_at,
+  confirmed_at, next_check_at}` (6h cache, expires at KST midnight, fails closed if 0 or >1
+  matching rows for the market+date). `TossCosts.profile()` → adds `sec_sell_rate` (sell-side
+  SEC tax rate), `sec_minimum_usd` (1¢ floor), `taf_per_share`, `regulatory_review_by` — all
+  explicitly bounded to Q4 2026 and raising `BrokerError` outside that window rather than
+  silently reusing stale assumptions.
+- **Relationships**: `TossCosts.total()`/`.accrue()` consume the profile to price a single
+  fill or incrementally accrue partial-fill costs (never re-pricing an already-charged fill);
+  consumed by both `TossBroker` (live) and `TossShadowBroker`/`ShadowExecutor` (simulation).
+- **Defined In**: `src/execution/brokers/toss/costs.py`
+- **Lifecycle**: Re-fetched on cache expiry (6h) or forced refresh; capital-gains tax and FX
+  are explicitly out of scope (handled separately / not applicable — Toss account is USD-only).
+
+### Quote Quality Report (F102/F105)
+- **Purpose**: A point-in-time judgment of whether the shadow account's valuation (and
+  therefore its BUY decisions) can be trusted, based on how fresh the quotes backing it are.
+- **Key Fields**: `status` ("fresh"|"indicative"|"unavailable"), `all_quotes_fresh`,
+  `valuation_usable`, `fresh_value_pct` (per strategy-vs-hold book), `quote_age_seconds` (per
+  symbol), `indicative_symbols`/`unavailable_symbols` (sorted), fixed thresholds
+  `execution_max_quote_age` (15s) and `valuation_max_age_seconds` (120s, >99% of value must be
+  fresh for `valuation_usable=true`).
+- **Relationships**: Computed by `quote_quality()`; consumed by `TossShadowBroker.poll()` to
+  gate agent readiness and by `src/evals/toss_shadow.py`'s `ShadowExecutor` to block BUY orders
+  outright when `valuation_usable=false`.
+- **Defined In**: `src/execution/brokers/toss/quality.py`
+- **Lifecycle**: Recomputed on every poll; never persisted independently (folded into the
+  equity snapshot and the shadow runner's turn-readiness check).
+
+### NewsResult (F105)
+- **Purpose**: The explicit, typed outcome of a single news-fetch attempt — makes "the feed
+  returned nothing" and "the feed failed" permanently distinguishable, closing a pre-F105 bug
+  where an exception silently became an empty list.
+- **Key Fields**: `items: list[NewsItem]`, `status` ("ok"|"unavailable"), `provider` (class
+  name that produced the result), `fetched_at`, `errors: list[str]` (exception *types*, not
+  raw messages, to avoid leaking credentials/URLs into logs); `.metadata()` derives
+  `content_status` ("empty"|"recent"|"old_only"|"undated_or_future"), `recent_items_24h`,
+  `latest_published_at`.
+- **Relationships**: Produced by `fetch_news()` wrapping any `BaseNewsProvider`; consumed by
+  `src/agent/tools/market.py:news()` and `FallbackNewsProvider`, which cascades to a secondary
+  provider only when the primary is empty or stale (>24h) — and never relabels an old primary
+  result as fresh just because the fallback also had nothing newer.
+- **Defined In**: `src/data/news.py`
+- **Lifecycle**: Ephemeral per fetch call; never cached as a false "success" on provider error.
+
+### IntradayContext / Research Context Gap Report (F105)
+- **Purpose**: The shared assembly of the intraday research brief (bars, quotes, news, account
+  snapshot, watchlist) used identically by the normal steering-enabled daemon and the
+  steering-less Toss shadow runner, paired with an explicit, persisted record of what data was
+  and wasn't available for that build — so "the agent didn't see this" is always visible
+  rather than silently indistinguishable from "nothing changed."
+- **Key Fields**: `IntradayContext.build()` returns the rendered brief text plus writes
+  `{as_of, kind, news: {symbol: status}, market_data: {symbol: {quote: {status,
+  source_age_seconds}, bars: {status, source_as_of}}}, watchlist_not_refreshed, account_error}`
+  to `research-context.json`/`.jsonl`. `src/monitoring/research.py:read_context_summary()`
+  reduces the latest snapshot to `{status: "ok"|"degraded", news_gaps, price_gaps, bar_gaps,
+  quote_time_unknown, quote_older_than_60s_or_future, watchlist_not_refreshed, account_error}`.
+- **Relationships**: Wired into `orchestrator.py:run_intraday()` via an
+  `intraday_brief_provider` callable; `src/trading/modes/agent.py` builds one instance shared
+  across the normal daemon's intraday turns; the Toss shadow runner builds its own via
+  `broker_snapshot()` instead of the steering snapshot.
+- **Defined In**: `src/agent/intraday/context.py`, `src/monitoring/research.py`
+- **Lifecycle**: Rebuilt on every intraday turn; the `.json` file is atomically rewritten
+  (latest-only) while `.jsonl` accumulates an append-only audit history.
 
 ### OpenAIAgentSession (alternate agent backend)
 - **Purpose**: A second `AgentSession` implementation that drives the PM agent via the OpenAI
