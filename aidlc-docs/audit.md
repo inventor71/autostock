@@ -353,3 +353,5 @@ F8 merged to main (parent `77d5ed9`, submodule fork main `2ac0cda`, both pushed)
 - 2026-11-24T02:50:55.796971+00:00 | F103 merged dc2b939 | exit/protection intent preservation, bounded Toss valuation quality; 1824 tests; Opus dry resumed and Fable scheduled launcher restarted.
 
 - 2026-11-24T14:57:33.769563+00:00 | F104 merged 6bb2354 | floor Toss fractional exits, durable retry backoff; 1834 tests; both dry runs resumed and delayed exits/protection verified.
+
+- 2026-11-25T01:01:03.930399+00:00 | F105 merged 0d458d4 | shared normal/dry intraday context, news fallback and source freshness; 1860 tests; two Toss dry and four normal paper daemons resumed with books/settings/journals preserved.

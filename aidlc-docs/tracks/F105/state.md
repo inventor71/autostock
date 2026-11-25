@@ -1,9 +1,11 @@
 # F105 — 정상·dry 모드의 장중 정보 갱신과 데이터 품질
 
-**Status**: merge-awaiting
+**Status**: merged
 **Branch**: feat/F105
 **Base**: d818e6c
-**Workspace**: .claude/worktrees/F105
+**Workspace**: — (종료 후 제거)
+**Implementation**: f07232b
+**Merge**: 0d458d4 (local main)
 **Updated**: 2026-11-25
 
 ## Scope / authorization
@@ -22,7 +24,8 @@
 - [x] 프롬프트: 미확인을 변화 없음으로 취급하지 않고 판단에 필요한 부분만 추가 확인.
 - [x] 회귀 검증: 실제 설정 스키마→CLI, provider 실패/복구, 장중 소식 전달, 장부 보존.
 - [x] 전체 Python 테스트 1,860 passed / Ruff 신규 진단 0 / 실제 read-only 데이터 점검.
-- [ ] 로컬 병합 / dry 두 실행 적용과 상태 확인.
+- [x] 로컬 병합 / dry 두 실행 적용과 상태 확인.
+- [x] 정상 paper 데몬 4개 재시작 / 계좌·설정·세션 기록 보존 확인.
 
 단일 연계 수정으로 기존 컴포넌트 안에서 구현한다. 별도 사용자 스토리·인프라 구축은 생략.
 외부 조회는 기존 timeout/cache 정책을 사용하고 모델 호출 빈도를 자동 증가시키지 않는다.
@@ -39,10 +42,15 @@ agent intraday, signals collector, market tools, news providers, Toss shadow가 
 F73/F98/F99의 미병합 작업은 수정하지 않는다. merge 전 main 신규 변경을 재확인한다.
 뉴스 오류는 기존 list 소비자에서도 오류로 관측되게 하고 fallback/brief 경계에서 흡수한다.
 
-main은 d818e6c 그대로이며 이 트랙 작업 중 추가 병합이 없다. 새 뉴스/가격 metadata는
+병합 직전 main은 d818e6c였으며 이 트랙 작업 중 다른 병합은 없었다. 새 뉴스/가격 metadata는
 기존 JSON 키를 유지하는 추가형 변경이다. macro 최상위 as_of는 None이며 실제 시각은
 각 시계열 source_as_of, 수집 시각은 retrieved_at으로 구분한다. NewsPoller.diff_for는
 이제 전달 시 unread를 소비한다. 예약 턴이 실제 수락된 후에만 브리프를 만든다.
 
 검증 및 실제 데이터 한계는 [verification.md](verification.md), 운영 방법은
 [post-merge-guide.md](post-merge-guide.md)를 참고한다.
+
+11/25 09:52~09:59 KST 적용 확인: Opus/Fable dry 두 실행은 F105, 정상 paper 데몬 4개는
+0d458d4로 동작한다. 진행 중 모델 턴과 열린 시장이 없는 상태에서 기존 세션으로 재개했다.
+재시작 전후 현금·보유·주문, 모델/위험 설정, 결정/실행 커서/턴/세션 기록을 보존했다.
+원격 push는 수행하지 않았다. 종료 문서 커밋은 실행 코드에 영향을 주지 않는다.

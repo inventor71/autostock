@@ -56,3 +56,22 @@ false였다. 이는 장부 불변 테스트로 사용하지 않는다. 적용 �
 
 수익률 개선은 이 테스트들의 결론이 아니다. 다음 거래 세션부터 같은 비용·동일 모델 설정의
 dry 기록에서 거래 의도, 실제 가상 체결, 정보 공백, 비용 차감 수익을 함께 비교해야 한다.
+
+## 실행 적용 확인
+
+11/25 09:52~09:59 KST, 미국 정규장 종료 후 기존 세션을 재개했다.
+
+- Opus/Fable Toss dry 두 실행은 F105, health=ok, 재시작 후 poll 증가를 확인했다.
+  현금·보유·주문·체결, frozen universe/model/config, 종료 시각, 모델 턴 수와 재시도 상태를
+  보존했다. 기존 workspace 파일도 Opus 21개/Fable 17개가 그대로다. report tmux는 유지했다.
+- 정상 모드는 host systemd(Alpaca paper)와 Docker의 aggressive/balanced/conservative
+  (account_farm paper) 네 실행이다. 기존 76ae872 코드에서 0d458d4로 재시작했으며 모두
+  새 snapshot을 발행한다. 현금·보유 수량/평균단가·미체결 주문과 모델/위험 설정이 동일하다.
+- 정상 모드 결정·실행 커서·run state·턴·세션 파일은 각각 117/91/92/92개를 비교했으며
+  변경 0개다. 진행 중 모델 턴이 없고 당일 세션이 이미 시작된 상태를 확인한 뒤 재개했다.
+  재시작으로 새 모델 턴이나 주문을 만들지 않았다.
+
+private 근거: research-comparisons/F105/restart-verification.json 및
+normal-restart-verification.json. 재시작 백업 역시 같은 gitignored 디렉터리에만 보관한다.
+실제 장중 턴은 아직 없으므로 research_data=not_recorded는 예상 상태다. 다음 예약 장중
+턴부터 research-context 이력이 쌓인다. 종료 문서 커밋은 위 검증된 실행 코드를 바꾸지 않는다.
