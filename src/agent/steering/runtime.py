@@ -326,6 +326,7 @@ class SteeringRuntime:
                 return
             new_fills = self._collect_new_fills(broker)
             snapshot = {
+                "as_of": ps.timestamp.isoformat(),
                 "run_state": self.state.run_state().model_dump(mode="json"),
                 "locked_symbols": {s: self.state.lock_status(s) for s in positions},
                 "pending": [p.model_dump(mode="json") for p in self.state.list_pending()],

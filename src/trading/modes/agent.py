@@ -61,15 +61,15 @@ class AgentTradingMode:
         if journal is not None:
             import os
             os.environ["AGENT_JOURNAL_ROOT"] = str(journal.root)
-        # F3 intraday redesign: brief assembly + event-driven wakes + news diff.
-        # Active ONLY with steering (it reads the snapshot/RunState/ReconcileWorker);
-        # without steering, _intraday falls back to the legacy prompt (NFR-8).
+        # Scheduled context works with and without steering. Event-driven wakes
+        # still require the steering snapshot/RunState/ReconcileWorker.
         from src.agent.intraday.settings import IntradayConfig
         self.intraday_config = intraday_config or IntradayConfig()
         self._brief_assembler = None
         self._wake = None
         self._news = None
         self._watch = None
+        self._context = None
         if self.steering is not None:
             self._setup_intraday()
             self.orchestrator._on_turn_start = self.steering.set_current_turn
@@ -79,24 +79,19 @@ class AgentTradingMode:
     # F3 intraday redesign (only constructed when steering is enabled)
     # ------------------------------------------------------------------ #
     def _setup_intraday(self) -> None:
-        from src.agent.intraday.bars import BarCache
-        from src.agent.intraday.brief import BriefAssembler
-        from src.agent.intraday.news_diff import NewsPoller
+        from src.agent.intraday.context import IntradayContext
         from src.agent.intraday.wake import WakeDetector
-        from src.agent.intraday.watch_store import WatchStore
 
         cfg = self.intraday_config
         root = self.executor.journal.root
-        bar_cache = BarCache(self.executor.data_provider,
-                             bars_ttl=cfg.bars_cache_seconds, price_ttl=cfg.price_cache_seconds)
-        self._bar_cache = bar_cache  # F14: kept so the agent_prefetch job can warm it
-        self._watch = WatchStore(root)
-        self._brief_assembler = BriefAssembler(
-            bar_cache, state=self.steering.state, watch_store=self._watch,
-            sentiment_lines_fn=self._sentiment_lines_fn())
-        self._news = NewsPoller(self._news_provider(), root,
-                                ttl_minutes=cfg.news_ttl_minutes,
-                                symbols_fn=self._intraday_symbols)
+        self._context = IntradayContext(
+            self.executor.data_provider, root, snapshot_fn=lambda: self.steering.last_snapshot,
+            universe=self.executor.universe, config=cfg, state=self.steering.state,
+            news_provider=self._news_provider(), sentiment_lines_fn=self._sentiment_lines_fn())
+        self._bar_cache = bar_cache = self._context.bars
+        self._watch = self._context.watch
+        self._brief_assembler = self._context.assembler
+        self._news = self._context.news
         self._wake = WakeDetector(
             snapshot_fn=lambda: self.steering.last_snapshot,
             state=self.steering.state, watch_store=self._watch, bar_cache=bar_cache,
@@ -105,8 +100,8 @@ class AgentTradingMode:
 
     @staticmethod
     def _news_provider():
-        from src.data.providers.news_provider import YFinanceNewsProvider
-        return YFinanceNewsProvider()
+        from src.data.news import build_news_provider
+        return build_news_provider()
 
     # ------------------------------------------------------------------ #
     # F77: retail sentiment (StockTwits) — hourly sweep + brief lines
@@ -213,16 +208,19 @@ class AgentTradingMode:
         never blocks on a market-data fetch. Best-effort; the underlying get_* are
         HTTP-timeout-bounded (F14-A) so a slow symbol can't wedge this thread."""
         try:
-            self._bar_cache.prefetch(self._intraday_symbols())
+            self._bar_cache.prefetch(self._context.symbols())
         except Exception as e:  # never kill the scheduler (NFR-4)
             logger.error("intraday prefetch failed (continuing): {}", e)
 
     def _brief(self, *, include_news: bool) -> str:
-        snap = self.steering.last_snapshot if self.steering else None
-        news = None
-        if include_news and self._news is not None:
-            news = self._news.diff_for(self._intraday_symbols())
-        return self._brief_assembler.build(snapshot=snap, news=news, include_news=include_news)
+        if self._context is None:
+            from src.agent.intraday.context import IntradayContext, broker_snapshot
+            self._context = IntradayContext(
+                self.executor.data_provider, self.executor.journal.root,
+                snapshot_fn=lambda: broker_snapshot(self.executor.broker),
+                universe=self.executor.universe, config=self.intraday_config,
+                news_provider=self._news_provider())
+        return self._context.build(include_news=include_news)
 
     def _wake_runner(self, events):
         """Fire one coalesced wake turn (runs inside the ReconcileWorker's
@@ -413,9 +411,9 @@ class AgentTradingMode:
             self._funnel(self.executor.run_risk_exits)  # protection still runs (BR-3.1)
             return
         logger.info("Agent intraday cycle")
-        # F3: inject the Python-assembled brief (steering on); else legacy prompt.
-        brief = self._brief(include_news=True) if self.steering is not None else None
-        self._scheduled_turn(lambda: self.orchestrator.run_intraday(brief))
+        # Build within the accepted turn, so a busy coordinator doesn't consume
+        # unread news for a turn that will never run. Works without steering too.
+        self._scheduled_turn(lambda: self.orchestrator.run_intraday(self._brief(include_news=True)))
         outcomes = self._funnel(self._exec_pending_and_exits)
         self._emit_exec_outcomes(outcomes, context="intraday")
 

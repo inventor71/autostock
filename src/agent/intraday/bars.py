@@ -15,6 +15,7 @@ import pandas as pd
 from loguru import logger
 
 from src.core.types import TimeFrame
+from src.data.freshness import age_seconds, bar_metadata, latest_quote
 
 
 def atr(bars: pd.DataFrame | None, period: int = 14) -> float | None:
@@ -54,6 +55,8 @@ class BarCache:
         self._limit = limit
         self._bars: dict[str, tuple[float, pd.DataFrame]] = {}
         self._price: dict[str, tuple[float, float]] = {}
+        self._quote_details: dict[str, dict] = {}
+        self._bar_errors: dict[str, str] = {}
 
     def get_bars(self, symbol: str) -> pd.DataFrame | None:
         now = time.monotonic()
@@ -63,8 +66,10 @@ class BarCache:
         try:
             bars = self._dp.get_bars(symbol, timeframe=self._timeframe, limit=self._limit)
         except Exception as e:
+            self._bar_errors[symbol] = type(e).__name__
             logger.warning("bars fetch failed for {} (using cached): {}", symbol, e)
             return hit[1] if hit else None
+        self._bar_errors.pop(symbol, None)
         self._bars[symbol] = (now, bars)
         return bars
 
@@ -74,12 +79,26 @@ class BarCache:
         if hit and now - hit[0] < self._price_ttl:
             return hit[1]
         try:
-            price = float(self._dp.get_latest_price(symbol))
+            details = latest_quote(self._dp, symbol)
+            price = details["price"]
         except Exception as e:
+            self._quote_details[symbol] = {**self._quote_details.get(symbol, {}),
+                                          "status": "cached_after_error" if hit else "unavailable",
+                                          "error": type(e).__name__}
             logger.warning("price fetch failed for {} (using cached): {}", symbol, e)
             return hit[1] if hit else None
+        self._quote_details[symbol] = {**details, "status": "ok"}
         self._price[symbol] = (now, price)
         return price
+
+    def coverage(self, symbol: str) -> dict:
+        quote = dict(self._quote_details.get(symbol, {"status": "not_checked"}))
+        quote["source_age_seconds"] = age_seconds(quote.get("source_as_of"))
+        quote["fetch_age_seconds"] = age_seconds(quote.get("retrieved_at"))
+        bars = self.peek_bars(symbol)
+        return {"quote": quote, "bars": {**bar_metadata(bars, self._timeframe.value),
+                "status": "unavailable" if bars is None or bars.empty else
+                          "cached_after_error" if symbol in self._bar_errors else "ok"}}
 
     # ---- F14: cache-only reads (NEVER fetch) + a prefetch worker ---------- #
     # The 5s WakeDetector tick MUST NOT do a synchronous market-data fetch on the

@@ -53,9 +53,16 @@ def _signal_collector():
     # The broker is built lazily inside the callable; collect()'s held lookup is
     # best-effort, so a missing-key/broker failure degrades to held=[].
     def _held() -> list[str]:
-        return sorted(_broker().get_portfolio_state().positions.keys())
+        broker = _broker()
+        try:
+            return sorted(broker.get_portfolio_state().positions.keys())
+        finally:
+            close = getattr(broker, "close", None)
+            if callable(close):
+                close()
 
-    return SignalCollector.from_settings(price_provider=_provider(), held_provider=_held)
+    return SignalCollector.from_settings(price_provider=_provider(), held_provider=_held,
+                                         universe=_universe())
 
 
 def main(argv: list[str] | None = None) -> int:

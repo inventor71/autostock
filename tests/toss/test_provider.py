@@ -33,6 +33,15 @@ def test_quote_missing_or_wrong_currency_is_not_silently_used(client_factory):
         TossDataProvider(missing).get_latest_price("AAPL")
 
 
+@pytest.mark.parametrize("stamp", ["2026-11-24T15:00:00Z", None])
+def test_quote_preserves_source_time_instead_of_assuming_retrieval_is_live(client_factory, stamp):
+    client, _ = client_factory(lambda _: [{"symbol": "AAPL", "lastPrice": "101.5", "currency": "USD",
+                                          "timestamp": stamp}])
+    quote = TossDataProvider(client).get_latest_quote("AAPL")
+    assert quote["source_as_of"] == stamp
+    assert quote["price"] == 101.5
+
+
 def test_minute_close_timestamp_becomes_start_and_no_lookahead(client_factory):
     rows = [candle(f"2026-03-25T09:{minute:02d}:00-04:00", minute) for minute in (33, 32, 31)]
     client, _ = client_factory(lambda r: {"candles": rows, "nextBefore": None})

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import yfinance as yf
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class NewsItem(BaseModel):
@@ -44,10 +44,11 @@ class YFinanceNewsProvider:
         Returns:
             List of NewsItem objects, newest first.
         """
+        symbol = symbol.upper()
         # Check cache
         if symbol in self._cache:
             cached_time, cached_news = self._cache[symbol]
-            age_minutes = (datetime.now() - cached_time).total_seconds() / 60
+            age_minutes = (datetime.now(UTC) - cached_time).total_seconds() / 60
             if age_minutes < self._cache_ttl_minutes:
                 return cached_news[:limit]
 
@@ -56,20 +57,24 @@ class YFinanceNewsProvider:
             raw_news = ticker.news or []
 
             news_items = []
-            for item in raw_news[:limit]:
+            for item in raw_news:
                 news_item = self._parse_news_item(item)
                 if news_item:
                     news_items.append(news_item)
 
             # Cache results
-            self._cache[symbol] = (datetime.now(), news_items)
+            self._cache[symbol] = (datetime.now(UTC), news_items)
 
             logger.debug(f"Fetched {len(news_items)} news items for {symbol}")
-            return news_items
+            return news_items[:limit]
 
         except Exception as e:
-            logger.warning(f"Error fetching news for {symbol}: {e}")
-            return []
+            logger.warning("News unavailable for {}: {}", symbol, type(e).__name__)
+            raise
+
+    def news_fetched_at(self, symbol: str) -> datetime | None:
+        cached = self._cache.get(symbol.upper())
+        return cached[0] if cached else None
 
     def _parse_news_item(self, raw: dict[str, Any]) -> NewsItem | None:
         """Parse a raw news item from yfinance.
@@ -128,7 +133,7 @@ class YFinanceNewsProvider:
                 pass
         if "providerPublishTime" in content:
             try:
-                return datetime.fromtimestamp(content["providerPublishTime"])
+                return datetime.fromtimestamp(content["providerPublishTime"], tz=UTC)
             except (ValueError, TypeError):
                 pass
         return None

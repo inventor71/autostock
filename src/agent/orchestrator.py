@@ -83,6 +83,7 @@ class AgentTradingLoop:
         shorting_enabled: bool = True,
         aggressiveness: str = "balanced",
         signal_brief_provider: Callable[[], str | None] | None = None,
+        intraday_brief_provider: Callable[[], str] | None = None,
         price_provider: Callable[[str], float] | None = None,
         prompt_module=None,
         as_of=None,
@@ -111,6 +112,7 @@ class AgentTradingLoop:
         # F61: optional callable that returns the market-signal brief text to
         # prepend to the research prompt. Fail-honest — any error → no brief.
         self._signal_brief_provider = signal_brief_provider
+        self._intraday_brief_provider = intraday_brief_provider
         # F96: optional price lookup (symbol -> last price) used to stamp a
         # decision-time ``ref_price`` on market entries, so the executor's drift
         # guard has an anchor for a limit-less BUY/SELL_SHORT. Fail-honest.
@@ -242,7 +244,7 @@ class AgentTradingLoop:
             return self._signal_brief_provider()
         except Exception as exc:
             logger.warning("signal brief provider failed, skipping: {}", exc)
-            return None
+            return "MARKET SIGNALS unavailable: source collection failed; verify decision-critical gaps with tools."
 
     def _disposition(self) -> str:
         """F85: the aggressiveness posture block injected into decision-emitting
@@ -742,9 +744,16 @@ class AgentTradingLoop:
         """Scheduled intraday turn. F3: when ``brief`` is supplied (assembled by
         the daemon from the snapshot + cached market data), it is injected and we
         do NOT call ``held_symbols()`` (a broker hit on the turn thread, critic#6)
-        — the brief already lists the book. Without a brief (steering disabled,
-        NFR-8) it falls back to the legacy held-symbols prompt."""
+        — the brief already lists the book. The shadow runner injects the same
+        context through intraday_brief_provider. Bare library callers without
+        either provider retain the held-symbols prompt with explicit gap checks."""
         disp, churn = self._disposition(), self._aggr.intraday_churn
+        if brief is None and self._intraday_brief_provider is not None:
+            try:
+                brief = self._intraday_brief_provider()
+            except Exception as exc:  # noqa: BLE001 — a context failure is explicit, not a failed model turn
+                logger.warning("Intraday context unavailable: {}", type(exc).__name__)
+                brief = "INTRADAY BRIEF unavailable. Refresh account and decision-critical market data using tools."
         if brief is not None:
             return self._run(
                 self.prompts.intraday_prompt(brief=brief, disposition=disp, churn=churn),

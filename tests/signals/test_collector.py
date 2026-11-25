@@ -169,6 +169,14 @@ def test_no_earnings_source_marked_disabled(patch_scoreboard):
     assert brief.imminent_earnings == []
 
 
+def test_default_calendar_day_is_us_trading_date_not_host_date(patch_scoreboard, monkeypatch):
+    monkeypatch.setattr("src.core.markettime.et_today", lambda: date(2026, 11, 24))
+    patch_scoreboard([])
+    earnings = _FakeEarnings()
+    _collector(earnings=earnings).collect()
+    assert earnings.last_range[0] == date(2026, 11, 24)
+
+
 def test_earnings_failure_degrades(patch_scoreboard):
     patch_scoreboard(_scoreboard_rows(("AVGO", -15.0, 3.0)))
     brief = _collector(news=_FakeNews(), earnings=_FakeEarnings(raises=True)).collect(today=_TODAY)

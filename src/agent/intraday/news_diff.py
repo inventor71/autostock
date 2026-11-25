@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 from loguru import logger
 
 from src.agent.intraday.records import NewsDiff
 from src.agent.steering.jsonl import atomic_write_text
+from src.data.freshness import age_seconds
+from src.data.news import fetch_news
 
 
 class NewsPoller:
@@ -29,6 +32,10 @@ class NewsPoller:
         self._limit = limit
         self._seen: dict[str, str] = self._load_seen()
         self._diffs: dict[str, NewsDiff] = {}
+        self._coverage: dict[str, dict] = {}
+        self._lock = threading.Lock()
+        self._poll_lock = threading.Lock()
+        self._refresh_thread: threading.Thread | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
 
@@ -45,36 +52,74 @@ class NewsPoller:
             logger.warning("news last-seen persist failed: {}", e)
 
     def poll_once(self, symbols) -> None:
-        """Fetch each symbol's headlines and record only those newer than the
-        persisted last-seen key. Best-effort per symbol."""
-        for sym in symbols:
-            try:
-                items = self._np.get_news(sym, limit=self._limit)
-            except Exception as e:
-                logger.warning("news fetch failed for {} (skipping): {}", sym, e)
-                continue
-            headlines = [it.title for it in items if getattr(it, "title", None)]
-            if not headlines:
-                self._diffs.pop(sym, None)
-                continue
-            last = self._seen.get(sym)
-            new = []
-            for h in headlines:  # newest-first; stop at the previously-seen boundary
-                if h == last:
-                    break
-                new.append(h)
-            self._seen[sym] = headlines[0]
-            if new:
-                self._diffs[sym] = NewsDiff(symbol=sym, headlines=new, last_seen_key=headlines[0])
-            else:
-                self._diffs.pop(sym, None)
-        self._save_seen()
+        """Accumulate unread headlines until a turn takes them, even across polls."""
+        if not self._poll_lock.acquire(blocking=False):
+            return
+        try:
+            for sym in dict.fromkeys(symbols):
+                result = fetch_news(self._np, sym, self._limit)
+                articles = [{"title": it.title,
+                             "published_at": it.published_at.isoformat() if getattr(it, "published_at", None) else None,
+                             "link": getattr(it, "link", "")}
+                            for it in result.items if getattr(it, "title", None)]
+                with self._lock:
+                    self._coverage[sym] = {**result.metadata(),
+                                           "checked_at": datetime.now(UTC).isoformat(),
+                                           "article_count": len(articles)}
+                    if result.status != "ok" or not articles:
+                        continue
+                    new = []
+                    for article in articles:
+                        if article["title"] == self._seen.get(sym):
+                            break
+                        new.append(article)
+                    if not new:
+                        continue
+                    prior = self._diffs.get(sym)
+                    pending = {a["title"]: a for a in new}
+                    for article in prior.articles if prior else []:
+                        pending.setdefault(article["title"], article)
+                    pending = list(pending.values())[:24]
+                    self._diffs[sym] = NewsDiff(
+                        symbol=sym, headlines=[a["title"] for a in pending], articles=pending,
+                        last_seen_key=articles[0]["title"])
+        finally:
+            self._poll_lock.release()
 
     def diff_for(self, symbols) -> dict[str, NewsDiff]:
-        # Snapshot items once so a concurrent poll_once pop/assign on the poller
-        # thread can't raise KeyError on this (turn-path) read (review #7).
-        wanted = set(symbols)
-        return {s: nd for s, nd in list(self._diffs.items()) if s in wanted}
+        with self._lock:
+            result = {s: self._diffs.pop(s) for s in dict.fromkeys(symbols) if s in self._diffs}
+            for sym, nd in result.items():
+                self._seen[sym] = nd.last_seen_key
+            if result:
+                self._save_seen()
+            return result
+
+    def coverage_for(self, symbols) -> dict[str, dict]:
+        with self._lock:
+            result = {s: dict(self._coverage.get(s, {"status": "not_checked"})) for s in symbols}
+        for row in result.values():
+            age = age_seconds(row.get("fetched_at"))
+            row["fetch_age_seconds"] = age
+            if row["status"] == "ok" and (age is None or age > self._ttl + 30 or age < -5):
+                row["status"] = "stale"
+            elif row["status"] == "ok" and row.get("content_status") in {"old_only", "undated_or_future"}:
+                row["status"] = "no_recent_dated_items"
+        return result
+
+    def refresh(self, symbols, *, timeout: float = 10.0) -> None:
+        """Bound the turn's wait, with at most one outstanding refresh worker.
+
+        A slow feed remains not_checked/stale in coverage; it cannot stall the
+        model or spawn a new abandoned worker on every scheduled turn.
+        """
+        with self._lock:
+            if self._refresh_thread is None or not self._refresh_thread.is_alive():
+                self._refresh_thread = threading.Thread(
+                    target=self.poll_once, args=(list(symbols),), name="news-refresh", daemon=True)
+                self._refresh_thread.start()
+            thread = self._refresh_thread
+        thread.join(timeout=max(0.0, timeout))
 
     # ---- background thread ------------------------------------------------- #
     def start(self) -> None:

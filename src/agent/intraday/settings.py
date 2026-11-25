@@ -20,9 +20,10 @@ class IntradayConfig:
     bars_cache_seconds: float = 60.0
     price_cache_seconds: float = 3.0
     prefetch_seconds: int = 5  # F14: BarCache warm cadence (price each tick; bars gated by bars_cache_seconds)
+    market_symbols: tuple[str, ...] = ()
 
     @classmethod
-    def from_mapping(cls, m: dict | None) -> "IntradayConfig":
+    def from_mapping(cls, m: dict | None, *, market: str = "us") -> "IntradayConfig":
         """Build from a (possibly nested) settings mapping; unknown keys ignored."""
         if not m:
             return cls()
@@ -32,6 +33,9 @@ class IntradayConfig:
         bars = m.get("bars", {}) or {}
         price = m.get("price", {}) or {}
         d = cls()
+        market_symbols = m.get("market_symbols", d.market_symbols)
+        if isinstance(market_symbols, dict):
+            market_symbols = market_symbols.get(market.lower(), ())
         return cls(
             atr_k=float(abn.get("atr_k", d.atr_k)),
             vol_multiple=float(abn.get("vol_multiple", d.vol_multiple)),
@@ -42,6 +46,7 @@ class IntradayConfig:
             bars_cache_seconds=float(bars.get("cache_seconds", d.bars_cache_seconds)),
             price_cache_seconds=float(price.get("cache_seconds", d.price_cache_seconds)),
             prefetch_seconds=int(wake.get("prefetch_seconds", d.prefetch_seconds)),
+            market_symbols=tuple(str(s).upper() for s in market_symbols),
         )
 
     def abnormal(self) -> AbnormalConfig:

@@ -24,6 +24,7 @@ class MoverRow(BaseModel):
     change_pct: float | None = None  # % vs prior close
     volume_ratio: float | None = None  # today vol / 20d avg
     close: float | None = None
+    source_as_of: str | None = None
 
 
 class EarningsRow(BaseModel):
@@ -176,6 +177,7 @@ class MarketSignalBrief(BaseModel):
     sentiment_outliers: list[SentimentOutlier] = Field(default_factory=list)  # F77
     disclosed_holdings: list[HoldingsHighlight] = Field(default_factory=list)  # F81
     degraded_sources: list[str] = Field(default_factory=list)
+    price_source_times: dict[str, str | None] = Field(default_factory=dict)
 
     def is_empty(self) -> bool:
         return not (self.movers or self.readthrough_alerts or self.imminent_earnings

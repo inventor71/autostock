@@ -167,6 +167,14 @@ def intraday_prompt(
         lines.append(f"Positions / watchlist to check: {held_str}.")
     tail = churn or "If nothing is triggered, do nothing — do not churn."
     lines.append(
+        "Use the brief's source times and news coverage to check what actually changed. "
+        "Unchecked, unavailable, or stale data is unknown, not evidence that a thesis is unchanged. "
+        "Refresh only gaps that could change hold/reduce/add decisions, using a current source "
+        "or focused research; check the event/publication date, not just search/retrieval time. "
+        "Daily bars are context, not a live entry/exit quote. State material remaining gaps "
+        "and what would justify the next action; a well-supported no-trade remains valid."
+    )
+    lines.append(
         "Re-check your existing plans: has price reached a planned entry, stop, "
         "or target, or has the thesis changed (fresh news/catalyst)? If so, "
         "update the relevant positions/<SYMBOL>.md and append the decision "

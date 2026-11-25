@@ -79,7 +79,8 @@ class SignalCollector:
         part of the cache key so an override never returns a brief built for a
         different horizon.
         """
-        today = today or date.today()
+        from src.core.markettime import et_today
+        today = today or et_today()
         if held is None and self.held_provider is not None:
             try:
                 held = self.held_provider()
@@ -145,6 +146,7 @@ class SignalCollector:
                                imminent_ipos=ipos,
                                sentiment_outliers=outliers,
                                disclosed_holdings=holdings)
+        brief.price_source_times = {r.symbol: r.source_as_of for r in rows}
         self._cache = (time.monotonic(), cache_key, brief)
         return brief
 
@@ -254,6 +256,7 @@ class SignalCollector:
         rows: list[MoverRow] = []
         for r in raw:
             if r.get("error"):
+                degraded.append(f"prices:{r.get('symbol', 'unknown')}")
                 continue
             rows.append(
                 MoverRow(
@@ -261,6 +264,7 @@ class SignalCollector:
                     change_pct=r.get("chg_1d"),
                     volume_ratio=r.get("vol_ratio"),
                     close=r.get("close"),
+                    source_as_of=r.get("source_as_of"),
                 )
             )
         return rows
@@ -281,7 +285,8 @@ class SignalCollector:
                 continue
             if items and getattr(items[0], "title", None):
                 hint = items[0].title.strip()
-                alert.cause_hint = hint[:120]
+                stamp = getattr(items[0], "published_at", None)
+                alert.cause_hint = hint[:120] + f" [published={stamp.isoformat() if stamp else 'unknown'}]"
         if failed:
             degraded.append("news")
 
@@ -330,13 +335,16 @@ class SignalCollector:
         *,
         price_provider=None,
         held_provider: Callable[[], list[str]] | None = None,
+        universe: list[str] | None = None,
+        settings=None,
     ) -> "SignalCollector":
         """Wire the real providers/sources from ``config/settings.yaml`` + env."""
         from config.config import get_settings
+        from src.universe.factory import resolve_universe
 
-        settings = get_settings()
+        settings = settings if settings is not None else get_settings()
         config = SignalsConfig.from_settings(settings.signals)
-        universe = list(settings.trading.symbols)
+        universe = list(universe) if universe is not None else resolve_universe(settings)
 
         if price_provider is None:
             from src.data.providers.yfinance_provider import YFinanceProvider
@@ -359,25 +367,8 @@ class SignalCollector:
 
 
 def _build_news_provider(config: SignalsConfig, settings):
-    """Alpaca primary (Benzinga) with yfinance fallback, per config. Fail-honest:
-    if the primary can't be built, fall back; if neither, return None."""
-    primary = config.sources.news_primary
-    if primary == "alpaca" and settings.alpaca_api_key and settings.alpaca_api_secret:
-        try:
-            from src.signals.sources.alpaca_news import AlpacaNewsProvider
-
-            return AlpacaNewsProvider(
-                settings.alpaca_api_key, settings.alpaca_api_secret,
-                http_connect_timeout=config.http_connect_timeout,
-                http_read_timeout=config.http_read_timeout,
-            )
-        except Exception as exc:
-            logger.warning("signals: Alpaca news unavailable, falling back: {}", exc)
-    if config.sources.news_fallback == "yfinance" or primary == "yfinance":
-        from src.data.providers.news_provider import YFinanceNewsProvider
-
-        return YFinanceNewsProvider()
-    return None
+    from src.data.news import build_news_provider
+    return build_news_provider(settings, config)
 
 
 def _build_earnings_source(config: SignalsConfig, settings):

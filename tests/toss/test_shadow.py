@@ -71,6 +71,56 @@ def test_seed_is_once_and_hold_book_is_identical_without_trades(shadow):
     assert len([r for r in shadow.calls if r.url.path == "/api/v1/holdings"]) == 1
 
 
+def test_real_shadow_builder_wires_context_and_signals_without_mutating_the_book(shadow, monkeypatch):
+    import pandas as pd
+
+    from config.config import Settings
+    from src.data.providers.news_provider import NewsItem
+    from src.evals.toss_shadow import build_agent
+
+    class Prices:
+        def __init__(self, *args):
+            pass
+
+        def get_latest_price(self, symbol):
+            return 102.
+
+        def get_latest_quote(self, symbol):
+            return {"price": 102., "source_as_of": shadow.now[0].isoformat()}
+
+        def get_bars(self, *args, **kwargs):
+            return pd.DataFrame({"open": [100., 101.], "high": [102., 103.], "low": [99., 100.],
+                                 "close": [101., 102.], "volume": [10, 20]},
+                                index=pd.date_range("2026-11-23T14:30:00Z", periods=2, freq="5min"))
+
+    class News:
+        def get_news(self, symbol, limit=8):
+            return [NewsItem(title="Material update since research", published_at=shadow.now[0])]
+
+    monkeypatch.setattr("src.data.providers.toss_provider.TossDataProvider", Prices)
+    monkeypatch.setattr("src.agent.intraday.context.build_news_provider", lambda: News())
+    monkeypatch.setattr("src.data.news.build_news_provider", lambda *a: News())
+    settings = Settings(_env_file=None, finnhub_api_key="", signals={"enabled": True},
+                        intraday={"market_symbols": ["SPY", "QQQ"]})
+    with shadow.broker.transaction() as state:
+        state["agent_config"] = settings.agent.model_dump(mode="json")
+        state["risk_config"] = settings.risk.model_dump(mode="json")
+    before = shadow.broker.read()
+    loop, executor = build_agent(settings, shadow.broker)
+    prompts = []
+    monkeypatch.setattr(loop, "_run", lambda prompt, kind: prompts.append(prompt))
+    loop.run_intraday()
+    assert "Material update since research" in prompts[0]
+    assert "NEWS coverage" in prompts[0] and "QQQ" in prompts[0]
+    assert loop._signal_brief_provider is not None
+    assert "daily bars" in loop._signal_brief()
+    assert loop.universe == before["universe"]
+    assert set(loop.universe) == executor.universe
+    after = shadow.broker.read()
+    assert after == before  # read-only context/model wiring; no re-seed, trade or frozen config change
+    assert shadow.broker.report()["research_data"]["status"] == "degraded"  # intentionally old fixture quotes
+
+
 def test_partial_fills_use_ask_and_do_not_reconsume_same_liquidity_after_restart(shadow):
     b = shadow.broker
     submitted = b.submit_order(Order(symbol="AAPL", side=OrderSide.BUY, qty=3))

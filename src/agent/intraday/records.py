@@ -145,3 +145,4 @@ class NewsDiff(BaseModel):
     symbol: str
     headlines: list[str] = Field(default_factory=list)
     last_seen_key: str = ""
+    articles: list[dict] = Field(default_factory=list)

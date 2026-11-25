@@ -68,13 +68,16 @@ def to_prompt_text(brief: MarketSignalBrief) -> str:
         return ""
 
     lines: list[str] = ["## Market signal brief (auto-collected this turn)"]
+    lines.append(f"Collected at {brief.as_of.isoformat()}. Price/volume scan uses daily bars; "
+                 "verify current quotes before acting. Missing sources are unknown, not no events.")
 
     if brief.movers:
         lines.append("Biggest movers (universe + bellwethers):")
         for m in brief.movers:
             tag = "" if m.in_universe else " [watch-only]"
             vol = f", vol x{m.volume_ratio:.1f}" if m.volume_ratio is not None else ""
-            lines.append(f"  - {m.symbol}{tag} {_fmt_pct(m.change_pct)}{vol}")
+            stamp = brief.price_source_times.get(m.symbol) or "unknown"
+            lines.append(f"  - {m.symbol}{tag} {_fmt_pct(m.change_pct)}{vol} [daily source={stamp}]")
 
     if brief.readthrough_alerts:
         lines.append(

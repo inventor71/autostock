@@ -627,4 +627,5 @@ class TossShadowBroker(BaseBroker):
                 "stress_note": "Cost sensitivity only; no claim of replaying alternative latency/fill paths"}
 
     def report(self):
-        return self._report(self.read())
+        from src.monitoring.research import read_context_summary
+        return {**self._report(self.read()), "research_data": read_context_summary(self.root / "workspace")}
