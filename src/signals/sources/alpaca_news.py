@@ -11,7 +11,7 @@ scheduler.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -47,29 +47,33 @@ class AlpacaNewsProvider:
         sym = symbol.upper()
         if sym in self._cache:
             cached_at, cached = self._cache[sym]
-            if (datetime.now() - cached_at).total_seconds() / 60 < self._cache_ttl_minutes:
+            if (datetime.now(UTC) - cached_at).total_seconds() / 60 < self._cache_ttl_minutes:
                 return cached[:limit]
 
         from alpaca.data.requests import NewsRequest
 
-        request = NewsRequest(symbols=sym, limit=limit, sort="desc", exclude_contentless=True)
+        request = NewsRequest(symbols=sym, limit=max(limit, 10), sort="desc", exclude_contentless=True)
         news_set = self._client.get_news(request)
         articles = news_set.data.get("news", []) if hasattr(news_set, "data") else []
 
         items: list[NewsItem] = []
-        for art in articles[:limit]:
+        for art in articles:
             items.append(
                 NewsItem(
                     title=getattr(art, "headline", "") or "",
                     summary=getattr(art, "summary", "") or "",
                     link=getattr(art, "url", "") or "",
                     publisher=getattr(art, "source", "") or "",
-                    published_at=getattr(art, "updated_at", None)
-                    or getattr(art, "created_at", None),
+                    published_at=getattr(art, "created_at", None)
+                    or getattr(art, "updated_at", None),
                     sentiment_score=None,
                 )
             )
 
-        self._cache[sym] = (datetime.now(), items)
+        self._cache[sym] = (datetime.now(UTC), items)
         logger.debug("Alpaca news: {} items for {}", len(items), sym)
-        return items
+        return items[:limit]
+
+    def news_fetched_at(self, symbol: str) -> datetime | None:
+        cached = self._cache.get(symbol.upper())
+        return cached[0] if cached else None

@@ -61,6 +61,20 @@ class TossDataProvider(BaseDataProvider):
             raise DataProviderError("Toss did not return the requested quote")
         return prices[name]
 
+    def get_latest_quote(self, symbol: str) -> dict:
+        name = self._symbol(symbol)
+        rows = self.client.request("GET", "/api/v1/prices", params={"symbols": name})
+        for row in rows:
+            if row.get("symbol") != name:
+                continue
+            if row.get("currency") != self.currency:
+                raise DataProviderError("Toss quote currency does not match the selected market")
+            price = float(row["lastPrice"])
+            if not 0 < price < float("inf"):
+                raise DataProviderError("Toss returned an invalid price")
+            return {"price": price, "source_as_of": row.get("timestamp"), "currency": self.currency}
+        raise DataProviderError("Toss did not return the requested quote")
+
     def get_bars(
         self, symbol: str | list[str], timeframe: TimeFrame = TimeFrame.DAY_1,
         start: datetime | None = None, end: datetime | None = None, limit: int = 100,

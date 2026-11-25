@@ -139,9 +139,12 @@ research:
     enabled: true
     max_lessons_injected: 10
 
-# F3 intraday redesign — event-driven wakes + structured brief (only active with
-# --steering). All keys optional; omitted values fall back to the defaults shown.
+# Scheduled context is shared by normal/dry modes; event-driven wakes need
+# --steering. All keys optional; omitted values fall back to defaults.
 intraday:
+  market_symbols:  # Context only; does not expand the tradeable universe.
+    us: [SPY, QQQ]
+    kr: []
   abnormal_move:
     atr_k: 1.5          # wake when |intraday move| > atr_k * ATR(atr_period)
     vol_multiple: 3.0   # OR when last-bar volume > vol_multiple * average

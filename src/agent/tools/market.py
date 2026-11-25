@@ -8,11 +8,12 @@ real yfinance-backed providers and prints the returned dict/list as JSON.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Callable
 
 import pandas as pd
 
+from src.data.freshness import bar_metadata, latest_quote
 from src.strategy.ml.feature_eng import build_technical_features
 
 
@@ -44,14 +45,23 @@ def _latest_features(bars: pd.DataFrame) -> pd.Series | None:
 
 
 def quote(symbol: str, provider, limit: int = 60) -> dict:
-    """Latest price and recent price action for a symbol."""
-    bars = provider.get_bars(symbol, limit=limit)
+    """Daily price action plus a separately identified latest quote."""
+    try:
+        latest = {"status": "ok", **latest_quote(provider, symbol)}
+    except Exception as exc:  # noqa: BLE001 — latest quote availability is reported separately
+        latest = {"status": "unavailable", "error": type(exc).__name__}
+    try:
+        bars = provider.get_bars(symbol, limit=limit)
+    except Exception as exc:  # noqa: BLE001 — daily failure must not discard the current quote
+        return {"symbol": symbol.upper(), "error": type(exc).__name__, "latest_quote": latest}
     if bars is None or bars.empty:
-        return {"symbol": symbol, "error": "no data"}
+        return {"symbol": symbol, "error": "no daily data", "latest_quote": latest}
     last = bars.iloc[-1]
     return {
         "symbol": symbol.upper(),
         "asof": str(bars.index[-1]),
+        **bar_metadata(bars),
+        "latest_quote": latest,
         "price": _round(float(last["close"]), 2),
         "open": _round(float(last["open"]), 2),
         "high": _round(float(last["high"]), 2),
@@ -81,6 +91,7 @@ def indicators(symbol: str, provider, limit: int = 120) -> dict:
     atr_pct = float(row["atr_14"])
     return {
         "symbol": symbol.upper(),
+        **bar_metadata(bars),
         "close": _round(close, 2),
         "rsi_14": _round(float(row["rsi_14"]), 1),
         "macd": _round(float(row["macd"])),
@@ -116,6 +127,7 @@ def scoreboard(symbols: list[str], provider, limit: int = 120) -> list[dict]:
         row = _latest_features(bars)
         return {
             "symbol": symbol.upper(),
+            **bar_metadata(bars),
             "close": _round(close, 2),
             "chg_1d": _pct_change(bars, 1),
             "chg_5d": _pct_change(bars, 5),
@@ -262,10 +274,10 @@ def news(symbol: str, news_provider=None, limit: int = 8, _now: datetime | None 
     mistake a day-old catalyst for a fresh one and chase an already-priced-in move.
     ``_now`` is injectable for deterministic tests.
     """
+    from src.data.news import build_news_provider, fetch_news
     if news_provider is None:
-        from src.data.providers.news_provider import YFinanceNewsProvider
-        news_provider = YFinanceNewsProvider()
-    items = news_provider.get_news(symbol, limit=limit)
+        news_provider = build_news_provider()
+    result = fetch_news(news_provider, symbol, limit)
 
     def _item(it) -> dict:
         age_hours = _news_age_hours(it.published_at, _now)
@@ -279,7 +291,8 @@ def news(symbol: str, news_provider=None, limit: int = 8, _now: datetime | None 
             "sentiment": it.sentiment_score,
         }
 
-    return {"symbol": symbol.upper(), "news": [_item(it) for it in items]}
+    return {"symbol": symbol.upper(), **result.metadata(),
+            "news": [_item(it) for it in result.items]}
 
 
 def _side_str(value: Any) -> str:
@@ -361,6 +374,7 @@ def account(broker) -> dict:
         out["fill_count"] = report["fill_count"]
         out["recent_fills"] = report.get("recent_fills", [])
         out["execution_retries"] = report.get("execution_retries", {})
+        out["research_data"] = report.get("research_data")
     if getattr(state, "valuation_basis", "account_equity") != "account_equity":
         out["valuation_basis"] = state.valuation_basis
         out["currency"] = state.currency
@@ -572,11 +586,15 @@ def macro(provider=None) -> dict:
             price = float(hist["Close"].iloc[-1])
             prev = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else None
             chg = _round((price / prev - 1) * 100, 2) if prev and prev != 0 else None
-            out[label] = {"price": _round(price, 2), "change_1d_pct": chg}
+            out[label] = {"price": _round(price, 2), "change_1d_pct": chg,
+                          **bar_metadata(hist), "bar_may_be_in_progress": True}
         except Exception as exc:
             out[label] = {"error": str(exc)}
 
-    out["as_of"] = date.today().isoformat()
+    # Different markets can have different source dates. Do not label the data
+    # with today's date merely because it was retrieved today.
+    out["as_of"] = None
+    out["retrieved_at"] = datetime.now(UTC).isoformat()
     return out
 
 
@@ -587,6 +605,7 @@ def _surge_store():
     """Resolve the surge store under the agent's workspace root."""
     import os
     from pathlib import Path
+
     from src.surge.store import SurgeStore
 
     root = os.environ.get("AGENT_JOURNAL_ROOT")
@@ -671,6 +690,8 @@ def movers(collector=None) -> dict:
     return {
         "as_of": brief.as_of.isoformat(),
         "movers": [m.model_dump(mode="json") for m in brief.movers],
+        "price_timeframe": "1d",
+        "price_source_times": {m.symbol: brief.price_source_times.get(m.symbol) for m in brief.movers},
         "readthrough_alerts": [a.model_dump(mode="json") for a in brief.readthrough_alerts],
         "degraded_sources": brief.degraded_sources,
     }

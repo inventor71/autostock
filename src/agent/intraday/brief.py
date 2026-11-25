@@ -33,7 +33,7 @@ class BriefAssembler:
         # among held/watch names. Best-effort — failures yield no lines.
         self._sentiment_lines_fn = sentiment_lines_fn
 
-    def build(self, *, snapshot: dict | None, news: dict | None = None,
+    def build(self, *, snapshot: dict | None, news: dict | None = None, news_coverage=None,
               include_news: bool = True, extra_symbols=()) -> str:
         if not snapshot:
             # Fail-closed: no live snapshot yet -> account-less brief, never crash.
@@ -57,6 +57,13 @@ class BriefAssembler:
         ))
 
         lines = ["INTRADAY BRIEF"]
+        lines.append("Price timestamps identify source data; retrieval time does not prove a live quote. "
+                     "Bar ranges cover the returned window, not necessarily the whole session.")
+        if snapshot.get("account_error") or snapshot.get("open_orders_error"):
+            lines.append(f"ACCOUNT incomplete: {snapshot.get('account_error') or snapshot.get('open_orders_error')}")
+        account = snapshot.get("account", snapshot)
+        lines.append(f"ACCOUNT snapshot_at={snapshot.get('as_of') or snapshot.get('timestamp') or 'unknown'} "
+                     f"equity={account.get('equity', 'unknown')} cash={account.get('cash', 'unknown')}")
         for sym in symbols:
             lines.append(self._symbol_line(sym, positions, opens, watch_by_sym, news))
 
@@ -74,6 +81,18 @@ class BriefAssembler:
             news_line = self._news_line(news)
             if news_line:
                 lines.append(news_line)
+        if include_news:
+            coverage = news_coverage or {s: {"status": "not_checked"} for s in symbols}
+            groups = {}
+            for sym, row in coverage.items():
+                groups.setdefault(row["status"], []).append(sym)
+            lines.append("NEWS coverage: " + "; ".join(f"{k}=[{','.join(v)}]" for k, v in groups.items()))
+            providers = sorted({r["provider"] for r in coverage.values() if r.get("provider")})
+            fetched = [r["fetched_at"] for r in coverage.values() if r.get("fetched_at")]
+            errors = sorted({e for r in coverage.values() for e in r.get("errors", [])})
+            lines.append(f"NEWS providers={providers} oldest_fetch={min(fetched) if fetched else 'unknown'} "
+                         f"fallback/errors={errors}. Coverage is limited to these feeds; "
+                         "unavailable/stale/unchecked is unknown, not 'no catalyst'.")
         return "\n".join(lines)
 
     # ---- per-symbol -------------------------------------------------------- #
@@ -83,12 +102,23 @@ class BriefAssembler:
         parts = [sym]
         if price is not None:
             parts.append(f"px={price:.2f}")
+        metadata = self._bars.coverage(sym)
+        q = metadata["quote"]
+        parts.append(f"quote={q['status']} source={q.get('source_as_of') or 'unknown'} "
+                     f"age_s={q.get('source_age_seconds')} fetch_age_s={q.get('fetch_age_seconds')}")
         if bars is not None and len(bars) > 0:
             try:
-                parts.append(f"sessH/L={bars['high'].max():.2f}/{bars['low'].min():.2f}")
+                parts.append(f"windowH/L={bars['high'].max():.2f}/{bars['low'].min():.2f}")
                 parts.append(f"vol={float(bars['volume'].iloc[-1]):.0f}")
+                parts.append(f"bars={metadata['bars']['timeframe']}@{metadata['bars']['source_as_of']} "
+                             f"{metadata['bars']['status']}")
+                first = float(bars["open"].iloc[0])
+                if first and price:
+                    parts.append(f"vs_window_open={(price / first - 1) * 100:+.2f}%")
             except Exception:
                 pass
+        else:
+            parts.append("bars=unavailable")
         levels = []
         pos = positions.get(sym)
         if pos:
@@ -144,5 +174,12 @@ class BriefAssembler:
         for sym, nd in news.items():
             heads = getattr(nd, "headlines", None)
             if heads:
-                bits.append(f"{sym}: {heads[0]}")
+                articles = getattr(nd, "articles", [])
+                if articles:
+                    rendered = [f"{a['title'][:240]} [published={a.get('published_at') or 'unknown'}; "
+                                f"{a.get('link', '')}]" for a in articles[:2]]
+                    bits.append(f"{sym}: " + "; ".join(rendered)
+                                + (f" (+{len(articles) - 2} more; news tool for details)" if len(articles) > 2 else ""))
+                else:
+                    bits.append(f"{sym}: {heads[0]} [published=unknown]")
         return ("NEWS (new): " + " | ".join(bits)) if bits else ""

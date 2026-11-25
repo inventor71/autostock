@@ -112,11 +112,16 @@ class AlpacaDataProvider(BaseDataProvider):
             raise DataProviderError(f"Alpaca data error for {symbol}: {e}") from e
 
     def get_latest_price(self, symbol: str) -> float:
+        return self.get_latest_quote(symbol)["price"]
+
+    def get_latest_quote(self, symbol: str) -> dict:
         try:
             from alpaca.data.requests import StockLatestBarRequest
 
             request = StockLatestBarRequest(symbol_or_symbols=symbol)
             bar = self._client.get_stock_latest_bar(request)
-            return float(bar[symbol].close)
+            latest = bar[symbol]
+            return {"price": float(latest.close), "source_as_of": latest.timestamp.isoformat(),
+                    "timeframe": "1m", "price_kind": "bar_close"}
         except Exception as e:
             raise DataProviderError(f"Failed to get price for {symbol}: {e}") from e

@@ -310,11 +310,11 @@ def run_paper(settings, strategies_config: dict) -> None:
     mode.start()
 
 
-def _make_signal_brief_provider(settings, data_provider, broker):
+def _make_signal_brief_provider(settings, data_provider, broker, *, universe=None):
     """F61: build the callable that returns the market-signal brief text (or None).
 
-    Best-effort and fail-honest: if signals are disabled or wiring fails, return
-    None so the research turn runs exactly as before."""
+    Disabled sources return None. A wiring failure is explicitly reported in
+    the research prompt so missing evidence cannot masquerade as no events."""
     from src.signals.settings import SignalsConfig
 
     cfg = SignalsConfig.from_settings(settings.signals)
@@ -328,7 +328,7 @@ def _make_signal_brief_provider(settings, data_provider, broker):
             return sorted(broker.get_portfolio_state().positions.keys())
 
         collector = SignalCollector.from_settings(
-            price_provider=data_provider, held_provider=_held
+            price_provider=data_provider, held_provider=_held, universe=universe, settings=settings
         )
 
         def _brief() -> str | None:
@@ -337,7 +337,7 @@ def _make_signal_brief_provider(settings, data_provider, broker):
         return _brief
     except Exception as exc:  # never let signal wiring break agent startup
         logger.warning("signal brief provider unavailable: {}", exc)
-        return None
+        return lambda: "MARKET SIGNALS unavailable: provider setup failed; use tools for decision-critical evidence."
 
 
 def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
@@ -391,7 +391,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
 
     # F61: market-signal brief — assembled fresh each research turn and prepended
     # to the prompt. Best-effort; any wiring failure leaves the agent unaffected.
-    signal_brief_provider = _make_signal_brief_provider(settings, data_provider, broker)
+    signal_brief_provider = _make_signal_brief_provider(settings, data_provider, broker, universe=universe)
 
     orchestrator = AgentTradingLoop(
         session=session,
@@ -448,7 +448,7 @@ def run_agent(settings, fresh: bool = False, steering: bool = False) -> None:
             experiment_start=settings.agent.experiment_start,
             min_trade_notional=settings.agent.min_trade_notional,
             steering=steering_runtime,
-            intraday_config=IntradayConfig.from_mapping(settings.intraday),
+            intraday_config=IntradayConfig.from_mapping(settings.intraday, market=settings.universe.get("market", "us")),
         ).start(fresh=fresh)
     finally:
         if benchmark_runner is not None:

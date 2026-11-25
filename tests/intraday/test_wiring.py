@@ -59,13 +59,16 @@ def test_intraday_injects_brief_when_steering_on(tmp_path):
         mode.stop()
 
 
-def test_intraday_legacy_when_steering_off(tmp_path):
+def test_intraday_context_also_reaches_non_steering_mode(tmp_path):
     ex = _executor(tmp_path)
     orch = _StubOrch()
     mode = AgentTradingMode(orch, ex, steering=None)
     assert mode._wake is None and mode._news is None  # F3 inactive (NFR-8)
     mode._intraday()
-    assert orch.intraday_briefs == [None]  # legacy path: no brief
+    assert len(orch.intraday_briefs) == 1
+    assert "INTRADAY BRIEF" in orch.intraday_briefs[0]
+    assert "NEWS coverage" in orch.intraday_briefs[0]
+    assert (ex.journal.root / "research-context.json").exists()
 
 
 def test_intraday_components_built_with_steering(tmp_path):

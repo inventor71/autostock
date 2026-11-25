@@ -131,7 +131,9 @@ def configure_environment(root: Path):
 
 
 def build_agent(settings, broker):
-    from main import _build_risk_manager
+    from main import _build_risk_manager, _make_signal_brief_provider
+    from src.agent.intraday.context import IntradayContext, broker_snapshot
+    from src.agent.intraday.settings import IntradayConfig
     from src.agent.session import AgentSession
     from src.agent.steering.security import write_agent_hook_settings
     from src.data.providers.toss_provider import TossDataProvider
@@ -155,6 +157,9 @@ def build_agent(settings, broker):
     recover_interrupted_turns(broker, session.journal)
     write_agent_hook_settings(workspace)  # File tools cannot edit the sibling account ledger.
     provider = TossDataProvider(broker.client)
+    context = IntradayContext(
+        provider, workspace, snapshot_fn=lambda: broker_snapshot(broker),
+        universe=frozen["universe"], config=IntradayConfig.from_mapping(settings.intraday))
     loop = ShadowTradingLoop(
         session, shadow_broker=broker, universe=frozen["universe"],
         portfolio_provider=broker.get_portfolio_state, price_provider=provider.get_latest_price,
@@ -162,6 +167,8 @@ def build_agent(settings, broker):
         research_timeout=cfg.research_timeout, shorting_enabled=False,
         aggressiveness=cfg.aggressiveness, multi_agent_enabled=False,
         reflection_enabled=False,  # Freeze policy across the observation window.
+        signal_brief_provider=_make_signal_brief_provider(settings, provider, broker, universe=frozen["universe"]),
+        intraday_brief_provider=context.build,
     )
     executor = ShadowExecutor(
         broker, _build_risk_manager(settings, use_bracket_orders=True, apply_aggressiveness=True),
@@ -269,9 +276,9 @@ def run(broker, settings, *, agent=False, once=False, seconds=None, poll_seconds
             raise BrokerError("This shadow run already has an active runner") from None
         with broker.transaction() as state:
             revisions = state.setdefault("runtime_revisions", [])
-            if not revisions or revisions[-1]["implementation"] != "F104":
-                revisions.append({"implementation": "F104", "started_at": broker.clock().isoformat(),
-                                  "note": "Floor Toss market-sell quantities to six decimals; durable execution retry backoff"})
+            if not revisions or revisions[-1]["implementation"] != "F105":
+                revisions.append({"implementation": "F105", "started_at": broker.clock().isoformat(),
+                                  "note": "Shared fresh intraday context, explicit news coverage/fallback, source timestamps, signal tools"})
             state.pop("runner_stopped_at", None)
         if agent:
             loop, executor = build_agent(settings, broker)
